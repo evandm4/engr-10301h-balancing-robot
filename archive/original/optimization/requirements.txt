@@ -1,0 +1,7 @@
+numpy
+scipy>=1.11
+matplotlib
+pytest
+
+# Optional: only needed for tuning.bayesian_optimization_search.
+# pip install scikit-optimize

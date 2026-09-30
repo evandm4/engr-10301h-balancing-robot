@@ -1,0 +1,146 @@
+{
+  "method": "differential_evolution",
+  "gains": {
+    "kp": 1.1773992749766682,
+    "ki": 0.15954261236312411,
+    "kd": 0.11653375458880688,
+    "kv_p": 0.3445050240402141,
+    "kv_i": 0.00473672775445918
+  },
+  "best_training_cost": 0.11262268826351256,
+  "n_evals": 840,
+  "elapsed_s": 20.54,
+  "config": {
+    "robot": {
+      "body_mass": 0.8,
+      "body_com_height": 0.1,
+      "body_inertia": 0.0033,
+      "wheel_mass": 0.1,
+      "wheel_radius": 0.035,
+      "wheel_inertia": 6.1e-05,
+      "max_torque": 0.4,
+      "wheel_friction": 0.0,
+      "gravity": 9.81
+    },
+    "actuator": {
+      "model": "dc_motor",
+      "gear_ratio": 20.0,
+      "torque_constant": 0.005,
+      "resistance": 3.0,
+      "supply_voltage": 7.4,
+      "current_limit": 2.0,
+      "n_motors": 2
+    },
+    "sensor": {
+      "pitch_std": 0.005,
+      "pitch_rate_std": 0.02,
+      "pitch_rate_bias": 0.01,
+      "position_std": 0.0005,
+      "velocity_std": 0.02
+    },
+    "timing": {
+      "latency_s": 0.01,
+      "dt_s": 0.0025,
+      "demo_dt_s": 0.001,
+      "control_dt_s": 0.005,
+      "fall_angle_deg": 60.0
+    },
+    "controller": {
+      "max_lean_deg": 11.46,
+      "hand_tuned_gains": [
+        4.0,
+        0.5,
+        0.15,
+        0.1,
+        0.03
+      ]
+    },
+    "cost": {
+      "effort_weight": 0.01,
+      "fall_penalty": 100.0,
+      "velocity_weight": 1.0
+    },
+    "scenario": {
+      "duration_s": 6.0,
+      "goal_steps": [
+        [
+          0.5,
+          0.3
+        ],
+        [
+          3.5,
+          -0.2
+        ]
+      ],
+      "start_pitches_deg": [
+        5.73,
+        -4.58,
+        2.86
+      ],
+      "train_seeds": [
+        1,
+        2,
+        3
+      ],
+      "validation_seeds": [
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109
+      ]
+    },
+    "search": {
+      "kp_min_factor": 1.1,
+      "kp_max": 30.0,
+      "ki_max": 5.0,
+      "kd_max": 1.0,
+      "kv_p_max": 0.4,
+      "kv_i_max": 0.3
+    },
+    "derived": {
+      "fall_angle_rad": 1.0471975511965976,
+      "max_lean_rad": 0.20001473227855018,
+      "start_pitches_rad": [
+        0.10000736613927509,
+        -0.07993607974134029,
+        0.04991641660703782
+      ],
+      "critical_pitch_gain": 0.2303809259492873,
+      "search_bounds": {
+        "kp": {
+          "low": 0.25341901854421606,
+          "high": 30.0,
+          "log_scale": true
+        },
+        "ki": {
+          "low": 0.0,
+          "high": 5.0,
+          "log_scale": false
+        },
+        "kd": {
+          "low": 0.0,
+          "high": 1.0,
+          "log_scale": false
+        },
+        "kv_p": {
+          "low": 0.0,
+          "high": 0.4,
+          "log_scale": false
+        },
+        "kv_i": {
+          "low": 0.0,
+          "high": 0.3,
+          "log_scale": false
+        }
+      },
+      "motor_stall_torque_limit": 0.4,
+      "motor_no_load_speed_rad_s": 74.0
+    }
+  }
+}

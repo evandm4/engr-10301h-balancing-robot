@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+.obsidian/
+.DS_Store
+Thumbs.db
+desktop.ini
+~$*

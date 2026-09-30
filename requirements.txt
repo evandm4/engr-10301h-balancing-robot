@@ -1,0 +1,18 @@
+# Everything the simulation, tuners, tests, and demos need.
+#   python -m pip install -r requirements.txt
+# Minimums are what the code relies on; versions known to work are noted.
+# Tested with Python 3.12.10 in C:\venvs\balancebot.
+
+numpy>=1.24            # tested 2.5.3
+scipy>=1.12            # differential_evolution's `intermediate_result` callback and vectorized=True; tested 1.18.1
+matplotlib>=3.7        # plots in the run scripts and demos; tested 3.11.2
+pytest>=7              # tested 9.1.1
+cma>=3.0               # CMA-ES in batch_tuning; tested 4.5.0
+
+# Only needed for tuning.bayesian_optimization_search (run_tuning.py --bayesian).
+scikit-optimize>=0.10  # tested 0.10.2
+
+# Only needed for the GPU backend (backend="torch"). Blackwell (RTX 50-series)
+# needs a CUDA 12.8+ build, from PyTorch's own index rather than PyPI:
+#   python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+# Tested 2.11.0+cu128. Everything else works without it; its tests are skipped.

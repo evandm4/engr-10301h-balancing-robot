@@ -1,0 +1,34 @@
+{
+  "timestamp": "2026-09-28 10:34:09",
+  "machine": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "Intel64 Family 6 Model 197 Stepping 2, GenuineIntel",
+    "cpu_count": 16,
+    "python": "3.12.10",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1"
+  },
+  "workload": {
+    "physics_steps_per_run": 2400,
+    "runs_per_evaluation": 9,
+    "dt_s": 0.0025,
+    "duration_s": 6.0
+  },
+  "single_run": {
+    "median_s": 0.030469400000583846,
+    "min_s": 0.02931910000188509,
+    "max_s": 0.034125699996366166,
+    "repeats": 5
+  },
+  "single_evaluation": {
+    "median_s": 0.27157939999597147,
+    "min_s": 0.2672796999977436,
+    "max_s": 0.27967070000158856,
+    "repeats": 5
+  },
+  "derived": {
+    "runs_per_second_single_core": 32.81981266388043,
+    "physics_steps_per_second_single_core": 78767.55039331302,
+    "estimated_840_eval_search_single_core_s": 228.12669599661604
+  }
+}
