@@ -8,6 +8,7 @@ See also:
 - `config.py` (project root) — the single place to edit the robot, actuator model, sensor noise, delays, cost weights, search ranges, and the batched tuner's robustness test.
 - `simulation/CONDITIONS.md` — the running list of real-world effects the simulation includes.
 - `BATCHED.md` — the batched (NumPy/GPU) engine: design, verification, speed.
+- `PHYSICS.md` — derivation of every equation in the simulator, checked numerically by `simulation/examples/physics_checks.py`, with limitations and next steps.
 - `archive/CHANGES_FROM_ORIGINAL.md` — what was corrected from the first version of the code.
 
 ## Status legend

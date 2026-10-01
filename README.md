@@ -7,7 +7,7 @@ config.py                  every adjustable number (robot, motor, sensor, timing
 simulation/
   balance_sim/             reference simulator: one robot at a time, readable, the source of truth
   batch_sim/               the same simulator stepping many robots at once (NumPy on the CPU, or PyTorch on the GPU)
-  examples/                demo runs with plots
+  examples/                demo runs with plots; physics_checks.py reproduces every number in PHYSICS.md
   animate.py               watch runs: animated side view + live plots, simulated or replayed from CSV
   tests/                   balance_sim tests; batch_sim checked against balance_sim
   CONDITIONS.md            which real-world effects are modeled
@@ -26,7 +26,7 @@ results/
 archive/                   the superseded original code and its results (unused)
 ```
 
-More detail: `ARCHITECTURE.md` (design, status, change log), `BATCHED.md` (the batched/GPU engine, its verification and speed), `simulation/CONDITIONS.md`.
+More detail: `ARCHITECTURE.md` (design, status, change log), `BATCHED.md` (the batched/GPU engine, its verification and speed), `PHYSICS.md` (derivation of every equation in the simulator, its limits, and what to improve), `simulation/CONDITIONS.md`.
 
 ## What runs, in order
 
