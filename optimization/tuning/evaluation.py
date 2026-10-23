@@ -48,6 +48,7 @@ class EvalConfig:
     dt: float                                  # physics step
     control_dt: float                          # controller period
     goal_steps: Tuple[Tuple[float, float], ...]   # (start time s, goal m/s)
+    goal_transition: float                     # s; blend time per goal change, 0 = jumps
     start_pitches: Tuple[float, ...]           # rad, each tried with every seed
     train_seeds: Tuple[int, ...]
     effort_weight: float
@@ -90,7 +91,7 @@ class Evaluator:
             gains,
             torque_limit=c.params.max_torque,
             pitch_integral_limit=c.pitch_integral_limit,
-            goal=step_profile(c.goal_steps),
+            goal=step_profile(c.goal_steps, c.goal_transition),
             max_pitch_command=c.max_pitch_command,
             integral_limit=c.velocity_integral_limit,
         )

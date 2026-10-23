@@ -33,7 +33,7 @@ def spec_from_eval_config(config: EvalConfig, controller: str = "cascaded") -> S
     s = config.sensor
     return SimSpec(
         controller=controller,
-        goal=step_profile(config.goal_steps),
+        goal=step_profile(config.goal_steps, config.goal_transition),
         duration=config.duration,
         dt=config.dt,
         control_dt=config.control_dt,

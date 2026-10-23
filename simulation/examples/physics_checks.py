@@ -19,7 +19,7 @@ from scipy.optimize import brentq
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from balance_sim import CascadedPIDController, Planar2D, PIDController, simulate, step_profile
+from balance_sim import CascadedPIDController, Planar2D, PIDController, simulate
 from balance_sim.actuators import Actuator
 from balance_sim.simulator import _rk4_step
 from batch_sim import BatchRobot, actuator_torque, derivatives
@@ -64,7 +64,7 @@ def controller(gains, goal=0.0):
 def scenario_run(gains, tilt, seed, dynamics=None, dt=None, latency=None):
     """One run of the tuner's scenario (goal profile, noise, latency) with the reference simulator."""
     dyn = CONFIG.build_dynamics() if dynamics is None else dynamics
-    return simulate(dyn, controller(gains, step_profile(CONFIG.scenario.goal_steps)),
+    return simulate(dyn, controller(gains, CONFIG.build_goal()),
                     duration=CONFIG.scenario.duration_s, dt=CONFIG.timing.dt_s if dt is None else dt,
                     initial_state=dyn.initial_state(tilt), control_dt=CONFIG.timing.control_dt_s,
                     sensor=CONFIG.build_sensor(seed),
@@ -89,7 +89,7 @@ def power_balance():
     heading("2.7 Power balance: E(T) - E(0) vs integral of (tau - b w) w dt")
     p = P.with_changes(wheel_friction=0.001)
     dyn = Planar2D(p, CONFIG.timing.fall_angle_rad)
-    res = simulate(dyn, controller(TUNED, step_profile(CONFIG.scenario.goal_steps)), duration=10.0, dt=1e-4,
+    res = simulate(dyn, controller(TUNED, CONFIG.build_goal()), duration=10.0, dt=1e-4,
                    initial_state=dyn.initial_state(0.1), control_dt=CONFIG.timing.control_dt_s,
                    latency=CONFIG.timing.latency_s)
     s, t = res.states, res.t
@@ -343,7 +343,8 @@ def cost_accuracy():
         print(f"{name}: left sum {c_fine:.5f} (0.25 ms) vs {c_coarse:.5f} (2.5 ms), {(c_coarse / c_fine - 1) * 100:+.2f}%;"
               f" trapezoid {t_fine:.5f} vs {t_coarse:.5f}, {(t_coarse / t_fine - 1) * 100:+.4f}%")
         print(f"  largest state gap: v {gap[1]:.1e} m/s, theta {gap[2]:.1e} rad")
-    print(f"predicted left-sum bias (dt/2) sum(dv_goal^2) = {CONFIG.timing.dt_s / 2 * np.sum(jumps**2):.5f}")
+    if CONFIG.scenario.goal_transition_s == 0:
+        print(f"predicted left-sum bias (dt/2) sum(dv_goal^2) = {CONFIG.timing.dt_s / 2 * np.sum(jumps**2):.5f}")
 
 
 def cost_breakdown():
@@ -364,6 +365,8 @@ def cost_breakdown():
     lean = CONFIG.controller.max_lean_rad
     accel = ML * G * math.sin(lean) / (ML * math.cos(lean) + A * R)
     jumps = np.abs(np.diff([0.0] + [v for _, v in CONFIG.scenario.goal_steps]))
+    if CONFIG.scenario.goal_transition_s > 0:
+        return   # the floor below is for instant goal jumps; a smooth goal has none
     print(f"velocity term if each goal step were met at the steady {math.degrees(lean):.0f} deg-lean acceleration "
           f"({accel:.2f} m/s^2): sum |dv|^3 / (3 a) = {c.velocity_weight * np.sum(jumps**3) / (3 * accel):.3f}")
 

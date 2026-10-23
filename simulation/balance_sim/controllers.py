@@ -78,24 +78,56 @@ class Controller(ABC):
         return 0.0
 
 
-def step_profile(steps: Sequence[Tuple[float, float]]) -> Callable[[float], float]:
-    """Build a piecewise-constant goal velocity from (start_time, velocity) pairs.
+def _smoothstep(x: float) -> float:
+    """0 at x <= 0, 1 at x >= 1, with zero 1st-3rd derivatives at both ends."""
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    return x**4 * (35.0 - 84.0 * x + 70.0 * x**2 - 20.0 * x**3)
+
+
+def step_profile(steps: Sequence[Tuple[float, float]], transition: float = 0.0) -> Callable[[float], float]:
+    """Build a goal velocity from (start_time, velocity) pairs.
 
     Example: step_profile([(1.0, 0.3), (5.0, -0.2)]) is 0 until t=1 s, then
     0.3 m/s until t=5 s, then -0.2 m/s. Before the first start time it is 0.
+
+    transition (s): with the default 0 every change is an instant jump, which
+    no robot can follow (it has to lean before it can accelerate), so some
+    velocity error is unavoidable. With transition > 0 each change instead
+    starts at its start time and blends into the new velocity over that many
+    seconds, with continuous acceleration and jerk. A goal that smooth is one
+    the robot could follow exactly: acceleration sets the lean, jerk the pitch
+    rate, and the torque stays finite. A change that starts before the previous
+    one has finished blends from wherever the goal was at that moment.
     """
+    if transition < 0:
+        raise ValueError("transition must be non-negative")
     ordered = sorted(steps)
 
+    # (start, velocity it blends from, velocity it blends to) for each change.
+    segments = []
+    for start, v in ordered:
+        segments.append((start, _segment_value(segments, start, transition), v))
+
     def profile(t: float) -> float:
-        velocity = 0.0
-        for start, v in ordered:
-            if t >= start - 1e-9:
-                velocity = v
-            else:
-                break
-        return velocity
+        return _segment_value(segments, t, transition)
 
     return profile
+
+
+def _segment_value(segments, t: float, transition: float) -> float:
+    velocity = 0.0
+    for start, v_from, v_to in segments:
+        if t >= start - 1e-9:
+            if transition > 0:
+                velocity = v_from + (v_to - v_from) * _smoothstep((t - start) / transition)
+            else:
+                velocity = v_to
+        else:
+            break
+    return velocity
 
 
 class PIDController(Controller):

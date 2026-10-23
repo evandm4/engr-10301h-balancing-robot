@@ -63,6 +63,32 @@ def test_step_profile_values():
     assert prof(100.0) == -0.2
 
 
+def test_smooth_step_profile_blends_continuously():
+    from balance_sim import step_profile
+    prof = step_profile([(1.0, 0.3), (5.0, -0.2)], transition=1.0)
+    assert prof(1.0) == 0.0
+    assert prof(1.5) == pytest.approx(0.15)
+    assert prof(2.0) == 0.3
+    assert prof(6.0) == -0.2
+    t = np.linspace(0.0, 7.0, 70001)
+    v = np.array([prof(x) for x in t])
+    accel = np.diff(v) / np.diff(t)
+    assert np.max(np.abs(np.diff(v))) < 1e-3                 # no jumps in velocity
+    assert np.max(np.abs(np.diff(accel))) < 1e-3             # or in acceleration
+    assert np.max(np.abs(accel)) == pytest.approx(35 / 16 * 0.5, rel=1e-3)
+
+
+def test_smooth_step_profile_overlapping_changes_stay_continuous():
+    from balance_sim import step_profile
+    prof = step_profile([(1.0, 1.0), (1.4, 0.0)], transition=1.0)
+    t = np.linspace(0.0, 3.0, 30001)
+    v = np.array([prof(x) for x in t])
+    assert np.max(np.abs(np.diff(v))) < 1e-3
+    assert prof(2.4) == 0.0
+    with pytest.raises(ValueError):
+        step_profile([(1.0, 1.0)], transition=-0.1)
+
+
 def test_controllers_without_a_velocity_loop_have_goal_zero(dyn):
     assert PIDController(4.0).goal_velocity(3.0) == 0.0
     result = run(dyn, PIDController(*INNER), duration=1.0)

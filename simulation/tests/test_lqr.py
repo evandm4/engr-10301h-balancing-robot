@@ -36,10 +36,11 @@ COST_MATCHED = CONFIG.cost_matched_lqr_weights()
 WITH_INTEGRAL = LQRWeights(velocity=1.0, pitch=1.0, pitch_rate=0.01, torque=0.05, velocity_integral=0.5)
 COST_RTOL = 1e-12
 
-# The project's scenario, shortened, plus variations (as in test_equivalence.py).
+# The project's scenario, shortened, plus variations (as in test_equivalence.py). Instant goal
+# jumps (goal_transition=0), so some of the gain sets below fall and both paths get checked.
 BASE = CONFIG.build_eval_config()
-SHORT = replace(BASE, duration=2.0, goal_steps=((0.3, 0.3), (1.2, -0.2)), start_pitches=(0.1, -0.08),
-                train_seeds=(1, 2))
+SHORT = replace(BASE, duration=2.0, goal_steps=((0.3, 0.3), (1.2, -0.2)), goal_transition=0.0,
+                start_pitches=(0.1, -0.08), train_seeds=(1, 2))
 CONFIGS = {
     "default": SHORT,
     "ideal_actuator": replace(SHORT, motor=None),
@@ -52,7 +53,7 @@ CONFIGS = {
 
 
 def _controller(config, gain) -> LQRController:
-    return LQRController(gain, config.params.max_torque, goal=step_profile(config.goal_steps),
+    return LQRController(gain, config.params.max_torque, goal=step_profile(config.goal_steps, config.goal_transition),
                          integral_limit=config.velocity_integral_limit)
 
 
@@ -379,7 +380,7 @@ def test_config_builds_the_lqr_controller():
     np.testing.assert_array_equal(c.K, CONFIG.build_lqr_gain())
     assert c.torque_limit == CONFIG.robot.max_torque
     assert c.integral_limit == CONFIG.controller.velocity_integral_limit
-    assert c.goal_velocity(2.5) == step_profile(CONFIG.scenario.goal_steps)(2.5)
+    assert c.goal_velocity(2.5) == CONFIG.build_goal()(2.5)
     assert len(CONFIG.build_lqr_controller(design_latency=0.0).K) == 4
     assert CONFIG.build_lqr_space().dim == 4
     assert CONFIG.build_direct_lqr_space().dim == 5

@@ -215,6 +215,12 @@ class ScenarioConfig:
 
     duration_s: float = 12.0
     goal_steps: Tuple[Tuple[float, float], ...] = ((2.0, 1.0), (3.5, 0), (6.0, -0.6), (9.0, 0.2))  # (start time s, goal m/s)
+    # Seconds each goal change takes to blend smoothly into the new velocity
+    # (see balance_sim.step_profile). 0 = instant jumps, which no robot can
+    # follow, so the velocity term can never reach zero. With a smooth blend
+    # the goal is physically trackable: the 1 m/s change peaks at about
+    # 2.2 m/s^2, within what the 25 deg lean cap allows.
+    goal_transition_s: float = 2.5
     start_pitches_deg: Tuple[float, ...] = (5.73, -4.58, 2.86)                 # initial disturbance, each tried with every seed
     train_seeds: Tuple[int, ...] = (1, 2, 3)                                   # sensor-noise seeds scored during tuning
     validation_seeds: Tuple[int, ...] = tuple(range(100, 110))                 # unseen seeds, checked after tuning
@@ -348,6 +354,10 @@ class ProjectConfig:
         return PIDController(kp, ki, kd, integral_limit=self.controller.pitch_integral_limit,
                              output_limit=self.robot.max_torque)
 
+    def build_goal(self):
+        """The scenario's goal velocity as a function of time (m/s)."""
+        return step_profile(self.scenario.goal_steps, self.scenario.goal_transition_s)
+
     def build_controller(self, gains=None) -> CascadedPIDController:
         """The cascaded controller the tuner scores, with the configured goal
         profile, lean cap, integral limits, and torque limit. Defaults to the
@@ -357,7 +367,7 @@ class ProjectConfig:
             gains,
             torque_limit=self.robot.max_torque,
             pitch_integral_limit=self.controller.pitch_integral_limit,
-            goal=step_profile(self.scenario.goal_steps),
+            goal=self.build_goal(),
             max_pitch_command=self.controller.max_lean_rad,
             integral_limit=self.controller.velocity_integral_limit,
         )
@@ -380,7 +390,7 @@ class ProjectConfig:
         integral cap. gain: these LQR gains; None designs them with
         build_lqr_gain(**design)."""
         gain = self.build_lqr_gain(**design) if gain is None else gain
-        return LQRController(gain, self.robot.max_torque, goal=step_profile(self.scenario.goal_steps),
+        return LQRController(gain, self.robot.max_torque, goal=self.build_goal(),
                              integral_limit=self.controller.velocity_integral_limit)
 
     def score(self, result) -> float:
@@ -401,6 +411,7 @@ class ProjectConfig:
             dt=self.timing.dt_s,
             control_dt=self.timing.control_dt_s,
             goal_steps=self.scenario.goal_steps,
+            goal_transition=self.scenario.goal_transition_s,
             start_pitches=self.scenario.start_pitches_rad,
             train_seeds=self.scenario.train_seeds,
             effort_weight=self.cost.effort_weight,

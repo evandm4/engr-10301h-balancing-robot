@@ -22,7 +22,6 @@ from typing import Optional, Tuple
 
 from config import CONFIG, ProjectConfig  # also puts simulation/ and optimization/ on the path
 
-from balance_sim import step_profile
 from pivot_sim import (
     PIVOT_GAIN_NAMES,
     LQRWeights,
@@ -223,7 +222,7 @@ class PivotProjectConfig:
             torque_limit=base.robot.max_torque,
             pitch_integral_limit=base.controller.pitch_integral_limit,
             pitch_source=self.controller.pitch_source,
-            goal=step_profile(base.scenario.goal_steps),
+            goal=base.build_goal(),
             max_pitch_command=base.controller.max_lean_rad,
             integral_limit=base.controller.velocity_integral_limit,
         )
@@ -240,7 +239,7 @@ class PivotProjectConfig:
             latency=base.timing.latency_s if latency is None else latency,
             servo_limit=self.servo.angle_limit_rad,
             pivot_active=pivot_active,
-            goal=step_profile(base.scenario.goal_steps),
+            goal=base.build_goal(),
             integral_limit=self.lqr.integral_limit,
         )
 
