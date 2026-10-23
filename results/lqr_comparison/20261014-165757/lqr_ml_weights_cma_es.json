@@ -1,0 +1,15 @@
+{
+  "method": "lqr_ml_weights_cma_es",
+  "gains": {
+    "w_velocity": 1.2051638486067728,
+    "w_pitch_rate": 1.0000753617203732e-06,
+    "w_torque": 0.40047850413352276,
+    "w_integral": 1.0000082277266044e-06
+  },
+  "best_training_cost": 0.955081205368042,
+  "n_evals": 4800,
+  "elapsed_s": 61.56,
+  "controller": "LQR, ML-tuned weights",
+  "backend": "torch",
+  "dtype": "float32"
+}

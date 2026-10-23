@@ -1,0 +1,15 @@
+{
+  "method": "pid_ml_differential_evolution",
+  "gains": {
+    "kp": 1.1075474387516258,
+    "ki": 0.6366557004459739,
+    "kd": 0.10681023748664331,
+    "kv_p": 0.32593170725011655
+  },
+  "best_training_cost": 0.9400629969437917,
+  "n_evals": 4920,
+  "elapsed_s": 64.88,
+  "controller": "PID, ML-tuned",
+  "backend": "torch",
+  "dtype": "float32"
+}

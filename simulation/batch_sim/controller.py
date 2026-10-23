@@ -1,13 +1,16 @@
-"""Cascaded PID controller for a batch of robots, as pure functions.
+"""The controllers for a batch of robots, as pure functions.
 
-Same control law as balance_sim/controllers.py
-(CascadedPIDController wrapping a PIDController with an output limit). The
-integrators live in arrays passed in and returned, instead of inside objects,
-so one call updates every robot in the batch.
+    cascaded_update   balance_sim's CascadedPIDController (wrapping a
+                      PIDController with an output limit)
+    lqr_update        balance_sim's LQRController
 
-Gains are (B,) arrays: kp, ki, kd for the pitch loop and kv_p, kv_i for the
-velocity loop (kv_i is all zeros for the project's 4-gain controller). xp is
-the array library: numpy (the default) or batch_sim.xp.torch_ops().
+Same control laws as balance_sim/controllers.py and lqr.py. Their memory
+(integrators, commands in flight) lives in arrays passed in and returned,
+instead of inside objects, so one call updates every robot in the batch.
+
+Cascaded gains are (B,) arrays: kp, ki, kd for the pitch loop and kv_p, kv_i
+for the velocity loop (kv_i is all zeros for the project's 4-gain controller).
+xp is the array library: numpy (the default) or batch_sim.xp.torch_ops().
 """
 
 import numpy as np
@@ -83,3 +86,38 @@ def cascaded_update(
     torque = proportional_derivative + ki * pitch_integral
     torque = xp.clip(torque, -torque_limit, torque_limit)
     return torque, setpoint, pitch_integral, velocity_integral
+
+
+LQR_STATE_GAINS = 4   # velocity, pitch, pitch rate, velocity integral; then one per command in flight
+
+
+def lqr_gain_columns(gains) -> np.ndarray:
+    """(B, 4 + m) LQR gains (balance_sim.lqr.GAIN_LAYOUT, then m commands in flight), checked."""
+    gains = np.asarray(gains, dtype=float)
+    if gains.ndim != 2 or gains.shape[1] < LQR_STATE_GAINS:
+        raise ValueError(f"LQR gains must have shape (B, {LQR_STATE_GAINS} + commands in flight), got {gains.shape}")
+    return gains
+
+
+def lqr_update(
+    measured_velocity, measured_pitch, measured_pitch_rate,
+    goal_velocity, dt,
+    gains, integral, in_flight,
+    torque_limit, integral_limit,
+    xp=np,
+):
+    """One LQRController tick for the whole batch.
+
+    gains: rows of (B,) arrays in GAIN_LAYOUT order, then one per command in
+    flight. in_flight: the m commands still in flight, oldest first, as rows of
+    (B,) arrays (m may be 0). Returns (torque, integral); the caller moves
+    the new torque onto the back of in_flight.
+    """
+    error = measured_velocity - goal_velocity
+    # Summed in the same order as LQRController.update, so the two agree to the bit.
+    total = gains[0] * error + gains[1] * measured_pitch + gains[2] * measured_pitch_rate + gains[3] * integral
+    for gain, command in zip(gains[LQR_STATE_GAINS:], in_flight):
+        total = total + gain * command
+    torque = xp.clip(-total, -torque_limit, torque_limit)
+    integral = xp.clip(integral + error * dt, -integral_limit, integral_limit)
+    return torque, integral

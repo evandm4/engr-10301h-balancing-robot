@@ -9,11 +9,16 @@ together.
 Pass a RobustnessConfig (robust.py) to score more demandingly: many more
 seeds, a randomized robot per scenario, and a penalty for chaotic gains.
 Without one, scores match the CPU Evaluator.
+
+By default the candidates are cascaded-PID gains. controller="lqr" runs
+balance_sim's LQRController instead, and to_gains turns each point of the
+search space into the gains the simulator runs: for example LQR weights into
+LQR gains (tuning.LQRWeightDesigner).
 """
 
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -24,9 +29,10 @@ from tuning import EvalConfig, EvalResult, SearchSpace
 from .robust import RobustnessConfig, sample_robots
 
 
-def spec_from_eval_config(config: EvalConfig) -> SimSpec:
+def spec_from_eval_config(config: EvalConfig, controller: str = "cascaded") -> SimSpec:
     s = config.sensor
     return SimSpec(
+        controller=controller,
         goal=step_profile(config.goal_steps),
         duration=config.duration,
         dt=config.dt,
@@ -68,6 +74,12 @@ class BatchEvalResult:
     n_fell: np.ndarray       # (P,)
     sensitivity: np.ndarray  # (P,) mean |cost - nudged-twin cost|; zeros without twin runs
     objective: np.ndarray    # (P,) what the optimizers minimize: mean_cost + weight * sensitivity
+    # The cost's parts per scenario, (P, n_scenarios), unweighted as in BatchResult:
+    # integrals of pitch error^2, torque^2 and velocity error^2. Optional so
+    # results built elsewhere needn't carry them.
+    pitch_error: Optional[np.ndarray] = None
+    effort: Optional[np.ndarray] = None
+    velocity_error: Optional[np.ndarray] = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +105,11 @@ class BatchEvaluator:
     bigger populations are split into chunks of that size. Defaults: 12k for
     NumPy, where throughput falls off once the temporary arrays outgrow the
     CPU cache, and 200k for torch (see benchmark.py).
+
+    controller: "cascaded" (the default) or "lqr", the batch_sim controller
+    the gains are for. to_gains: maps decoded search-space points (P, dim) to
+    those gains (P, n); None means the points are the gains already, as for
+    the cascaded PID's search space. evaluate_population always takes gains.
     """
 
     TORCH_BATCH_ROUNDING = 1024    # batch sizes are padded up to a multiple of this ...
@@ -100,7 +117,8 @@ class BatchEvaluator:
 
     def __init__(self, config: EvalConfig, space: SearchSpace, dtype=np.float64,
                  max_batch: Optional[int] = None, backend: str = "numpy", device="cuda",
-                 robustness: Optional[RobustnessConfig] = None):
+                 robustness: Optional[RobustnessConfig] = None, controller: str = "cascaded",
+                 to_gains: Optional[Callable[[np.ndarray], np.ndarray]] = None):
         if backend not in ("numpy", "torch"):
             raise ValueError(f"backend must be 'numpy' or 'torch', got {backend!r}")
         self.config = config
@@ -110,12 +128,13 @@ class BatchEvaluator:
         self.device = device
         self.robustness = robustness
         self.max_batch = max_batch if max_batch is not None else (12_000 if backend == "numpy" else 200_000)
-        self.spec = spec_from_eval_config(config)
+        self.to_gains = to_gains
+        self.spec = spec_from_eval_config(config, controller)
         self.schedule = build_schedule(self.spec)
         self.robot = BatchRobot.from_params(config.params, config.motor)
         self._noise: Dict[Tuple[int, ...], np.ndarray] = {}
         self._scenario_sets: Dict[Tuple[int, ...], _ScenarioSet] = {}
-        self._torch_sims: "OrderedDict[Tuple[int, Tuple[int, ...]], object]" = OrderedDict()
+        self._torch_sims: "OrderedDict[Tuple[int, Tuple[int, ...], int], object]" = OrderedDict()
         self.n_sims = 0   # simulations run so far, for throughput reports
 
     @property
@@ -169,13 +188,13 @@ class BatchEvaluator:
             self._scenario_sets[seeds] = _ScenarioSet(pitch, seed_col, robot, n_base)
         return self._scenario_sets[seeds]
 
-    def _torch_simulator(self, batch_size: int, seeds: Tuple[int, ...], robot: BatchRobot):
-        """A captured TorchSimulator for this (padded) batch size and seed set, reused across calls.
+    def _torch_simulator(self, batch_size: int, seeds: Tuple[int, ...], robot: BatchRobot, n_gains: int):
+        """A captured TorchSimulator for this (padded) batch size, seed set and gain width, reused across calls.
 
         robot only sets which fields are per-simulation; their values are
         copied in on every run.
         """
-        key = (batch_size, seeds)
+        key = (batch_size, seeds, n_gains)
         if key in self._torch_sims:
             self._torch_sims.move_to_end(key)
             return self._torch_sims[key]
@@ -186,44 +205,52 @@ class BatchEvaluator:
             self._torch_sims.popitem(last=False)
             torch.cuda.empty_cache()
         sim = TorchSimulator(self.spec, robot, batch_size, noise=self.noise_for(seeds),
-                             schedule=self.schedule, device=self.device,
+                             schedule=self.schedule, device=self.device, n_gains=n_gains,
                              dtype=torch.float32 if self.dtype == np.float32 else torch.float64)
         self._torch_sims[key] = sim
         return sim
 
+    CHUNK_FIELDS = ("cost", "fell", "pitch_error", "effort", "velocity_error")
+
     def _simulate_chunk(self, gains, start_pitch, seed_index, robot: BatchRobot, seeds: Tuple[int, ...]):
-        """Run one chunk on the chosen backend; returns (cost, fell) arrays."""
+        """Run one chunk on the chosen backend; returns the CHUNK_FIELDS arrays of its BatchResult."""
         if self.backend == "numpy":
             result = simulate_batch(self.spec, robot, gains, start_pitch, noise=self.noise_for(seeds),
                                     seed_index=seed_index, schedule=self.schedule, dtype=self.dtype)
-            return result.cost, result.fell
+            return tuple(getattr(result, f) for f in self.CHUNK_FIELDS)
         n = len(gains)
         padded = -(-n // self.TORCH_BATCH_ROUNDING) * self.TORCH_BATCH_ROUNDING
         filler = np.concatenate([np.arange(n), np.zeros(padded - n, dtype=int)])   # extra rows copy row 0, ignored
         robot = robot.take(filler)
-        sim = self._torch_simulator(padded, seeds, robot)
+        sim = self._torch_simulator(padded, seeds, robot, gains.shape[1])
         result = sim.run(gains[filler], start_pitch[filler], seed_index[filler], robot=robot)
-        return result.cost[:n], result.fell[:n]
+        return tuple(getattr(result, f)[:n] for f in self.CHUNK_FIELDS)
 
     def evaluate_population(self, gains, seeds: Optional[Sequence[int]] = None) -> BatchEvalResult:
-        """Score P sets of gains, shape (P, 5), on every scenario (and twin, in robust mode)."""
+        """Score P sets of gains on every scenario (and twin, in robust mode).
+
+        Gains as the simulator takes them: (P, 4) or (P, 5) cascaded-PID gains,
+        or (P, 4 + m) LQR gains for controller="lqr".
+        """
         gains = np.atleast_2d(np.asarray(gains, dtype=float))
         seeds = tuple(self.train_seeds if seeds is None else seeds)
         s = self._scenario_set(seeds)
         n_total, P = len(s.pitch), len(gains)
 
         # Row i of the flattened batch is candidate i // n_total on simulation column i % n_total.
-        costs = np.empty(P * n_total)
-        fell = np.empty(P * n_total, dtype=bool)
+        out = {f: np.empty(P * n_total, dtype=bool if f == "fell" else float) for f in self.CHUNK_FIELDS}
         per_chunk = max(1, self.max_batch // n_total) * n_total
         for start in range(0, P * n_total, per_chunk):
             rows = np.arange(start, min(start + per_chunk, P * n_total))
             col = rows % n_total
-            costs[rows], fell[rows] = self._simulate_chunk(
+            chunk = self._simulate_chunk(
                 gains[rows // n_total], s.pitch[col], s.seed_col[col], s.robot.take(col), seeds)
+            for f, values in zip(self.CHUNK_FIELDS, chunk):
+                out[f][rows] = values
         self.n_sims += P * n_total
 
-        costs, fell = costs.reshape(P, n_total), fell.reshape(P, n_total)
+        out = {f: v.reshape(P, n_total) for f, v in out.items()}
+        costs = out["cost"]
         base = costs[:, :s.n_base]
         mean = base.mean(axis=1)
         if n_total > s.n_base:
@@ -231,7 +258,8 @@ class BatchEvaluator:
             objective = mean + self.robustness.sensitivity_weight * sensitivity
         else:
             sensitivity, objective = np.zeros(P), mean
-        return BatchEvalResult(mean, base, fell[:, :s.n_base].sum(axis=1), sensitivity, objective)
+        parts = {f: out[f][:, :s.n_base] for f in ("pitch_error", "effort", "velocity_error")}
+        return BatchEvalResult(mean, base, out["fell"][:, :s.n_base].sum(axis=1), sensitivity, objective, **parts)
 
     def evaluate_gains(self, gains: Sequence[float], seeds: Optional[Sequence[int]] = None) -> EvalResult:
         """One set of gains, returned as the CPU Evaluator's EvalResult.
@@ -244,9 +272,14 @@ class BatchEvaluator:
         return EvalResult(mean_cost=float(r.objective[0]), costs=tuple(float(c) for c in r.costs[0]),
                           n_fell=int(r.n_fell[0]))
 
+    def gains_for(self, points) -> np.ndarray:
+        """Decoded search-space points (P, dim) -> the gains the simulator runs (P, n)."""
+        points = np.atleast_2d(np.asarray(points, dtype=float))
+        return points if self.to_gains is None else np.atleast_2d(self.to_gains(points))
+
     def evaluate_units(self, units) -> np.ndarray:
         """(P, dim) unit-cube points -> (P,) objective values on the training seeds."""
-        return self.evaluate_population(decode_units(self.space, np.atleast_2d(units))).objective
+        return self.evaluate_population(self.gains_for(decode_units(self.space, np.atleast_2d(units)))).objective
 
     def __call__(self, x):
         """scipy convention: x of shape (dim,) -> float, or (dim, S) with vectorized=True -> (S,)."""

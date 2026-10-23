@@ -27,7 +27,7 @@ from typing import Optional
 
 import numpy as np
 
-from .controller import cascaded_update, five_gain_columns
+from .controller import LQR_STATE_GAINS, cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
 from .physics import rk4_step
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule
@@ -49,10 +49,13 @@ class TorchSimulator:
         dtype=None,
         use_graphs: Optional[bool] = None,
         record: bool = False,
+        n_gains: Optional[int] = None,
     ):
         """noise: (n_ticks, 4, n_seeds) table from schedule.noise_table, or None for a perfect sensor.
         dtype: torch.float32 (default; fast) or torch.float64 (for checking against NumPy).
         record: also keep the full state history on the GPU (n_steps x B x 4 values).
+        n_gains: gains per simulation. Cascaded: always 5 (a 4-gain set gets kv_i = 0).
+        LQR (spec.controller "lqr"): required, 4 + the commands in flight its gains feed back.
         """
         import torch
 
@@ -66,6 +69,10 @@ class TorchSimulator:
         self.use_graphs = device.type == "cuda" if use_graphs is None else use_graphs
         self.record = record
         self.robot = robot.to_torch(device, dtype)
+        self.lqr = spec.controller == "lqr"
+        if self.lqr and (n_gains is None or n_gains < LQR_STATE_GAINS):
+            raise ValueError(f"an LQR simulator needs n_gains >= {LQR_STATE_GAINS}, got {n_gains}")
+        self.n_gains = n_gains if self.lqr else 5
         tensor = lambda a, dt=dtype: torch.as_tensor(np.asarray(a), dtype=dt, device=device)
 
         # ---- lookup tables, indexed on the GPU by the step / tick counters ----
@@ -81,13 +88,15 @@ class TorchSimulator:
 
         # ---- per-simulation inputs, copied in before each run ----
         zeros = lambda dt=dtype: torch.zeros(B, dtype=dt, device=device)
-        self.gains = torch.zeros(5, B, dtype=dtype, device=device)
+        self.gains = torch.zeros(self.n_gains, B, dtype=dtype, device=device)
         self.start_pitch = zeros()
         self.seed_index = zeros(torch.long)
 
         # ---- state, updated in place every step ----
         self.state = tuple(zeros() for _ in range(4))
-        self.pitch_integral, self.velocity_integral, self.setpoint = zeros(), zeros(), zeros()
+        self.pitch_integral, self.velocity_integral, self.setpoint = zeros(), zeros(), zeros()   # setpoint stays 0 for the LQR
+        n_in_flight = self.n_gains - LQR_STATE_GAINS if self.lqr else 0
+        self.in_flight = torch.zeros(n_in_flight, B, dtype=dtype, device=device)   # LQR commands in flight, oldest first
         self.ring = torch.zeros(R + 1, B, dtype=dtype, device=device)
         self.alive = zeros(torch.bool)
         self.fall_time = zeros()
@@ -108,15 +117,24 @@ class TorchSimulator:
             x_dot = x_dot + spec.velocity_std * n[0]
             theta = theta + spec.pitch_std * n[1]
             theta_dot = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
-        kp, ki, kd, kv_p, kv_i = self.gains
-        command, setpoint, pitch_integral, velocity_integral = cascaded_update(
-            x_dot, theta, theta_dot, self.goal_per_tick[self.tick], spec.control_dt,
-            kp, ki, kd, kv_p, kv_i, self.pitch_integral, self.velocity_integral,
-            self.robot.max_torque, spec.max_pitch_command,
-            spec.pitch_integral_limit, spec.velocity_integral_limit, xp,
-        )
-        self.setpoint.copy_(setpoint)
-        self.pitch_integral.copy_(pitch_integral)
+        if self.lqr:
+            command, velocity_integral = lqr_update(
+                x_dot, theta, theta_dot, self.goal_per_tick[self.tick], spec.control_dt,
+                self.gains, self.velocity_integral, self.in_flight,
+                self.robot.max_torque, spec.velocity_integral_limit, xp,
+            )
+            if len(self.in_flight):
+                self.in_flight.copy_(self.torch.roll(self.in_flight, -1, 0))   # every command ages by a tick
+                self.in_flight[-1].copy_(command)                             # and the new one joins the back
+        else:
+            command, setpoint, pitch_integral, velocity_integral = cascaded_update(
+                x_dot, theta, theta_dot, self.goal_per_tick[self.tick], spec.control_dt,
+                *self.gains, self.pitch_integral, self.velocity_integral,
+                self.robot.max_torque, spec.max_pitch_command,
+                spec.pitch_integral_limit, spec.velocity_integral_limit, xp,
+            )
+            self.setpoint.copy_(setpoint)
+            self.pitch_integral.copy_(pitch_integral)
         self.velocity_integral.copy_(velocity_integral)
         self.ring.index_copy_(0, self.write_slot_per_tick[self.tick], command.unsqueeze(0))
         self.tick.add_(1)
@@ -150,7 +168,7 @@ class TorchSimulator:
     # ---- running ---------------------------------------------------------
 
     def _reset(self):
-        for buffer in (*self.state, self.pitch_integral, self.velocity_integral, self.setpoint,
+        for buffer in (*self.state, self.pitch_integral, self.velocity_integral, self.setpoint, self.in_flight,
                        self.ring, self.pitch_error, self.effort, self.velocity_error, self.step, self.tick):
             buffer.zero_()
         self.state[2].copy_(self.start_pitch)
@@ -179,17 +197,22 @@ class TorchSimulator:
         self._graphs = (control, physics)
 
     def run(self, gains, start_pitch, seed_index=None, robot: Optional[BatchRobot] = None) -> BatchResult:
-        """gains (B, 4) [kp, ki, kd, kv_p] or (B, 5) with kv_i; start_pitch scalar or (B,);
-        seed_index (B,) column of the noise table.
+        """gains (B, 4) [kp, ki, kd, kv_p] or (B, 5) with kv_i, or (B, n_gains) LQR gains;
+        start_pitch scalar or (B,); seed_index (B,) column of the noise table.
 
         robot: new values for the per-simulation robot parameters (the fields
         that were (B,) arrays in the robot this simulator was built with).
         Other fields keep the values it was built with.
         """
         torch, s = self.torch, self.schedule
-        gains = five_gain_columns(gains)
-        if len(gains) != self.B:
-            raise ValueError(f"gains must have shape ({self.B}, 4) or ({self.B}, 5), got {np.shape(gains)}")
+        if self.lqr:
+            gains = lqr_gain_columns(gains)
+            if gains.shape != (self.B, self.n_gains):
+                raise ValueError(f"LQR gains must have shape ({self.B}, {self.n_gains}), got {gains.shape}")
+        else:
+            gains = five_gain_columns(gains)
+            if len(gains) != self.B:
+                raise ValueError(f"gains must have shape ({self.B}, 4) or ({self.B}, 5), got {np.shape(gains)}")
         if self.noise is not None and seed_index is None:
             raise ValueError("seed_index is required when noise is given")
         if robot is not None:

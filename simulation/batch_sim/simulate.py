@@ -21,7 +21,7 @@ from typing import Optional
 
 import numpy as np
 
-from .controller import cascaded_update, five_gain_columns
+from .controller import cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
 from .physics import rk4_step
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule
@@ -52,7 +52,9 @@ def simulate_batch(
 ) -> BatchResult:
     """Simulate B robots, each with its own gains and starting tilt.
 
-    gains       (B, 4): kp, ki, kd, kv_p (the project's gain set), or (B, 5) with kv_i as well
+    gains       spec.controller "cascaded": (B, 4) kp, ki, kd, kv_p (the project's gain set),
+                or (B, 5) with kv_i as well. "lqr": (B, 4 + m) LQR gains (balance_sim.lqr),
+                the last m for the commands in flight.
     start_pitch scalar or (B,) initial body tilt (rad)
     noise       (n_ticks, 4, n_seeds) from schedule.noise_table, or None for a perfect sensor
     seed_index  (B,) which noise column each simulation uses (required with noise)
@@ -61,9 +63,10 @@ def simulate_batch(
     dtype       np.float64 to match the CPU code; np.float32 to preview GPU precision
     """
     schedule = build_schedule(spec) if schedule is None else schedule
-    gains = five_gain_columns(gains).astype(dtype)
+    lqr = spec.controller == "lqr"
+    gains = (lqr_gain_columns(gains) if lqr else five_gain_columns(gains)).astype(dtype)
     B = gains.shape[0]
-    kp, ki, kd, kv_p, kv_i = gains.T
+    columns = tuple(gains.T)
     robot = robot.astype(dtype)
     torque_limit = robot.max_torque
     dt, control_dt, spc = spec.dt, spec.control_dt, schedule.steps_per_control
@@ -77,7 +80,8 @@ def simulate_batch(
 
     zeros = lambda: np.zeros(B, dtype=dtype)
     state = (zeros(), zeros(), np.broadcast_to(np.asarray(start_pitch, dtype=dtype), (B,)).copy(), zeros())
-    pitch_integral, velocity_integral, setpoint = zeros(), zeros(), zeros()
+    pitch_integral, velocity_integral, setpoint = zeros(), zeros(), zeros()   # setpoint stays 0 for the LQR
+    in_flight = [zeros() for _ in range(gains.shape[1] - 4)] if lqr else []    # LQR commands in flight, oldest first
     ring = np.zeros((schedule.ring_size, B), dtype=dtype)
     torque, active = zeros(), -1
     alive = np.ones(B, dtype=bool)
@@ -95,12 +99,20 @@ def simulate_batch(
                 x_dot = x_dot + spec.velocity_std * n[0]
                 theta = theta + spec.pitch_std * n[1]
                 theta_dot = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
-            command, setpoint, pitch_integral, velocity_integral = cascaded_update(
-                x_dot, theta, theta_dot, goal_per_tick[j], control_dt,
-                kp, ki, kd, kv_p, kv_i, pitch_integral, velocity_integral,
-                torque_limit, spec.max_pitch_command,
-                spec.pitch_integral_limit, spec.velocity_integral_limit,
-            )
+            if lqr:
+                command, velocity_integral = lqr_update(
+                    x_dot, theta, theta_dot, goal_per_tick[j], control_dt,
+                    columns, velocity_integral, in_flight,
+                    torque_limit, spec.velocity_integral_limit,
+                )
+                in_flight = in_flight[1:] + [command] if in_flight else in_flight
+            else:
+                command, setpoint, pitch_integral, velocity_integral = cascaded_update(
+                    x_dot, theta, theta_dot, goal_per_tick[j], control_dt,
+                    *columns, pitch_integral, velocity_integral,
+                    torque_limit, spec.max_pitch_command,
+                    spec.pitch_integral_limit, spec.velocity_integral_limit,
+                )
             ring[j % schedule.ring_size] = command
         if schedule.active_command[k] != active:
             active = schedule.active_command[k]

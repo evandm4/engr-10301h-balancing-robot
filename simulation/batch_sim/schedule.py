@@ -13,6 +13,8 @@ from typing import Callable, Sequence
 
 import numpy as np
 
+CONTROLLERS = ("cascaded", "lqr")
+
 
 @dataclass(frozen=True)
 class SimSpec:
@@ -37,6 +39,9 @@ class SimSpec:
     velocity_weight: float
     pitch_reference: str                    # "commanded" or "upright"
     latency: float = 0.0
+    # Which controller the gains are for: "cascaded" (CascadedPIDController) or
+    # "lqr" (LQRController; its integral is capped at velocity_integral_limit).
+    controller: str = "cascaded"
     # Sensor noise (standard deviations per control tick), as in SensorNoise.
     pitch_std: float = 0.0
     pitch_rate_std: float = 0.0
@@ -49,6 +54,8 @@ class SimSpec:
             raise ValueError("latency must be non-negative")
         if self.pitch_reference not in ("commanded", "upright"):
             raise ValueError(f"pitch_reference must be 'commanded' or 'upright', got {self.pitch_reference!r}")
+        if self.controller not in CONTROLLERS:
+            raise ValueError(f"controller must be one of {CONTROLLERS}, got {self.controller!r}")
 
 
 @dataclass(frozen=True)

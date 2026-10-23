@@ -7,8 +7,8 @@ check this package against it.
 
 from .robot import BatchRobot
 from .physics import actuator_torque, derivatives, rk4_step
-from .controller import cascaded_update, five_gain_columns, limited_integral
-from .schedule import Schedule, SimSpec, build_schedule, noise_table
+from .controller import cascaded_update, five_gain_columns, limited_integral, lqr_gain_columns, lqr_update
+from .schedule import CONTROLLERS, Schedule, SimSpec, build_schedule, noise_table
 from .simulate import BatchResult, simulate_batch
 from .xp import torch_ops
 
@@ -23,6 +23,9 @@ __all__ = [
     "cascaded_update",
     "five_gain_columns",
     "limited_integral",
+    "lqr_update",
+    "lqr_gain_columns",
+    "CONTROLLERS",
     "SimSpec",
     "Schedule",
     "build_schedule",

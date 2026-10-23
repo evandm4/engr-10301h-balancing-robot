@@ -103,6 +103,10 @@ class Evaluator:
 
     def run(self, gains: Sequence[float], start_pitch: float, seed: int) -> SimResult:
         """Simulate one scenario. Also useful for plotting a specific run."""
+        return self.run_controller(self.controller(gains), start_pitch, seed)
+
+    def run_controller(self, controller, start_pitch: float, seed: int) -> SimResult:
+        """Simulate one scenario with any balance_sim Controller (e.g. an LQRController)."""
         c = self.config
         dyn = self.dynamics()
         sensor = SensorNoise(
@@ -115,7 +119,7 @@ class Evaluator:
         )
         return simulate(
             dyn,
-            self.controller(gains),
+            controller,
             duration=c.duration,
             dt=c.dt,
             initial_state=dyn.initial_state(start_pitch),

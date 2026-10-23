@@ -1,0 +1,15 @@
+{
+  "method": "pid_ml_cma_es",
+  "gains": {
+    "kp": 1.1013565258820688,
+    "ki": 0.6347462260579488,
+    "kd": 0.10626305348688117,
+    "kv_p": 0.3248865701866434
+  },
+  "best_training_cost": 0.9400580831368764,
+  "n_evals": 4800,
+  "elapsed_s": 68.07,
+  "controller": "PID, ML-tuned",
+  "backend": "torch",
+  "dtype": "float32"
+}

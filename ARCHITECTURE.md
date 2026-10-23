@@ -8,6 +8,7 @@ See also:
 - `config.py` (project root) — the single place to edit the robot, actuator model, sensor noise, delays, cost weights, search ranges, and the batched tuner's robustness test.
 - `simulation/CONDITIONS.md` — the running list of real-world effects the simulation includes.
 - `BATCHED.md` — the batched (NumPy/GPU) engine: design, verification, speed.
+- `PHYSICS.md` — derivation of every equation in the simulator, checked numerically by `simulation/examples/physics_checks.py`, with limitations and next steps.
 - `archive/CHANGES_FROM_ORIGINAL.md` — what was corrected from the first version of the code.
 
 ## Status legend
@@ -111,6 +112,8 @@ flowchart TD
 | Pitch PID controller | simulation/balance_sim/controllers.py | Built |
 | Cascaded velocity + pitch controller | simulation/balance_sim/controllers.py | Built (P outer loop: kv_i dropped after it always tuned to 0; no position hold yet) |
 | Goal velocity profiles | simulation/balance_sim/controllers.py | Built (constant, step profile) |
+| LQR controller (delay-aware design on the linearized robot) | simulation/balance_sim/lqr.py, planar2d.py (`linearize`) | Built (reference and batched, NumPy + GPU; see LQR.md) |
+| Linear loop stability and delay margins, either controller | simulation/balance_sim/stability.py | Built (reproduces PHYSICS.md 7.4) |
 | Simulator loop | simulation/balance_sim/simulator.py | Built (RK4, control-rate hold, latency, sensor hookup, goal recording) |
 | Metrics / cost function | simulation/balance_sim/metrics.py | Built (weights now set via config.py) |
 | Batched simulator (NumPy + PyTorch/CUDA graphs) | simulation/batch_sim/ | Built (bit-identical to the reference in float64 on NumPy) |
@@ -127,6 +130,8 @@ flowchart TD
 | Benchmarks | optimization/benchmark.py, benchmark_batch.py | Built |
 | Tuner + config tests | optimization/tests/ | Built (166 tests in total with simulation/tests) |
 | Config snapshot saved with every run | config.py (`snapshot()`), both run scripts | Built |
+| LQR tuning: weights, or gains directly (kept nominally stable) | optimization/tuning/search_space.py, config.py (`LQRConfig`) | Built |
+| PID vs LQR comparison (hand-designed and ML-tuned, latency sweep) | optimization/run_lqr_comparison.py, LQR.md | Built |
 | Reinforcement learning | optimization/ | Planned |
 | Literature review | literature/, paper/ | Planned |
 | Physical robot | hardware/ | Stretch |
@@ -160,3 +165,4 @@ flowchart TD
 - 2026-09-28: Cleanup. The corrected code (CPU/) is now the project's only simulation/, optimization/ and config.py, with the batched engine alongside it (simulation/batch_sim, optimization/batch_tuning, run_batch_tuning.py, benchmark_batch.py). The robustness settings moved into config.py. One pytest.ini, one requirements.txt, one results/ (tuning/, batch_tuning/, benchmarks/). The original code and its results moved to archive/original/. Added README.md describing the run order. Tests: 153.
 - 2026-09-28: Every project value now lives only in config.py: RobotParams, MotorParams, EvalConfig, SimSpec, BatchRobot, cost() and the search space lost their duplicate defaults, SensorNoise.typical() was removed, and the controllers' integral limits (previously hardcoded in two places) moved into ControllerConfig. The tests build from CONFIG. Dropped kv_i: the project's gain set is [kp, ki, kd, kv_p] (the controllers and both simulators still accept a fifth gain). The two tuning scripts share their results table, bound check and summary figure (tuning/reporting.py, SearchSpace.at_bounds), and the batched evaluator's noise_for / simulations_per_evaluation are public. The hand-tuned baseline without kv_i scores 0.243 (reference validation) instead of 0.277; the tuned optimum is unchanged at 0.108. Tests: 166.
 - 2026-09-30: Added simulation/animate.py, an optional viewer: an animated side view of one or more runs (wheel, body, center of mass, commanded lean) with pitch / velocity / torque plots, saved as GIF or MP4 if wanted. Runs are simulated with the reference simulator first and then played back, or replayed from trajectory CSVs (balance_sim.save_trajectory / load_trajectory). Both tuning scripts now save their example runs to <results>/trajectories/. Tests: 172.
+- 2026-10-14: Added an LQR controller to the base robot (simulation/balance_sim/lqr.py): full-state feedback designed on the linearized model (`Planar2D.linearize`), discretized at the control rate with the latency built in exactly (the commands in flight become part of the state). It runs in the reference simulator and in batch_sim (NumPy and GPU, bit-identical to the reference in float64 on NumPy). `balance_sim/stability.py` gives the exact stability of the sampled, delayed linear loop for either controller, and so every controller's delay margin. The tuners can search LQR weights or LQR gains (`LQRConfig` in config.py; `BatchEvaluator(controller="lqr", to_gains=...)`), and `optimization/run_lqr_comparison.py` compares hand-tuned and ML-tuned PID with four LQR variants on one common score. Design, results and findings: LQR.md. Tests: 262.

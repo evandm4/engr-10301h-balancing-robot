@@ -46,6 +46,32 @@ def critical_pitch_gain(p: RobotParams) -> float:
     return a * ml * p.gravity / (a + ml / p.wheel_radius)
 
 
+def linearize(p: RobotParams):
+    """The model linearized about upright: d/dt [x, x_dot, theta, theta_dot] = A s + B tau.
+
+    PHYSICS.md 3.1, plus the viscous wheel friction (zero by default), which
+    takes b (x_dot / r - theta_dot) off the motor torque. The actuator is taken
+    as unsaturated: below its limits the DC motor model delivers the command
+    exactly (PHYSICS.md 4.3). Returns A (4, 4) and B (4, 1).
+    """
+    ml = p.body_mass * p.body_com_height
+    a = p.body_mass + p.wheel_mass + p.wheel_inertia / p.wheel_radius**2
+    d = p.body_mass * p.body_com_height**2 + p.body_inertia
+    det = a * d - ml * ml
+    # Accelerations per unit of net torque, from the 2x2 system in derivatives().
+    x_per_torque = (d / p.wheel_radius + ml) / det
+    theta_per_torque = -(a + ml / p.wheel_radius) / det
+    A = np.zeros((4, 4))
+    A[0, 1] = A[2, 3] = 1.0
+    A[1, 2] = -ml * ml * p.gravity / det
+    A[3, 2] = a * ml * p.gravity / det
+    friction = np.array([-p.wheel_friction / p.wheel_radius, p.wheel_friction])   # net torque per (x_dot, theta_dot)
+    A[1, [1, 3]] += x_per_torque * friction
+    A[3, [1, 3]] += theta_per_torque * friction
+    B = np.array([[0.0], [x_per_torque], [0.0], [theta_per_torque]])
+    return A, B
+
+
 class Planar2D(Dynamics):
     """fall_angle (rad): past this pitch the robot counts as fallen; the
     project's value is TimingConfig.fall_angle_deg in config.py.
@@ -95,6 +121,10 @@ class Planar2D(Dynamics):
     def critical_pitch_gain(self) -> float:
         """See the module-level critical_pitch_gain."""
         return critical_pitch_gain(self.p)
+
+    def linearize(self):
+        """See the module-level linearize."""
+        return linearize(self.p)
 
     def energy(self, state: np.ndarray) -> float:
         """Total mechanical energy (kinetic + potential). Useful for tests."""

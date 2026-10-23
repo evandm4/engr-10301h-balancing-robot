@@ -1,0 +1,16 @@
+{
+  "method": "lqr_ml_gains_differential_evolution",
+  "gains": {
+    "s_velocity": 0.2665233019640505,
+    "s_pitch": 0.2858870821985888,
+    "s_pitch_rate": 0.26433740199971095,
+    "s_command_1": 0.07857795035669575,
+    "s_command_2": 0.09151583169915369
+  },
+  "best_training_cost": 0.9511333171526591,
+  "n_evals": 4920,
+  "elapsed_s": 61.61,
+  "controller": "LQR, ML-tuned gains",
+  "backend": "torch",
+  "dtype": "float32"
+}

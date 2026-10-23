@@ -3,11 +3,12 @@
 One config, one simulator (with a batched version of it), one tuner (with a batched version of it), one results folder.
 
 ```
-config.py                  every adjustable number (robot, motor, sensor, timing, cost, scenario, search bounds, robustness)
+config.py                  every adjustable number (robot, motor, sensor, timing, cost, scenario, search bounds, LQR, robustness)
 simulation/
-  balance_sim/             reference simulator: one robot at a time, readable, the source of truth
+  balance_sim/             reference simulator: one robot at a time, readable, the source of truth;
+                           controllers: cascaded PID and LQR (lqr.py), plus loop stability (stability.py)
   batch_sim/               the same simulator stepping many robots at once (NumPy on the CPU, or PyTorch on the GPU)
-  examples/                demo runs with plots
+  examples/                demo runs with plots; physics_checks.py reproduces every number in PHYSICS.md
   animate.py               watch runs: animated side view + live plots, simulated or replayed from CSV
   tests/                   balance_sim tests; batch_sim checked against balance_sim
   CONDITIONS.md            which real-world effects are modeled
@@ -16,17 +17,39 @@ optimization/
   batch_tuning/            batched tuner: BatchEvaluator, random search / DE / CMA-ES, robust scoring
   run_tuning.py            tune with the reference code
   run_batch_tuning.py      tune with the batched code (robust scoring, NumPy or GPU)
+  run_lqr_comparison.py    hand-tuned and ML-tuned PID vs four LQR variants, on one score (LQR.md)
   benchmark.py             speed of the reference code
   benchmark_batch.py       speed of the batched code
   tests/                   tuner and config tests
 results/
   tuning/                  run_tuning.py output
   batch_tuning/            run_batch_tuning.py output
+  lqr_comparison/          run_lqr_comparison.py output
   benchmarks/              both benchmarks
 archive/                   the superseded original code and its results (unused)
 ```
 
-More detail: `ARCHITECTURE.md` (design, status, change log), `BATCHED.md` (the batched/GPU engine, its verification and speed), `simulation/CONDITIONS.md`.
+More detail: `ARCHITECTURE.md` (design, status, change log), `BATCHED.md` (the batched/GPU engine, its verification and speed), `PHYSICS.md` (derivation of every equation in the simulator, its limits, and what to improve), `LQR.md` (the LQR controller, and how it compares with the PID), `simulation/CONDITIONS.md`.
+
+## Side project: pivot robot
+
+An offshoot that adds a servo-driven pivot on top of the robot with a second body piece on it (a third degree of freedom and a second actuator). It lives next to the main system and changes none of it: it reuses `balance_sim`'s motor, sensor, cascaded PID and cost code, and `tuning`'s search methods, by calling them. Shared values (wheels, motors, noise, timing, scenario, cost weights) come from `config.py`; only the new ones are in `pivot_config.py`.
+
+```
+pivot_config.py                         body split, servo, pivot sensor, pivot gains, LQR weights, extra search bounds
+simulation/pivot_sim/                   3-DOF model, servo, simulator, cascaded PID + pivot loop, LQR, cost, plots
+simulation/examples/run_pivot_demo.py   held vs level vs LQR vs tuned, plotted or animated
+simulation/tests/test_pivot.py          its tests (run with the rest by python -m pytest)
+optimization/pivot_tuning/              PivotEvaluator for the existing search methods
+optimization/run_pivot_tuning.py        tune its 7 gains; output in results/pivot_tuning/
+```
+
+```
+python simulation/examples/run_pivot_demo.py --animate
+python optimization/run_pivot_tuning.py --workers -1 --compare-held
+```
+
+Details (derivation, servo model, controllers, results so far): `PIVOT.md`.
 
 ## What runs, in order
 
@@ -108,13 +131,14 @@ flowchart LR
 From the project folder, with `C:\venvs\balancebot` active:
 
 ```
-python -m pytest                                                     # every test (172), ~1.5 min
+python -m pytest                                                     # every test (262: 24 the pivot side project, 65 the LQR), ~1.5 min
 python simulation/examples/run_velocity_demo.py                      # one run, plotted
 python simulation/animate.py                                         # animate hand-tuned vs the latest tuning result
 python simulation/animate.py --gains 1.03 0.2 0.1 0.33 --speed 0.5   # any gains, slow motion
 python simulation/animate.py --save robot.gif                        # save instead of showing
 python optimization/run_tuning.py --workers -1 --bayesian            # reference tuner
 python optimization/run_batch_tuning.py --backend torch --float32    # batched robust tuner on the GPU, ~70 s
+python optimization/run_lqr_comparison.py --backend torch --float32  # PID vs LQR, tuned and compared, on the GPU, ~10 min
 python optimization/benchmark.py                                     # reference speed baseline
 python optimization/benchmark_batch.py --backend torch --float32     # batched speed
 ```

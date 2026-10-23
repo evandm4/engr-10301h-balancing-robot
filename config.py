@@ -42,6 +42,8 @@ from balance_sim import (
     CascadedPIDController,
     DCMotorActuator,
     IdealActuator,
+    LQRController,
+    LQRWeights,
     MotorParams,
     PIDController,
     Planar2D,
@@ -49,6 +51,7 @@ from balance_sim import (
     SensorNoise,
     cost,
     critical_pitch_gain,
+    lqr_gain,
     step_profile,
 )
 
@@ -172,7 +175,8 @@ class ControllerConfig:
 
     max_lean_deg: float = 25.0         # cap on the outer (velocity) loop's commanded lean angle
     pitch_integral_limit: float = 1.0  # rad s, cap on the pitch loop's integral (anti-windup also applies)
-    velocity_integral_limit: float = 0.5   # m, cap on the velocity loop's integral (unused while kv_i = 0)
+    velocity_integral_limit: float = 0.5   # m, cap on the velocity loop's integral (unused while kv_i = 0),
+                                           # and on the LQR's integral of velocity error
     # kp, ki, kd (pitch loop), kv_p (velocity loop): the hand-picked baseline
     # every tuning run is compared against.
     hand_tuned_gains: Tuple[float, float, float, float] = (4.0, 0.5, 0.15, 0.1)
@@ -209,8 +213,8 @@ class ScenarioConfig:
     """What the tuner's evaluator asks the robot to do, and the range of
     conditions it's scored under."""
 
-    duration_s: float = 10.0
-    goal_steps: Tuple[Tuple[float, float], ...] = ((2.0, 0.8), (3.5, 1.4), (6.0, -0.6), (9.0, 1.0))  # (start time s, goal m/s)
+    duration_s: float = 12.0
+    goal_steps: Tuple[Tuple[float, float], ...] = ((2.0, 1.0), (3.5, 0), (6.0, -0.6), (9.0, 0.2))  # (start time s, goal m/s)
     start_pitches_deg: Tuple[float, ...] = (5.73, -4.58, 2.86)                 # initial disturbance, each tried with every seed
     train_seeds: Tuple[int, ...] = (1, 2, 3)                                   # sensor-noise seeds scored during tuning
     validation_seeds: Tuple[int, ...] = tuple(range(100, 110))                 # unseen seeds, checked after tuning
@@ -234,6 +238,41 @@ class SearchConfig:
     ki_max: float = 5.0
     kd_max: float = 1.0
     kv_p_max: float = 0.4
+
+
+# ------------------------------------------------------------------- LQR ---
+@dataclass(frozen=True)
+class LQRConfig:
+    """The LQR controller (simulation/balance_sim/lqr.py; LQR.md): full-state
+    feedback designed on the linearized nominal robot, for the configured
+    control period and latency. A design minimizes, per second,
+
+        pitch^2 + w_velocity (velocity error)^2 + w_pitch_rate (pitch rate)^2
+        + w_integral (integral of velocity error)^2 + w_torque torque^2
+
+    with pitch from upright. The "cost-matched" design takes its weights from
+    CostConfig (w_velocity = velocity_weight, w_torque = effort_weight, no rate
+    or integral term): on the linear model it is the optimum of the cost the
+    tuner scores. The ML-tuned design searches the four weights within the
+    bounds below, on a log scale (only ratios matter, so pitch stays at 1).
+    The integral is capped at ControllerConfig.velocity_integral_limit.
+
+    The "direct" search skips the weights and tunes the gains themselves:
+    each of the cost-matched design's gains scaled by a factor in
+    [1 / direct_gain_scale, direct_gain_scale], keeping the nominal linear
+    loop stable (tuning.LQRGainScaling).
+    """
+
+    w_velocity_bounds: Tuple[float, float] = (1e-2, 1e2)
+    w_pitch_rate_bounds: Tuple[float, float] = (1e-6, 1.0)     # low end: no rate term, in practice
+    w_torque_bounds: Tuple[float, float] = (1e-4, 1e2)
+    w_integral_bounds: Tuple[float, float] = (1e-6, 10.0)      # low end: no integral action, in practice
+    direct_gain_scale: float = 20.0
+
+    @property
+    def bounds(self) -> dict:
+        return {"w_velocity": self.w_velocity_bounds, "w_pitch_rate": self.w_pitch_rate_bounds,
+                "w_torque": self.w_torque_bounds, "w_integral": self.w_integral_bounds}
 
 
 # ------------------------------------------------------------ ROBUSTNESS ---
@@ -281,6 +320,7 @@ class ProjectConfig:
     cost: CostConfig = field(default_factory=CostConfig)
     scenario: ScenarioConfig = field(default_factory=ScenarioConfig)
     search: SearchConfig = field(default_factory=SearchConfig)
+    lqr: LQRConfig = field(default_factory=LQRConfig)
     robustness: RobustnessSettings = field(default_factory=RobustnessSettings)
 
     # ---- builders: turn this configuration into the objects other code uses ----
@@ -321,6 +361,27 @@ class ProjectConfig:
             max_pitch_command=self.controller.max_lean_rad,
             integral_limit=self.controller.velocity_integral_limit,
         )
+
+    def cost_matched_lqr_weights(self) -> LQRWeights:
+        """LQR weights equal to the cost function's own (CostConfig), pitch from upright."""
+        return LQRWeights(velocity=self.cost.velocity_weight, pitch=1.0, pitch_rate=0.0,
+                          torque=self.cost.effort_weight)
+
+    def build_lqr_gain(self, weights: Optional[LQRWeights] = None, design_latency: Optional[float] = None):
+        """LQR gains for the nominal robot and the configured control period.
+        weights default to the cost-matched ones; design_latency to the
+        configured latency (0 gives the design that ignores latency)."""
+        weights = self.cost_matched_lqr_weights() if weights is None else weights
+        latency = self.timing.latency_s if design_latency is None else design_latency
+        return lqr_gain(self.build_robot_params(), weights, self.timing.control_dt_s, latency)
+
+    def build_lqr_controller(self, gain=None, **design) -> LQRController:
+        """An LQRController with the configured goal profile, torque limit and
+        integral cap. gain: these LQR gains; None designs them with
+        build_lqr_gain(**design)."""
+        gain = self.build_lqr_gain(**design) if gain is None else gain
+        return LQRController(gain, self.robot.max_torque, goal=step_profile(self.scenario.goal_steps),
+                             integral_limit=self.controller.velocity_integral_limit)
 
     def score(self, result) -> float:
         """Score a finished run with the configured cost weights."""
@@ -378,6 +439,7 @@ class ProjectConfig:
             motor = self.actuator.build_motor_params()
             derived["motor_stall_torque_limit"] = float(motor.stall_torque_limit)   # N m, total
             derived["motor_no_load_speed_rad_s"] = float(motor.no_load_speed)       # output shaft
+        derived["cost_matched_lqr_gain"] = [float(k) for k in self.build_lqr_gain()]
         data["derived"] = derived
         return data
 
@@ -407,6 +469,39 @@ class ProjectConfig:
             kd_max=self.search.kd_max,
             kv_p_max=self.search.kv_p_max,
         )
+
+    def build_lqr_space(self):
+        """Build a tuning.SearchSpace over the LQR weights (LQRConfig bounds)."""
+        from tuning import lqr_weight_space
+
+        return lqr_weight_space(self.lqr.bounds)
+
+    def build_lqr_designer(self, design_latency: Optional[float] = None):
+        """Build the tuning.LQRWeightDesigner that turns searched weights into
+        gains: nominal robot, configured control period, design_latency
+        (default: the configured latency)."""
+        from tuning import LQRWeightDesigner
+
+        latency = self.timing.latency_s if design_latency is None else design_latency
+        return LQRWeightDesigner(self.build_robot_params(), self.timing.control_dt_s, latency)
+
+    def build_direct_lqr_space(self):
+        """Build a tuning.SearchSpace over the LQR gains themselves, around the
+        cost-matched design (LQRConfig.direct_*)."""
+        from balance_sim import delayed_commands
+        from tuning import lqr_gain_space
+
+        n_in_flight = delayed_commands(self.timing.control_dt_s, self.timing.latency_s)
+        return lqr_gain_space(n_in_flight, self.lqr.direct_gain_scale)
+
+    def build_direct_lqr_designer(self):
+        """Build the tuning.LQRGainScaling for build_direct_lqr_space: scales the
+        cost-matched gains, keeping the nominal linear loop at the configured
+        latency stable."""
+        from tuning import LQRGainScaling
+
+        return LQRGainScaling(self.build_lqr_gain(), self.build_robot_params(),
+                              self.timing.control_dt_s, self.timing.latency_s)
 
 
 # Edit values above to change the project. To try an alternative all at once
