@@ -1,0 +1,16 @@
+{
+  "method": "lqr_ml_gains_cma_es",
+  "gains": {
+    "s_velocity": 1.041866679279145,
+    "s_pitch": 0.3838513471376615,
+    "s_pitch_rate": 0.7046288653810464,
+    "s_command_1": 0.05000021478134972,
+    "s_command_2": 0.05000041736254519
+  },
+  "best_training_cost": 0.1332827083269755,
+  "n_evals": 4800,
+  "elapsed_s": 57.06,
+  "controller": "LQR, ML-tuned gains",
+  "backend": "torch",
+  "dtype": "float32"
+}

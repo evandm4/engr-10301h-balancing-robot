@@ -1,0 +1,14 @@
+{
+  "method": "lqr_ml_weights_differential_evolution",
+  "gains": {
+    "w_velocity": 0.00014074806926909553,
+    "w_torque": 99.99986973894595,
+    "w_integral": 307.68250856304314
+  },
+  "best_training_cost": 0.18479132334391277,
+  "n_evals": 4920,
+  "elapsed_s": 63.91,
+  "controller": "LQR, ML-tuned weights",
+  "backend": "torch",
+  "dtype": "float32"
+}

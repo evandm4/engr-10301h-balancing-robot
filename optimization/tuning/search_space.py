@@ -8,7 +8,7 @@ spends as much effort between 0.3 and 3 as between 3 and 30.
 
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -98,7 +98,15 @@ def cascaded_pid_space(
 LQR_WEIGHT_NAMES = ("w_velocity", "w_pitch_rate", "w_torque", "w_integral")
 
 
-def lqr_weight_space(bounds: Dict[str, Tuple[float, float]]) -> SearchSpace:
+def _searched_weights(fixed: Optional[Dict[str, float]]) -> List[str]:
+    fixed = fixed or {}
+    unknown = set(fixed) - set(LQR_WEIGHT_NAMES)
+    if unknown:
+        raise ValueError(f"unknown LQR weights {sorted(unknown)}; expected names from {LQR_WEIGHT_NAMES}")
+    return [name for name in LQR_WEIGHT_NAMES if name not in fixed]
+
+
+def lqr_weight_space(bounds: Dict[str, Tuple[float, float]], fixed: Optional[Dict[str, float]] = None) -> SearchSpace:
     """Search space for the LQR's cost weights, relative to a pitch weight of 1.
 
     Four numbers, like the cascaded PID's four gains: the weights on velocity
@@ -106,19 +114,24 @@ def lqr_weight_space(bounds: Dict[str, Tuple[float, float]]) -> SearchSpace:
     (balance_sim.LQRWeights). Only ratios matter to an LQR, so fixing the
     pitch weight loses nothing. All on a log scale: each spans orders of
     magnitude, and the low end of the rate and integral ranges is "off" in
-    practice. Bounds come from config.py (LQRConfig); build it with
-    CONFIG.build_lqr_space().
+    practice. `fixed` holds weights at a value instead of searching them
+    ({"w_pitch_rate": 0.0} is exactly off, which a log scale cannot reach); the
+    space then has only the others. Bounds come from config.py (LQRConfig);
+    build it with CONFIG.build_lqr_space().
     """
-    return SearchSpace([Parameter(name, *bounds[name], log=True) for name in LQR_WEIGHT_NAMES])
+    return SearchSpace([Parameter(name, *bounds[name], log=True) for name in _searched_weights(fixed)])
 
 
-def lqr_weights(values: Sequence[float]):
-    """A point of lqr_weight_space -> balance_sim.LQRWeights."""
+def lqr_weights(values: Sequence[float], fixed: Optional[Dict[str, float]] = None):
+    """A point of lqr_weight_space (built with the same `fixed`) -> balance_sim.LQRWeights."""
     from balance_sim import LQRWeights
 
-    velocity, pitch_rate, torque, integral = (float(v) for v in values)
-    return LQRWeights(velocity=velocity, pitch=1.0, pitch_rate=pitch_rate, torque=torque,
-                      velocity_integral=integral)
+    searched = _searched_weights(fixed)
+    if len(values) != len(searched):
+        raise ValueError(f"expected {len(searched)} weights {searched}, got {len(values)}")
+    w = {**(fixed or {}), **{name: float(v) for name, v in zip(searched, values)}}
+    return LQRWeights(velocity=w["w_velocity"], pitch=1.0, pitch_rate=w["w_pitch_rate"], torque=w["w_torque"],
+                      velocity_integral=w["w_integral"])
 
 
 class LQRWeightDesigner:
@@ -132,17 +145,19 @@ class LQRWeightDesigner:
     balance, so the fall penalty scores it.
     """
 
-    def __init__(self, params: RobotParams, control_dt: float, latency: float):
+    def __init__(self, params: RobotParams, control_dt: float, latency: float,
+                 fixed: Optional[Dict[str, float]] = None):
         from balance_sim import delayed_commands
 
         self.params, self.control_dt, self.latency = params, control_dt, latency
+        self.fixed = dict(fixed or {})      # weights not searched (see lqr_weight_space)
         self.n_gains = 4 + delayed_commands(control_dt, latency)
 
     def gain(self, values: Sequence[float]) -> np.ndarray:
         from balance_sim import lqr_gain
 
         try:
-            return lqr_gain(self.params, lqr_weights(values), self.control_dt, self.latency)
+            return lqr_gain(self.params, lqr_weights(values, self.fixed), self.control_dt, self.latency)
         except (np.linalg.LinAlgError, ValueError):
             return np.zeros(self.n_gains)
 
@@ -153,20 +168,25 @@ class LQRWeightDesigner:
 
 # ---- LQR gains, searched directly -----------------------------------------------
 
-def lqr_gain_names(n_in_flight: int) -> List[str]:
+def lqr_gain_names(n_in_flight: int, commands: bool = True) -> List[str]:
     """Parameter names for lqr_gain_space: the scale on each searched LQR gain."""
-    return ["s_velocity", "s_pitch", "s_pitch_rate"] + [f"s_command_{i + 1}" for i in range(n_in_flight)]
+    names = ["s_velocity", "s_pitch", "s_pitch_rate"]
+    return names + [f"s_command_{i + 1}" for i in range(n_in_flight)] if commands else names
 
 
-def lqr_gain_space(n_in_flight: int, scale: float) -> SearchSpace:
+def lqr_gain_space(n_in_flight: int, scale: float, commands_scale: Optional[float] = None) -> SearchSpace:
     """Search space for the LQR's gains themselves, around a reference design.
 
     The reference's gains on velocity, pitch, pitch rate and the commands in
     flight (oldest first) are each multiplied by a factor in [1 / scale, scale],
-    on a log scale, so the middle of the space is the reference itself. Bounds
-    come from config.py (LQRConfig); build it with CONFIG.build_direct_lqr_space().
+    on a log scale, so the middle of the space is the reference itself. With
+    `commands_scale` set, the gains on the commands in flight are not searched
+    (LQRGainScaling holds them at that multiple of the design's; 0.0 is off,
+    which a log scale cannot reach). Bounds come from config.py (LQRConfig);
+    build it with CONFIG.build_direct_lqr_space().
     """
-    return SearchSpace([Parameter(name, 1.0 / scale, scale, log=True) for name in lqr_gain_names(n_in_flight)])
+    names = lqr_gain_names(n_in_flight, commands=commands_scale is None)
+    return SearchSpace([Parameter(name, 1.0 / scale, scale, log=True) for name in names])
 
 
 class LQRGainScaling:
@@ -184,15 +204,24 @@ class LQRGainScaling:
     reference, which does, to the last stable point (by bisection). So every
     candidate the simulator sees is stable, and candidates past the edge still
     score differently from each other, which the optimizers need.
+
+    `commands_scale` (see lqr_gain_space) fixes the gains on the commands in
+    flight at that multiple of the reference design's instead of searching
+    them. It is applied to the reference itself, so the pull-back above heads
+    for the design with those gains already set, and cannot blend them back in.
     """
 
     BISECTION_STEPS = 20
 
-    def __init__(self, reference_gain, params: RobotParams, control_dt: float, latency: float):
-        self.reference = np.asarray(reference_gain, dtype=float)
-        self.params, self.control_dt, self.latency = params, control_dt, latency
+    def __init__(self, reference_gain, params: RobotParams, control_dt: float, latency: float,
+                 commands_scale: Optional[float] = None):
+        self.reference = np.array(reference_gain, dtype=float)
         n_in_flight = len(self.reference) - 4
-        self.scaled = np.r_[0:3, 4:4 + n_in_flight]     # the gains the search scales (all but the integral's)
+        if commands_scale is not None:
+            self.reference[4:] *= commands_scale
+        self.params, self.control_dt, self.latency = params, control_dt, latency
+        # The gains the search scales: all but the integral's, and the commands' if they are fixed.
+        self.scaled = np.r_[0:3] if commands_scale is not None else np.r_[0:3, 4:4 + n_in_flight]
         if not self.stable(self.reference):
             raise ValueError("the reference gains must stabilize the nominal linear loop")
 

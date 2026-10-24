@@ -1,3 +1,4 @@
+import math
 from dataclasses import replace
 
 import numpy as np
@@ -249,7 +250,8 @@ def test_velocity_error_metric_reflects_tracking(dyn):
 def test_velocity_term_increases_cost_when_drifting(dyn):
     bias = SensorNoise(pitch_rate_bias=0.05)
     result = run(dyn, inner(), duration=10.0, pitch=0.05, sensor=bias)
-    assert score(result, velocity_weight=1.0) > score(result, velocity_weight=0.0)
+    # An infinite limit gives the term zero weight.
+    assert score(result, velocity_limit=0.2) > score(result, velocity_limit=math.inf)
 
 
 def test_cost_prefers_the_controller_that_holds_position(dyn):

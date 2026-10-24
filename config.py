@@ -193,18 +193,58 @@ class CostConfig:
     better; see simulation/balance_sim/metrics.py for how each term is
     computed from a run."""
 
-    effort_weight: float = 0.01        # penalty per unit of integrated torque^2
-    fall_penalty: float = 100.0        # added to the cost if the robot falls
-    velocity_weight: float = 1.0       # penalty per unit of integrated velocity error^2
-    # What pitch error is measured against. "commanded": the lean the velocity
-    # loop asked for (leaning to accelerate isn't penalized, only failing to
-    # hold the commanded lean). "upright": vertical, the original cost, which
-    # penalizes every lean including the ones the task requires.
-    pitch_reference: str = "commanded"
+    # THE WEIGHTS ARE DERIVED FROM THESE THREE LIMITS (Bryson's rule), not set
+    # directly. Each limit is the largest value of that quantity the design
+    # accepts; its weight is 1 / limit^2, scaled so the pitch term has weight 1
+    # (only the ratios between the terms change the optimum):
+    #     velocity_weight = (pitch_limit_rad / velocity_limit)^2 = (0.3 / 0.2)^2 = 2.25
+    #     effort_weight   = (pitch_limit_rad / torque_limit)^2   = (0.3 / 0.1)^2 = 9.0
+    # Keep them consistent with the rest of this file. They are a statement about
+    # the task, and the cost only means what they say while that holds:
+    #   - pitch_limit_rad is a tolerance on pitch measured from upright. It must
+    #     stay above the lean the goal profile needs (~0.12 rad for the profile
+    #     below, from v_dot / 6.9 m/s^2) and below ControllerConfig.max_lean_deg
+    #     (25 deg = 0.44 rad). Below the first, the task's own lean is penalized
+    #     as an error; above the second, the limit says nothing.
+    #   - torque_limit is a typical operating torque, deliberately well under
+    #     RobotConfig.max_torque (0.4 N m), so effort is a real tradeoff. Set it
+    #     near max_torque and the effort term goes quiet again (it was 0.01% of
+    #     the cost at weight 0.01).
+    #   - velocity_limit is the tracking error accepted on ScenarioConfig's goal.
+    #     Change the goal profile and revisit it.
+    #   - fall_penalty must exceed any non-fall cost. These weights scale costs up,
+    #     so changing a limit can silently break that; re-check it (PHYSICS.md 8.3).
+    # Changing one limit changes every score: runs under different limits are not
+    # comparable (every run records them in its config snapshot). A limit of
+    # math.inf switches that term off. pitch_limit_rad is in radians, not degrees
+    # like the rest of this file, so the weights come out exact.
+    pitch_limit_rad: float = 0.3
+    velocity_limit: float = 0.2        # m/s
+    torque_limit: float = 0.1          # N m
+    fall_penalty: float = 500.0        # added to the cost if the robot falls
+    # What pitch error is measured against. "upright": vertical, which penalizes
+    # every lean including the ones the task requires, and is the only reference
+    # every controller has (the LQR commands no lean, so it is scored from
+    # upright either way). "commanded": the lean the cascaded PID's velocity loop
+    # asked for, so only failing to hold it is penalized.
+    pitch_reference: str = "upright"
 
     def __post_init__(self):
         if self.pitch_reference not in PITCH_REFERENCES:
             raise ValueError(f"pitch_reference must be one of {PITCH_REFERENCES}, got {self.pitch_reference!r}")
+        for name in ("pitch_limit_rad", "velocity_limit", "torque_limit"):
+            if not getattr(self, name) > 0:
+                raise ValueError(f"{name} must be positive, got {getattr(self, name)!r}")
+
+    @property
+    def velocity_weight(self) -> float:
+        """Penalty per unit of integrated velocity error^2, relative to the pitch term."""
+        return self.pitch_limit_rad**2 / self.velocity_limit**2
+
+    @property
+    def effort_weight(self) -> float:
+        """Penalty per unit of integrated torque^2, relative to the pitch term."""
+        return self.pitch_limit_rad**2 / self.torque_limit**2
 
 
 # -------------------------------------------------------------- SCENARIO ---
@@ -218,8 +258,9 @@ class ScenarioConfig:
     # Seconds each goal change takes to blend smoothly into the new velocity
     # (see balance_sim.step_profile). 0 = instant jumps, which no robot can
     # follow, so the velocity term can never reach zero. With a smooth blend
-    # the goal is physically trackable: the 1 m/s change peaks at about
-    # 2.2 m/s^2, within what the 25 deg lean cap allows.
+    # the goal is physically trackable: it peaks at about 0.9 m/s^2 (the 0 -> 1
+    # m/s change is cut off at 3.5 s, so the goal tops out at 0.71 m/s), about
+    # 7 deg of lean, well within the 25 deg lean cap.
     goal_transition_s: float = 2.5
     start_pitches_deg: Tuple[float, ...] = (5.73, -4.58, 2.86)                 # initial disturbance, each tried with every seed
     train_seeds: Tuple[int, ...] = (1, 2, 3)                                   # sensor-noise seeds scored during tuning
@@ -243,7 +284,7 @@ class SearchConfig:
     kp_max: float = 30.0
     ki_max: float = 5.0
     kd_max: float = 1.0
-    kv_p_max: float = 0.4
+    kv_p_max: float = 0.9              # was 0.4, which every tuned result sat at; a run with 2.0 settled at 0.82
 
 
 # ------------------------------------------------------------------- LQR ---
@@ -269,11 +310,24 @@ class LQRConfig:
     loop stable (tuning.LQRGainScaling).
     """
 
-    w_velocity_bounds: Tuple[float, float] = (1e-2, 1e2)
+    # Widened 2026-10-24: the search had ended on w_velocity's old floor (1e-2), w_integral's
+    # old ceiling (10) and direct_gain_scale's old limit (20, so a floor of 0.05).
+    w_velocity_bounds: Tuple[float, float] = (1e-4, 1e2)
     w_pitch_rate_bounds: Tuple[float, float] = (1e-6, 1.0)     # low end: no rate term, in practice
     w_torque_bounds: Tuple[float, float] = (1e-4, 1e2)
-    w_integral_bounds: Tuple[float, float] = (1e-6, 10.0)      # low end: no integral action, in practice
-    direct_gain_scale: float = 20.0
+    w_integral_bounds: Tuple[float, float] = (1e-6, 1e3)       # low end: no integral action, in practice
+    direct_gain_scale: float = 100.0
+    # Parameters held at "off" instead of searched. Both searches kept driving
+    # these to the floor of their log range (1e-6 for the pitch-rate weight,
+    # 0.01-0.05 for the command-feedback scales), which a log scale can only
+    # approach. None searches them again, as before 2026-10-24.
+    w_pitch_rate_fixed: Optional[float] = 0.0       # the weight on pitch rate; 0 = no rate term
+    direct_commands_scale: Optional[float] = 0.0    # multiple of the design's gains on the commands in flight; 0 = none
+
+    @property
+    def fixed_weights(self) -> dict:
+        """Weights the weight search holds fixed (tuning.lqr_weight_space's `fixed`)."""
+        return {} if self.w_pitch_rate_fixed is None else {"w_pitch_rate": self.w_pitch_rate_fixed}
 
     @property
     def bounds(self) -> dict:
@@ -434,6 +488,9 @@ class ProjectConfig:
         physics-derived minimum Kp, the resolved search bounds, motor limits).
         """
         data = asdict(self)
+        # asdict leaves out properties; the weights are what the cost uses.
+        data["cost"]["velocity_weight"] = self.cost.velocity_weight
+        data["cost"]["effort_weight"] = self.cost.effort_weight
         dyn = self.build_dynamics()
         space = self.build_search_space()
         derived = {
@@ -485,7 +542,7 @@ class ProjectConfig:
         """Build a tuning.SearchSpace over the LQR weights (LQRConfig bounds)."""
         from tuning import lqr_weight_space
 
-        return lqr_weight_space(self.lqr.bounds)
+        return lqr_weight_space(self.lqr.bounds, self.lqr.fixed_weights)
 
     def build_lqr_designer(self, design_latency: Optional[float] = None):
         """Build the tuning.LQRWeightDesigner that turns searched weights into
@@ -494,7 +551,8 @@ class ProjectConfig:
         from tuning import LQRWeightDesigner
 
         latency = self.timing.latency_s if design_latency is None else design_latency
-        return LQRWeightDesigner(self.build_robot_params(), self.timing.control_dt_s, latency)
+        return LQRWeightDesigner(self.build_robot_params(), self.timing.control_dt_s, latency,
+                                 fixed=self.lqr.fixed_weights)
 
     def build_direct_lqr_space(self):
         """Build a tuning.SearchSpace over the LQR gains themselves, around the
@@ -503,7 +561,7 @@ class ProjectConfig:
         from tuning import lqr_gain_space
 
         n_in_flight = delayed_commands(self.timing.control_dt_s, self.timing.latency_s)
-        return lqr_gain_space(n_in_flight, self.lqr.direct_gain_scale)
+        return lqr_gain_space(n_in_flight, self.lqr.direct_gain_scale, self.lqr.direct_commands_scale)
 
     def build_direct_lqr_designer(self):
         """Build the tuning.LQRGainScaling for build_direct_lqr_space: scales the
@@ -512,7 +570,8 @@ class ProjectConfig:
         from tuning import LQRGainScaling
 
         return LQRGainScaling(self.build_lqr_gain(), self.build_robot_params(),
-                              self.timing.control_dt_s, self.timing.latency_s)
+                              self.timing.control_dt_s, self.timing.latency_s,
+                              commands_scale=self.lqr.direct_commands_scale)
 
 
 # Edit values above to change the project. To try an alternative all at once

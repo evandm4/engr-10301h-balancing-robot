@@ -19,7 +19,7 @@ from scipy.optimize import brentq
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from balance_sim import CascadedPIDController, Planar2D, PIDController, simulate
+from balance_sim import CascadedPIDController, Planar2D, PIDController, pitch_error_signal, simulate
 from balance_sim.actuators import Actuator
 from balance_sim.simulator import _rk4_step
 from batch_sim import BatchRobot, actuator_torque, derivatives
@@ -354,7 +354,7 @@ def cost_breakdown():
         terms = []
         for res in validation_runs(gains):
             dt, s = np.diff(res.t), res.states
-            terms.append((np.sum((s[:-1, 2] - res.pitch_reference[:-1]) ** 2 * dt),
+            terms.append((np.sum(pitch_error_signal(res, c.pitch_reference)[:-1] ** 2 * dt),
                           c.effort_weight * np.sum(res.torques[:-1] ** 2 * dt),
                           c.velocity_weight * np.sum((s[:-1, 1] - res.velocity_goal[:-1]) ** 2 * dt)))
         pitch, effort, velocity = np.mean(terms, axis=0)
@@ -379,9 +379,11 @@ def _copper_loss_factor():
 def _trapezoid_cost(res):
     """The tuner's cost with trapezoidal integration (references held over each step, as in the run)."""
     c, s, dt = CONFIG.cost, res.states, np.diff(res.t)
-    pitch_ref, goal = res.pitch_reference[:-1], res.velocity_goal[:-1]
+    pitch_err, goal = pitch_error_signal(res, c.pitch_reference), res.velocity_goal[:-1]
     trap = lambda left, right: np.sum(0.5 * (left**2 + right**2) * dt)
-    pitch = trap(s[:-1, 2] - pitch_ref, s[1:, 2] - pitch_ref)
+    # The reference is held over each step, as in the run, so only the state moves between ends.
+    pitch_ref = s[:-1, 2] - pitch_err[:-1]
+    pitch = trap(pitch_err[:-1], s[1:, 2] - pitch_ref)
     velocity = trap(s[:-1, 1] - goal, s[1:, 1] - goal)
     return pitch + c.effort_weight * np.sum(res.torques[:-1] ** 2 * dt) + c.velocity_weight * velocity
 

@@ -8,10 +8,14 @@ Six controllers:
                             configured latency. Model-based, no tuning, no simulation.
     LQR, latency ignored    the same weights, designed as if there were no latency (the
                             textbook design), run with the real latency
-    LQR, ML-tuned weights   the 4 LQR weights searched; every candidate is an LQR design
-    LQR, ML-tuned gains     the 5 LQR gains searched directly, starting from the
+    LQR, ML-tuned weights   the LQR weights searched; every candidate is an LQR design.
+                            config.py's LQRConfig holds the pitch-rate weight off, so
+                            3 weights (velocity, torque, integral) are searched, not 4
+    LQR, ML-tuned gains     the LQR gains searched directly, starting from the
                             cost-matched design and keeping the nominal linear loop stable
-                            (no integral gain: LQR.md explains why)
+                            (no integral gain: LQR.md explains why). LQRConfig holds the
+                            gains on the commands in flight off, so 3 gains (velocity,
+                            pitch, pitch rate) are searched, not 5
 
 The common score is config.py's cost with pitch error measured from upright. The LQR
 commands no lean, so the default ("commanded") would score the two kinds of controller
@@ -273,7 +277,7 @@ def main():
                                      "parameters": s.gains_dict()} for m, s in searches[name].items()}
             entry["chosen_search"] = next(iter(searches[name]))
         if name == LQR_WEIGHTS:
-            entry["lqr_weights"] = asdict(lqr_weights(params[name]))
+            entry["lqr_weights"] = asdict(lqr_weights(params[name], cfg.lqr.fixed_weights))
         if name in (LQR_COST, LQR_NO_DELAY):
             entry["lqr_weights"] = asdict(cfg.cost_matched_lqr_weights())
             entry["design_latency_s"] = latency if name == LQR_COST else 0.0

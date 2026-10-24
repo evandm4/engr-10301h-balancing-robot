@@ -33,7 +33,7 @@ That is five feedback gains set by four numbers, in a fixed pattern. An LQR drop
 \theta^2 + w_v(v - v_{\text{goal}})^2 + w_r\dot\theta^2 + w_i\Bigl(\int(v - v_{\text{goal}})\Bigr)^2 + w_u\tau^2 .
 ```
 
-The **cost-matched** weights are the cost function's own: $w_v = 1$ (`velocity_weight`), $w_u = 0.01$ (`effort_weight`), no rate or integral term. On the linear, noise-free, unsaturated robot, this is the optimal controller for the project's cost.
+The **cost-matched** weights are the cost function's own: $w_v$ (`velocity_weight`), $w_u$ (`effort_weight`), no rate or integral term. On the linear, noise-free, unsaturated robot, this is the optimal controller for the project's cost. Everything below was produced with $w_v = 1$, $w_u = 0.01$ and a step-shaped goal. `config.py` now has $w_v = 2.25$, $w_u = 9$ (Bryson's rule, derived from acceptable-value limits) and a smooth goal; see the note at the start of Results.
 
 **Timing, built in exactly.** The controller runs every 5 ms and holds its command for one period, so the model is discretized with a zero-order hold. The 10 ms latency means the two commands issued in the last two ticks are still on their way to the motor. They become part of the state, and the gain feeds them back too. A latency that isn't a whole number of periods is handled exactly as well (PHYSICS.md 7.4's split period). `test_discrete_model_matches_integrating_the_linear_robot` checks one period against direct integration of the linear robot. The result has a clean interpretation, which `test_delay_aware_gain_acts_on_the_predicted_state` verifies: the delay-aware gain is the delay-free LQR applied to the state predicted two ticks ahead.
 
@@ -70,6 +70,28 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 **Same treatment for the three searches.** Robust scoring from config.py (50 seeds × 3 tilts, randomized robots, chaos penalty: 300 simulations per candidate). CMA-ES and differential evolution each run at the same budget, about 4,800 candidates, and the better result is kept. Validation then uses 100 unseen seeds with unseen robots (300 scenarios) in float64.
 
 ### Results
+
+**Re-run on the current cost (2026-10-24).** The table and findings further down were produced with the earlier cost ($w_v = 1$, $w_u = 0.01$, step-shaped goal, $k_{v,p} \le 0.4$) and are kept as a record. `config.py` now has $w_v = 2.25$, $w_u = 9$ (Bryson's rule), a smooth goal, $k_{v,p} \le 0.9$, wider LQR search ranges, and the pitch-rate weight and the gains on the commands in flight held at off (`LQRConfig.w_pitch_rate_fixed`, `direct_commands_scale`), so the weight search has 3 parameters and the gain search has 3. Run `results/lqr_comparison/20261024-142418/` (GPU, same protocol: 300 unseen scenarios, no controller fell):
+
+| Controller | Validation cost | vs ML PID (median per scenario) | Worst run | Effort term | Stable latency (linear) |
+|---|---:|---:|---:|---:|---|
+| PID, hand-tuned | 3.121 | 16.6x | 13.99 | 1.090 | 0-11.25 ms |
+| **PID, ML-tuned** | **0.1304** | | 0.161 | 0.0297 | 0-39.75 ms |
+| LQR, cost-matched | 0.3895 | 3.02x | 0.451 | 0.0312 | 0-30.75 ms |
+| LQR, latency ignored | 0.3724 | 2.89x | 0.423 | 0.0336 | 0-21.0 ms |
+| LQR, ML-tuned weights | 0.1857 | 1.44x | 0.207 | 0.0522 | 0-33.25 ms |
+| LQR, ML-tuned gains | 0.1333 | 1.02x | 0.163 | 0.0309 | 0-40.0 ms |
+
+- **ML-tuned PID:** kp 0.510, ki 0.106, kd 0.097, kv_p 0.822, inside its range. A separate batch-tuning run with the cap at 2.0 also settled at 0.82 for the same cost.
+- **The ML-tuned LQR gains come within 2.2% of the ML-tuned PID** (0.1333 against 0.1304), against 1.2% behind in the old table. The untuned cost-matched LQR is 3x worse, not within 1.8%: with a smooth goal and a heavy torque weight, a design that only regulates (no goal feed-forward) gives up a lot of tracking, and the gain search recovers nearly all of it.
+- **Modeling the latency no longer matters.** The latency-ignoring design (0.3724) beats the delay-aware one (0.3895) and is stable at 10 ms (to 21 ms). Old finding 3 was a property of the light torque weight; at $w_u = 9$ the design is gentle enough to tolerate the delay.
+- **Tuning still widens the stable-latency range:** 39.75 ms for the tuned PID, 40.0 ms for the tuned LQR gains and 33.25 ms for the tuned weights, against 30.75 ms for the cost-matched LQR.
+- **Effort is a real term** (0.03 for the tuned PID and LQR gains, against 0.0002-0.0009 before).
+- **The gain search's corner was the command feedback doing nothing.** In the earlier runs both command-feedback scales sat at the floor of their log range (0.05, then 0.01 when it was widened). With those gains held at exactly zero, the cost is unchanged (0.1333 against 0.1334) and the other three scales settle inside their range (velocity 1.03, pitch 0.37, pitch rate 0.69). The same holds for the pitch-rate weight, held at 0: the weight search's cost is identical (0.1857). So the in-flight command feedback and the pitch-rate term were not helping the tuned designs here; no edge effect remains in that row.
+- **The weight search's corner persists** with those two parameters held off: $w_v$ at its floor (1e-4) and $w_u$ at its ceiling (100), with $w_i$ at 308. Almost no velocity weight and very heavy torque and integral weights is a degenerate design. The search's cost improved once, when the ranges were widened (0.2157 to 0.1857), and did not change when the pitch-rate weight was held off. I have not tested whether widening further, or a different parameterization, would help; read this row as a limit of the weight search, not as the best LQR.
+- The PID (0.1305, 0.1304, 0.1304) and the LQR with tuned gains (0.1339, 0.1334, 0.1333) kept their positions and nearly identical costs across the three runs of this section, so that comparison is stable.
+
+Old table (earlier cost):
 
 Run `results/lqr_comparison/20261014-165757/` (GPU, float32 searches, float64 validation; `lqr_comparison.png`, `example_runs.png`, `comparison.json`). Validation: 300 unseen scenarios. "vs ML PID" is the paired difference on the same 300 scenarios (same noise, same robot), with a 95% interval.
 
