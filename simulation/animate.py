@@ -78,7 +78,25 @@ def runs_from_csv(paths: List[Path]) -> Dict[str, SimResult]:
 # ---- the animation -------------------------------------------------------------
 
 class RunAnimation:
-    """Side view of each run, plus pitch / velocity / torque plots with a moving cursor."""
+    """Side view of each run, plus pitch / velocity / torque plots with a moving cursor.
+
+    Layout (one column per run on top, three shared plots underneath):
+
+        +-------------+-------------+
+        |  run A      |  run B      |   robot views: wheel, body, COM, commanded lean
+        +---------+---+-----+-------+
+        |  pitch  | velocity | torque|   whole-run plots, a vertical cursor marks "now"
+        +---------+----------+-------+
+
+    Everything is built once in __init__; after that, draw(frame) only moves
+    existing artists to where they belong at that frame's time. That split is
+    what lets matplotlib's blitting redraw just the moving parts each frame.
+
+    Typical use:
+        viewer = RunAnimation(runs)
+        anim = viewer.animation(); plt.show()   # live window
+        viewer.save("robot.gif")                 # or render to a file
+    """
 
     def __init__(self, runs: Dict[str, SimResult], robot=None, fps: int = 30, speed: float = 1.0,
                  title: str = ""):
@@ -88,15 +106,25 @@ class RunAnimation:
             raise ValueError("nothing to animate")
         self.runs = runs
         self.fps, self.speed = fps, speed
+
+        # -- robot geometry: only the dimensions that matter for drawing --
         robot = robot if robot is not None else CONFIG.build_robot_params()
         self.r = robot.wheel_radius
-        self.l = robot.body_com_height
+        self.l = robot.body_com_height           # axle to body center of mass
         self.body_height = 2 * self.l            # draw the body as a block with its COM at mid-height
-        self.body_width = 0.35 * self.body_height
+        self.body_width = 0.35 * self.body_height  # purely cosmetic proportion
+
+        # -- timing: map animation frames onto simulation time --
+        # Runs can differ in length (e.g. one falls early), so play until the
+        # longest one ends. Each frame advances speed / fps seconds of sim time.
         self.end_time = max(float(r.t[-1]) for r in runs.values())
         # Play the run, then hold the last frame for a second.
         self.n_frames = int(math.ceil((self.end_time / speed + 1.0) * fps)) + 1
 
+        # -- figure layout: robot views on top, time-series plots below --
+        # The top row gets a little more height (1.25 : 1) since the robot
+        # drawing is the main thing to watch. The figure widens with more runs
+        # so each robot view keeps a usable size.
         n = len(runs)
         self.fig = plt.figure(figsize=(max(10, 4 * n), 8), layout="constrained")
         grid = self.fig.add_gridspec(2, 1, height_ratios=[1.25, 1])
@@ -104,21 +132,36 @@ class RunAnimation:
         if title:
             self.fig.suptitle(title)
 
+        # self.artists collects everything that changes between frames; with
+        # blit=True, draw() must return exactly these so matplotlib knows what
+        # to redraw. Static things (axes, plotted curves) are left out.
         self.artists = []
+
+        # -- top row: one robot view per run, each in its own color --
+        # self.robots[i] holds the drawable parts for run i, in the same order
+        # as self.runs, so draw() can zip the two together.
         self.robots = []
         for i, (label, run) in enumerate(runs.items()):
             ax = self.fig.add_subplot(top[0, i])
             self.robots.append(self._robot_view(ax, label, COLORS[i % len(COLORS)]))
 
+        # -- bottom row: pitch, velocity and torque over the whole run --
+        # These curves are drawn once in full and never change; only the
+        # cursor line on each plot moves to show the current time.
         self.cursors = []
         plots = [self.fig.add_subplot(bottom[0, j]) for j in range(3)]
         for i, (label, run) in enumerate(runs.items()):
             color = COLORS[i % len(COLORS)]
+            # states columns are [x, x_dot, theta]: position, velocity, pitch
             plots[0].plot(run.t, np.degrees(run.states[:, 2]), color=color, label=label)
             if run.pitch_reference is not None:
+                # The lean the outer (velocity) loop asked for, in the run's color but dashed
                 plots[0].plot(run.t, np.degrees(run.pitch_reference), color=color, ls="--", lw=0.8)
             plots[1].plot(run.t, run.states[:, 1], color=color, label=label)
             plots[2].plot(run.t, run.torques, color=color, lw=0.8, label=label)
+        # Every run shares the same scenario, so the first run's velocity goal
+        # stands for all of them. The empty gray plot only adds a legend entry
+        # explaining what the dashed pitch lines mean.
         first = next(iter(runs.values()))
         plots[0].plot([], [], color="gray", ls="--", lw=0.8, label="commanded")
         plots[1].plot(first.t, first.velocity_goal, "k--", lw=1, label="goal")
@@ -126,70 +169,125 @@ class RunAnimation:
             ax.set_xlabel("time (s)")
             ax.set_title(title, fontsize=10)
             ax.set_xlim(0, self.end_time)
-            self.cursors.append(ax.axvline(0, color="gray", lw=1))
+            self.cursors.append(ax.axvline(0, color="gray", lw=1))   # moved by draw()
         plots[0].legend(fontsize=8, loc="lower left")
         plots[1].legend(fontsize=8, loc="lower left")
         self.artists += self.cursors
 
     def _robot_view(self, ax, label, color):
+        """Set up one robot's side-view axes and create its (empty) drawable parts.
+
+        The view is in the robot's own frame: the axle always sits at x = 0
+        and the world (ground marks) slides past underneath it. Parts start
+        empty or at a placeholder position; draw() fills in real positions.
+        Returns a dict of the parts, plus the run's color for resetting the
+        body after it flashes red on a fall.
+        """
         from matplotlib.patches import Circle, Polygon
 
+        # Equal aspect so the lean angle on screen is the true angle; fixed
+        # limits so the view doesn't rescale as parts move.
         ax.set_aspect("equal")
         ax.set_xlim(-VIEW_HALF_WIDTH, VIEW_HALF_WIDTH)
         ax.set_ylim(-0.03, self.r + self.body_height + 0.06)
         ax.set_xticks([])
         ax.set_yticks([])
         ax.set_title(label, color=color)
-        ax.axhline(0, color="k", lw=1)
+        ax.axhline(0, color="k", lw=1)   # the ground line itself (static)
         parts = {
+            # tick marks on the ground every GROUND_MARK_SPACING; they scroll to show motion
             "ground": ax.plot([], [], "k|", ms=8)[0],
+            # dashed line from the axle at the commanded pitch ("where it's trying to lean")
             "ghost": ax.plot([], [], ls="--", color="gray", lw=1.5)[0],
+            # the body: a rectangle pivoting on the axle, corners set each frame
             "body": ax.add_patch(Polygon(np.zeros((4, 2)), closed=True, color=color, alpha=0.85)),
+            # the wheel never moves in this frame; only its spoke turns
             "wheel": ax.add_patch(Circle((0, self.r), self.r, facecolor="0.3", edgecolor="k")),
             "spoke": ax.plot([], [], color="w", lw=2)[0],
+            # black dot at the body's center of mass
             "com": ax.plot([], [], "o", color="k", ms=5)[0],
+            # live readout in the top-left corner (axes coordinates, so it stays put)
             "text": ax.text(0.02, 0.97, "", transform=ax.transAxes, va="top", fontsize=9, family="monospace"),
-            "color": color,
+            "color": color,   # not an artist: remembered so draw() can restore it after a fall
         }
         self.artists += [parts[k] for k in ("ground", "ghost", "body", "wheel", "spoke", "com", "text")]
         return parts
 
     def _index(self, run: SimResult, time: float) -> int:
+        """Index of the last sample at or before `time` (clamped to the end of the run).
+
+        Animation frames don't line up with simulation steps, so each frame
+        shows the most recent sample. Past a short run's end this keeps
+        returning its final sample, so that robot freezes while others play on.
+        """
         return min(int(np.searchsorted(run.t, time, side="right")) - 1, len(run.t) - 1)
 
     def draw(self, frame: int):
         """Update every artist for one frame (also usable without the animation, e.g. in tests)."""
+        # Frame number -> simulation time. Clamping to end_time is what makes
+        # the extra frames at the end hold on the final pose.
         time = min(frame * self.speed / self.fps, self.end_time)
         for run, parts in zip(self.runs.values(), self.robots):
-            k = max(self._index(run, time), 0)
+            # -- current state of this run --
+            k = max(self._index(run, time), 0)   # max(): time before the first sample shows the first one
             x, x_dot, theta = run.states[k, 0], run.states[k, 1], run.states[k, 2]
+
+            # -- body: a rectangle rotated by the pitch angle about the axle --
+            # The axle is fixed at (0, r) in this robot-centered view. `up`
+            # points along the body (theta = 0 is upright, positive leans
+            # toward +x) and `side` is perpendicular to it, half a body width.
             axle = np.array([0.0, self.r])
             up = np.array([math.sin(theta), math.cos(theta)])        # along the body, leaning forward = +x
             side = np.array([math.cos(theta), -math.sin(theta)]) * self.body_width / 2
             top = axle + up * self.body_height
+            # corners: bottom-left, bottom-right, top-right, top-left
             parts["body"].set_xy([axle - side, axle + side, top + side, top - side])
             com = axle + up * self.l
             parts["com"].set_data([com[0]], [com[1]])
+
+            # -- wheel spoke: wheel angle follows from distance traveled --
+            # With no slip, rolling a distance x turns the wheel x / r radians.
+            # The spoke runs from the axle to the rim at that angle.
             spin = x / self.r                                        # rolling without slip
             parts["spoke"].set_data([0, self.r * math.sin(spin)], [self.r, self.r + self.r * math.cos(spin)])
+
+            # -- commanded lean: same construction as the body's `up`, at the reference pitch --
+            # Runs without a pitch reference (e.g. older CSVs) show it straight up.
             ref = run.pitch_reference[k] if run.pitch_reference is not None else 0.0
             ghost = axle + np.array([math.sin(ref), math.cos(ref)]) * self.body_height
             parts["ghost"].set_data([axle[0], ghost[0]], [axle[1], ghost[1]])
+
+            # -- ground marks: fixed in the world, so they shift by -x in the robot's view --
+            # Find the first world-space mark at or left of the view's left
+            # edge, lay out enough marks to span the whole view, then subtract
+            # x to convert to view coordinates. As the robot drives forward the
+            # marks slide backward, which is what makes the motion visible.
             first = math.floor((x - VIEW_HALF_WIDTH) / GROUND_MARK_SPACING)
             marks = np.arange(first, first + 2 * VIEW_HALF_WIDTH / GROUND_MARK_SPACING + 2) * GROUND_MARK_SPACING - x
             parts["ground"].set_data(marks, np.zeros_like(marks))
 
+            # -- fall indicator and text readout --
+            # Once the run has passed its fall time the body turns red and
+            # stays red; when the animation loops back to the start, its color is restored.
             fallen = run.fell and run.fall_time is not None and time >= run.fall_time
             parts["body"].set_color("red" if fallen else parts["color"])
             status = f"FELL at {run.fall_time:.2f} s" if fallen else ""
             parts["text"].set_text(
                 f"t {time:5.2f} s\nv {x_dot:+.2f} m/s (goal {run.velocity_goal[k]:+.2f})\n"
                 f"pitch {math.degrees(theta):+5.1f} deg\nx {x:+.2f} m\n{status}")
+
+        # -- time cursors on the bottom plots (shared by all runs) --
         for cursor in self.cursors:
             cursor.set_xdata([time, time])
+        # With blitting, matplotlib redraws exactly the artists returned here.
         return self.artists
 
     def animation(self):
+        """Build the FuncAnimation that calls draw() once per frame.
+
+        The caller must keep a reference to the returned object for as long as
+        it should play; if it is garbage-collected, matplotlib stops the timer.
+        """
         from matplotlib.animation import FuncAnimation
 
         class ClosingSafeAnimation(FuncAnimation):
@@ -214,6 +312,9 @@ class RunAnimation:
                     return False   # tells the timer to drop this callback
                 return super()._step(*args)
 
+        # interval is the delay between frames in ms; blit=True redraws only
+        # the artists draw() returns instead of the whole figure, which keeps
+        # playback smooth with several robots on screen.
         return ClosingSafeAnimation(self.fig, self.draw, frames=self.n_frames, interval=1000 / self.fps, blit=True)
 
     def save(self, path, dpi: int = 72):
@@ -223,6 +324,8 @@ class RunAnimation:
         """
         from matplotlib import animation as mpl_animation
 
+        # Pick a writer from the file extension. Saving renders every frame
+        # off-screen through the same draw() used for the live window.
         path = Path(path)
         if path.suffix.lower() == ".gif":
             writer = mpl_animation.PillowWriter(fps=self.fps)
@@ -260,6 +363,12 @@ def main():
     parser.add_argument("--export", help="also save the runs shown as trajectory CSVs in this folder")
     args = parser.parse_args()
 
+    # Choose where the runs come from, in priority order:
+    #   1. --csv: replay saved trajectories as-is
+    #   2. --gains: simulate each given gain set now
+    #   3. otherwise a results folder (--results, or the latest one): replay its
+    #      saved trajectories if it has any, else re-simulate its hand-tuned and
+    #      best gains; with no results at all, fall back to the hand-tuned gains
     title = ""
     if args.csv:
         runs = runs_from_csv([Path(p) for p in args.csv])
@@ -293,6 +402,8 @@ def main():
             path = save_trajectory(run, Path(args.export) / f"{label.replace(' ', '_')}.csv", label=label)
             print(f"  saved {path}")
 
+    # When saving, use the non-interactive Agg backend so no window opens; it
+    # has to be chosen before pyplot is imported.
     if args.save:
         import matplotlib
         matplotlib.use("Agg")
