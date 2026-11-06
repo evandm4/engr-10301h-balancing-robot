@@ -8,7 +8,7 @@ Same loop as simulate.py, using the same physics and controller functions
     step (and one "controller tick + physics step") does exactly the same
     thing on every call and can be recorded once as a CUDA graph.
   * Each graph holds a step's ~200 small kernels. Replaying it costs a single
-    launch instead of ~200, which is what makes a Python loop of 2,400 steps
+    launch instead of ~200, which is what makes a Python loop of 4,800 steps
     fast. torch.compile would fuse the kernels as well, but on Windows it
     needs Triton, which isn't installed; CUDA graphs need nothing extra.
   * The per-step decisions the NumPy loop makes in Python (which command has

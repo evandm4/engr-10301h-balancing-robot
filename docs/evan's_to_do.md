@@ -10,11 +10,9 @@
     d. Open: the LQR weight search still ends in a corner (w_velocity at its floor, w_torque at its ceiling, cost 0.1857 vs 0.1304 for the PID). Not tested: widening further, or a different weight parameterization. Other results (pivot, PHYSICS.md 8.2) still use the old cost.
     e. Note the cost can't reach zero even with a smooth goal: the start tilt has to be recovered (about 0.027 of pitch cost).
 4. 
-## Pending runs (code changed 2026-11-06; run on AC power with the GPU on)
+## Runs done 2026-11-06 (friction and latency randomized, torque-normalized LQR weights, pivot on the base cost)
 
-Friction (viscous + smoothed Coulomb) and per-scenario latency (5-20 ms) are now randomized in robust scoring, the LQR weight search is torque-normalized, and the pivot uses the base cost. Every result in results/ predates this. To regenerate:
-
-    C:\venvs\balancebot\Scripts\python.exe optimization\run_lqr_comparison.py --backend torch --float32 --no-show   # ~10 min GPU; then update LQR.md
-    C:\venvs\balancebot\Scripts\python.exe optimization\run_batch_tuning.py --backend torch --float32 --no-show    # then update PHYSICS.md's tuned gains
-    C:\venvs\balancebot\Scripts\python.exe optimization\run_pivot_tuning.py --workers -1 --compare-held          # CPU; then update PIVOT.md's table
-    C:\venvs\balancebot\Scripts\python.exe simulation\examples\physics_checks.py                                 # after updating its tuned gains; regenerates PHYSICS.md 8.2
+- results/lqr_comparison/20261106-154350 (LQR.md), results/batch_tuning/20261106-154750 (PHYSICS.md 8.2, 9.4),
+  results/pivot_tuning/20261106-154343 (PIVOT.md).
+- Still open: PHYSICS.md Sections 2-7 and 9 quote the 2026-09-30 tuned gains (delay margins, Routh-Hurwitz, the
+  assumption audit). Switching physics_checks.py's TUNED to TUNED_NOW and re-quoting those numbers is a separate pass.

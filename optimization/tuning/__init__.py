@@ -19,7 +19,7 @@ from .optimizers import (
     differential_evolution_search,
     random_search,
 )
-from .reporting import gains_cells, gains_header, save_example_runs, save_result, tuning_summary_figure
+from .reporting import provenance, gains_cells, gains_header, save_example_runs, save_result, tuning_summary_figure
 
 __all__ = [
     "Parameter",
@@ -40,6 +40,7 @@ __all__ = [
     "random_search",
     "bayesian_optimization_search",
     "save_result",
+    "provenance",
     "save_example_runs",
     "gains_header",
     "gains_cells",

@@ -41,6 +41,7 @@ from tuning import (
     differential_evolution_search,
     gains_cells,
     gains_header,
+    provenance,
     random_search,
     save_example_runs,
     save_result,
@@ -142,6 +143,7 @@ def main():
         save_result(bo, folder, extra={"config": config_snapshot})
     (folder / "comparison.json").write_text(json.dumps({
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "provenance": provenance(),
         "run_arguments": vars(args),
         "budget_evals": de.n_evals,
         "runs_per_score": {"train": n_train_runs, "validation": n_val_runs},

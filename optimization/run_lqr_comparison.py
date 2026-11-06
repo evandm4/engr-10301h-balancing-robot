@@ -63,7 +63,7 @@ import numpy as np
 from config import CONFIG
 from balance_sim import LinearController, spectral_radius, stable_latency_range
 from batch_tuning import BatchEvaluator, cma_es_search, differential_evolution_search
-from tuning import Evaluator, lqr_weights, save_example_runs, save_result
+from tuning import Evaluator, lqr_weights, provenance, save_example_runs, save_result
 
 PID_HAND, PID_ML = "PID, hand-tuned", "PID, ML-tuned"
 LQR_COST, LQR_NO_DELAY = "LQR, cost-matched", "LQR, latency ignored"
@@ -310,6 +310,7 @@ def main():
                                           "dtype": np.dtype(dtype).name})
     (folder / "comparison.json").write_text(json.dumps({
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "provenance": provenance(),
         "run_arguments": vars(args),
         "score": "config.py cost with pitch_reference='upright' (same for every controller)",
         "simulations_per_evaluation": sims,

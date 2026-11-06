@@ -276,6 +276,11 @@ class ScenarioConfig:
     # Runs per score = len(start_pitches_deg) x number of seeds: 9 per training
     # evaluation and 30 per validation with the defaults above.
 
+    def __post_init__(self):
+        overlap = set(self.train_seeds) & set(self.validation_seeds)
+        if overlap:
+            raise ValueError(f"train_seeds and validation_seeds overlap: {sorted(overlap)}")
+
     @property
     def start_pitches_rad(self) -> Tuple[float, ...]:
         return tuple(math.radians(d) for d in self.start_pitches_deg)

@@ -8,7 +8,7 @@ from .planar2d import Planar2D, critical_pitch_gain, linearize
 from .controllers import CascadedPIDController, Controller, PIDController, step_profile
 from .lqr import LQRController, LQRWeights, delayed_commands, discrete_model, lqr_gain
 from .stability import LinearController, loop_matrix, spectral_radius, stable_latency_range
-from .simulator import SimResult, simulate
+from .simulator import SimResult, simulate, steps_per_control
 from .metrics import PITCH_REFERENCES, Metrics, compute_metrics, cost, pitch_error_signal
 from .trajectory import load_trajectory, save_trajectory
 
@@ -38,6 +38,7 @@ __all__ = [
     "stable_latency_range",
     "SimResult",
     "simulate",
+    "steps_per_control",
     "Metrics",
     "compute_metrics",
     "cost",

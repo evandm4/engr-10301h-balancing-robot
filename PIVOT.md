@@ -20,7 +20,7 @@ optimization/run_pivot_tuning.py        tune the 7 gains, compare with the basel
 results/pivot_tuning/                   its output
 ```
 
-Everything shared with the base robot (wheels, wheel motors, IMU noise, latency, control rate, the goal-velocity scenario, start tilts, seeds, the wheel-gain search bounds) is read from `config.py`'s `CONFIG`, so it can't drift apart. Only what is new is written in `pivot_config.py`. Since 2026-11-06 that includes the cost: Bryson-rule weights, pitch from upright, fall penalty 500. The servo effort weight follows the same rule from a typical servo torque (`PivotCostConfig.servo_torque_limit` = 0.25 N m, weight 1.44), and the LQR's weights were rescaled to match (`LQRConfig`). **The results table below still uses the earlier cost** (velocity 1, effort 0.01, servo 0.01, pitch from the commanded lean, fall penalty 100). Regenerate it with `run_pivot_tuning.py`. One change is already known: on the 30 validation runs, the LQR scores 0.410 with the pivot active and 0.403 with it held. The pivot no longer helps the LQR; under the old cost it helped by 1.4%.
+Everything shared with the base robot (wheels, wheel motors, IMU noise, latency, control rate, the goal-velocity scenario, start tilts, seeds, the wheel-gain search bounds) is read from `config.py`'s `CONFIG`, so it can't drift apart. Only what is new is written in `pivot_config.py`. Since 2026-11-06 that includes the cost: Bryson-rule weights, pitch from upright, fall penalty 500. The servo effort weight follows the same rule from a typical servo torque (`PivotCostConfig.servo_torque_limit` = 0.25 N m, weight 1.44), and the LQR's weights were rescaled to match (`LQRConfig`). The results below were re-run on this cost; the earlier ones are kept after them.
 
 ## The robot
 
@@ -117,11 +117,29 @@ What the LQR doesn't know about: saturation (wheel torque, back-EMF, servo torqu
 
 `pivot_cost` is the base project's cost (`balance_sim.cost`: pitch error, 0.01 × wheel effort, velocity error, fall penalty) applied with the combined-COM pitch, plus `servo_effort_weight` (0.01) × ∫τs² and `upper_tilt_weight` (0 by default) × ∫θ2². The last term is the knob for a different notion of "optimal": a camera or tray on top that should stay level. A run falls when either body tilts past 60°.
 
-One caveat when comparing: the base cost measures pitch error from the lean the controller commands. The LQR commands no lean, so its pitch error is from upright, which is a harsher score. `run_pivot_tuning.py` therefore also reports an "upright" column that scores every controller's validation runs the same way.
+Pitch error is measured from upright (config.py's `pitch_reference`), for every controller, so the "upright" column that `run_pivot_tuning.py` prints now equals "validation". It was added when the base cost measured pitch from the commanded lean, which the LQR doesn't have.
 
 ## Results so far
 
-From `python optimization/run_pivot_tuning.py --workers 4 --compare-held` (default budget, about 880 evaluations per search, 6 minutes on 4 cores; `results/pivot_tuning/20261001-052500/`). Validation is 30 runs on unseen noise seeds, DC motors, 10 ms latency, 50 Hz servo; no controller fell.
+**Current cost (2026-11-06).** From `python optimization/run_pivot_tuning.py --workers 8 --compare-held` (default budget, about 860 evaluations per search, 5 minutes on 8 cores; `results/pivot_tuning/20261106-154343/`). Validation is 30 runs on unseen noise seeds, DC motors, 10 ms latency, 50 Hz servo; no controller fell. The pivot tuner is the reference CPU tuner: nominal robot, no friction or latency randomization.
+
+| controller | kp | ki | kd | kv_p | k_level | k_phi_p | k_phi_d | validation |
+|---|---|---|---|---|---|---|---|---|
+| hand-tuned, pivot held | 4.000 | 0.500 | 0.150 | 0.100 | 0 | 0 | 0 | 1.927 |
+| hand-tuned, upper body level | 4.000 | 0.500 | 0.150 | 0.100 | 1 | 0 | 0 | 2.095 |
+| LQR | | | | | | | | 0.410 |
+| LQR, pivot held | | | | | | | | 0.403 |
+| DE, pivot active (7 gains) | 0.617 | 0.162 | 0.095 | 0.643 | 0.609 | 0.082 | −0.007 | 0.157 |
+| DE, pivot held (4 gains) | 0.581 | 0.154 | 0.131 | 0.879 | 0 | 0 | 0 | 0.142 |
+
+What this says:
+
+1. **The model is close to the base robot.** Hand-tuned with the pivot held scores 1.93, against 2.13 for the base robot on the same 30 runs. The two robots differ slightly (combined COM at 0.104 m against 0.10 m, and a different inertia).
+2. **Under this cost the pivot doesn't pay, for either controller.** The LQR is 1.8% better with the pivot held (0.403 against 0.410), and the 4-gain search beats the 7-gain one by 10% (0.142 against 0.157). Part of that may be search effort: at equal budget, the 7-gain search has three more dimensions to cover. With the smooth goal there is little COM overshoot to shave, and every servo move now costs effort at a weight of 1.44. Under the earlier cost the LQR gained 1.4% from the pivot.
+3. **Keeping the upper body level is no longer free.** `k_level = 1` cuts the upper body's mean RMS tilt from 1.6° to 0.6°, but costs 8.7% (2.095 against 1.927), against 0.1% before. The servo's effort is now a real term.
+4. **The tuned PID beats the LQR by a wide margin** (0.142 against 0.403). As for the base robot (LQR.md), the cost-matched LQR regulates without goal feed-forward and gives up a lot of tracking. The pivot LQR's weights are not tuned.
+
+**Earlier cost (2026-10-01).** `results/pivot_tuning/20261001-052500/`: velocity weight 1, effort 0.01, servo 0.01, pitch from the commanded lean, fall penalty 100, step-shaped goal. Kept as a record.
 
 | controller | kp | ki | kd | kv_p | k_level | k_phi_p | k_phi_d | validation | upright |
 |---|---|---|---|---|---|---|---|---|---|
@@ -132,13 +150,7 @@ From `python optimization/run_pivot_tuning.py --workers 4 --compare-held` (defau
 | DE, pivot active (7 gains) | 0.779 | 0.666 | 0.077 | 0.283 | 0.312 | −0.422 | −0.083 | 2.494 | 2.606 |
 | DE, pivot held (4 gains) | 0.761 | 0.274 | 0.059 | 0.243 | 0 | 0 | 0 | 2.475 | 2.574 |
 
-What this says:
-
-1. **The model behaves like the base robot when it should.** The hand-tuned gains with the pivot held score 4.49, the same as the base robot's 4.51 with those gains (`results/batch_tuning/20260930-103458`), and the tuned wheel gains (0.76, 0.27, 0.06, 0.24) land close to the base robot's tuned ones (0.73, 0.24, 0.06, 0.25).
-2. **To an optimal controller, the pivot is worth a little: about 1.4%** on this scenario (LQR 2.707 vs 2.745 with the pivot held). The LQR swings the upper body up to about 25° during the velocity steps, which shaves the COM overshoot. The cost here is dominated by velocity tracking, which the wheels' torque and the lean cap limit, so there isn't much for the pivot to win.
-3. **The tuned PID + pivot loop didn't find that gain.** At equal budget, the 7-gain search (2.494) came out slightly behind the 4-gain search with the pivot held (2.475): three extra dimensions cost more search effort than the pivot loop gives back. A lean feed-forward on the pivot (upper body thrown toward the commanded lean) was also tried by hand and made things worse (2.52 → 2.59 at a gain of 1, falls at 2).
-4. **Keeping the upper body level is nearly free.** `k_level = 1` cuts the upper body's RMS tilt from 4.0° to 1.5° for a 0.1% change in cost.
-5. **The tuned PID beats the LQR, even scored the LQR's way** (2.57 vs 2.71 from upright). The LQR doesn't know about saturation or the lean cap, leans the COM to about 43° at the big velocity reversal, and its higher gains turn sensor noise into a lot of wheel-torque chatter (the torque panel in `tuning_summary.png`).
+Under that cost the pivot was worth 1.4% to the LQR, the 7-gain search came out slightly behind the 4-gain one, keeping the upper body level was nearly free (0.1%), and the tuned PID beat the LQR even scored from upright (2.57 against 2.71).
 
 ## Commands
 

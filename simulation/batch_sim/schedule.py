@@ -53,6 +53,10 @@ class SimSpec:
     def __post_init__(self):
         if self.latency < 0:
             raise ValueError("latency must be non-negative")
+        n = round(self.control_dt / self.dt)
+        if n < 1 or abs(self.control_dt / self.dt - n) > 1e-9 * max(1, n):
+            raise ValueError(f"control_dt ({self.control_dt}) must be a whole multiple of dt ({self.dt}), "
+                             "as in balance_sim.steps_per_control")
         if self.pitch_reference not in ("commanded", "upright"):
             raise ValueError(f"pitch_reference must be 'commanded' or 'upright', got {self.pitch_reference!r}")
         if self.controller not in CONTROLLERS:

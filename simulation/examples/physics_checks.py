@@ -2,7 +2,10 @@
 
 Each block prints the values one section of PHYSICS.md relies on, under the
 same section number. Robot, motor, timing and scenario all come from config.py;
-the tuned gains are the CMA-ES result in results/batch_tuning/20260930-103458.
+the tuned gains are the CMA-ES result in results/batch_tuning/20260930-103458
+(TUNED, which Sections 2-7 and 9 quote), and sections 8 and 9.4 also show the
+current ones, from results/batch_tuning/20261106-154750 (TUNED_NOW: Bryson cost,
+friction and latency randomized).
 Takes under a minute.
 
 From the project folder:   python simulation/examples/physics_checks.py
@@ -26,6 +29,7 @@ from batch_sim import BatchRobot, actuator_torque, derivatives
 from config import CONFIG
 
 TUNED = (0.7301658711001224, 0.2299853606594764, 0.05724669986164053, 0.25232718798097314)  # CMA-ES, 2026-09-30
+TUNED_NOW = (0.659938589993706, 0.4980220464276531, 0.11153595895763543, 0.7956961244475451)  # CMA-ES, 2026-11-06
 HAND = tuple(CONFIG.controller.hand_tuned_gains)
 
 P = CONFIG.build_robot_params()
@@ -348,9 +352,9 @@ def cost_accuracy():
 
 
 def cost_breakdown():
-    heading("8. Cost terms, mean over the 30 validation runs")
+    heading("8. Cost terms, mean over the 30 validation runs (nominal robot, configured cost)")
     c = CONFIG.cost
-    for name, gains in (("tuned", TUNED), ("hand-tuned", HAND)):
+    for name, gains in (("tuned 2026-11-06", TUNED_NOW), ("tuned 2026-09-30", TUNED), ("hand-tuned", HAND)):
         terms = []
         for res in validation_runs(gains):
             dt, s = np.diff(res.t), res.states
@@ -438,7 +442,7 @@ def friction():
     for b in (0.0, 0.001, 0.002, 0.003, 0.005):
         p = P.with_changes(wheel_friction=b)
         row = []
-        for name, gains in (("tuned", TUNED), ("hand-tuned", HAND)):
+        for name, gains in (("tuned 2026-11-06", TUNED_NOW), ("tuned", TUNED), ("hand-tuned", HAND)):
             res = scenario_run(gains, tilt, 100, Planar2D(p, CONFIG.timing.fall_angle_rad, CONFIG.build_actuator(p)))
             row.append(f"{name} " + (f"fell at {res.fall_time:.2f} s after reaching {np.max(res.states[:, 1]):.2f} m/s"
                                      if res.fell else f"cost {CONFIG.score(res):.2f}"))
@@ -446,7 +450,7 @@ def friction():
 
     heading("9.4 Load torque: speed shift before the integrator catches up")
     goal = 1.4
-    for name, (kp, ki, kd, kv) in (("tuned", TUNED), ("hand-tuned", HAND)):
+    for name, (kp, ki, kd, kv) in (("tuned 2026-11-06", TUNED_NOW), ("tuned", TUNED), ("hand-tuned", HAND)):
         threshold = R * kp * kv
         shifts = ", ".join(f"b = {b:.4f}: {goal / (1 - b / threshold):.3f} m/s" if b < threshold
                            else f"b = {b:.4f}: no steady speed" for b in (0.001, 0.003, C_M))

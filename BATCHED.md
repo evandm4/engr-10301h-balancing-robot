@@ -45,7 +45,7 @@ In code:
 ```python
 evaluator = BatchEvaluator(CONFIG.build_eval_config(), CONFIG.build_search_space(),
                            backend="torch", dtype=np.float32)
-costs = evaluator.evaluate_units(units)          # (P, 5) unit-cube points -> (P,) mean costs
+costs = evaluator.evaluate_units(units)          # (P, 4) unit-cube points -> (P,) mean costs
 ```
 
 ## How it differs from the reference loop
@@ -61,17 +61,17 @@ costs = evaluator.evaluate_units(units)          # (P, 5) unit-cube points -> (P
 
 ### How the GPU version is driven
 
-A Python loop of 2,400 steps that launches ~200 small GPU kernels per step would spend its time on launch overhead. `TorchSimulator` avoids that:
+A Python loop of 4,800 steps that launches ~200 small GPU kernels per step would spend its time on launch overhead. `TorchSimulator` avoids that:
 
 - All state lives in fixed GPU buffers that are updated in place. The step and tick counters are GPU tensors, and per-step decisions (which command has reached the motor, the goal, the fall time) are lookups into GPU tables. Every step therefore does the same thing.
-- Two steps are recorded once as **CUDA graphs**: a physics step, and a controller tick followed by a physics step. They are replayed 2,400 times. A replay costs one launch instead of ~200.
+- Two steps are recorded once as **CUDA graphs**: a physics step, and a controller tick followed by a physics step. They are replayed 4,800 times. A replay costs one launch instead of ~200.
 - `torch.compile` would also fuse the kernels, but on Windows it needs Triton, which isn't available here. CUDA graphs need nothing beyond PyTorch.
 - `BatchEvaluator` keeps a few captured simulators and pads batch sizes up to multiples of 1,024, so DE and CMA-ES generations reuse the same graphs.
 
 ## Verified agreement
 
 **NumPy float64 vs the reference code:**
-- Trajectories, final states and fall times are bit-identical to `balance_sim` runs. Tested with the DC motor and ideal actuator, zero latency, a latency between physics steps, control every step, the commanded pitch reference (`config.py` now scores from upright, so the default case covers that one), friction with a weak motor, and per-robot parameters.
+- Trajectories, final states and fall times are bit-identical to `balance_sim` runs. Tested with the DC motor and ideal actuator, zero latency, a latency between physics steps, control every step, the commanded pitch reference (`config.py` now scores from upright, so the default case covers that one), friction with a weak motor, Coulomb friction, and per-robot parameters. Per-simulation latency (`delay_steps`) matches the reference simulator run at that latency (`test_friction_latency.py`).
 - Costs agree to about 1e-15; only the summation order differs.
 - Random search and deferred DE pick the same candidates as the `tuning` searches.
 
@@ -79,7 +79,7 @@ A Python loop of 2,400 steps that launches ~200 small GPU kernels per step would
 - The controller and anti-windup integrator match exactly on CPU and CUDA.
 - The physics derivatives are bit-identical for about 90% of inputs. The rest differ in the last bit, because the GPU's `sin`/`cos` round differently.
 - CUDA-graph replay is bit-identical to running the steps one by one, and repeated runs are identical.
-- With well-behaved gains, float64 GPU costs match NumPy to `rtol=1e-9` and trajectories to 1e-9. That holds for the full 6 s tuning scenario, for batches where every robot falls (including fall times and early stop), and with no noise, zero latency and per-robot masses.
+- With well-behaved gains, float64 GPU costs match NumPy to `rtol=1e-9` and trajectories to 1e-9. That holds for the full tuning scenario (then 6 s; now 12 s), for batches where every robot falls (including fall times and early stop), and with no noise, zero latency and per-robot masses.
 - float32 on the GPU is within 0.1% of float64.
 
 **Chaos, and why some random-gain runs disagree.** With random gains, roughly a third of runs don't reproduce between the GPU and NumPy. Those same runs don't reproduce between two *NumPy* runs whose start tilt differs by 1e-15: 647 of 651 overlap. Torque saturation and the integrator switching amplify last-bit differences in these gain sets until the runs have nothing in common. Consequences:
@@ -91,7 +91,7 @@ A Python loop of 2,400 steps that launches ~200 small GPU kernels per step would
 
 ## Speed (2026-09-28)
 
-Real tuning scenario: 6 s runs, 2,400 physics steps each. Baseline (`benchmark.py`, the reference code one run at a time): 30.5 ms per simulation.
+Tuning scenario at the time of this benchmark: 6 s runs, 2,400 physics steps each (the scenario is now 12 s, 4,800 steps, so current runs cost about twice as much). Baseline (`benchmark.py`, the reference code one run at a time): 30.5 ms per simulation.
 
 | sims per batch | NumPy f64 | NumPy f32 | GPU f64 | GPU f32 |
 |---:|---:|---:|---:|---:|
@@ -100,7 +100,7 @@ Real tuning scenario: 6 s runs, 2,400 physics steps each. Baseline (`benchmark.p
 | 120,000 | — | — | 16 µs (1,870×) | 8.1 µs (3,750×) |
 | 400,000 | — | — | 14 µs (2,150×) | **5.3 µs (5,800×)** |
 
-- **Below ~100k simulations, a GPU batch takes a flat ~0.7 s.** That's ~200 kernels per step × 2,400 steps. Use the GPU for big populations and NumPy for small ones.
+- **Below ~100k simulations, a GPU batch takes a flat ~0.7 s.** That's ~200 kernels per step × 2,400 steps (measured on 6 s runs; 12 s runs have 4,800 steps, so the floor is about twice that). Use the GPU for big populations and NumPy for small ones.
 - float64 on the GPU is only ~2.7× slower than float32 here, not 64×, because the kernels are limited by memory traffic and launches rather than arithmetic.
 
 Tuning with `--backend torch --float32 --de-pop 2000 --cma-pop 10000 --cma-iters 30` took:

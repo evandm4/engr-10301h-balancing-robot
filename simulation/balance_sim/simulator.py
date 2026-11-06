@@ -31,6 +31,18 @@ def _rk4_step(dynamics: Dynamics, state: np.ndarray, torque: float, dt: float) -
     return state + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
 
+def steps_per_control(control_dt: float, dt: float) -> int:
+    """Physics steps per controller update. control_dt must be a whole multiple of dt:
+    otherwise the real control period would be round(control_dt / dt) * dt while the
+    controller's integrators still used control_dt (PHYSICS.md 7.2)."""
+    if not (dt > 0 and control_dt > 0):
+        raise ValueError("dt and control_dt must be positive")
+    n = round(control_dt / dt)
+    if n < 1 or abs(control_dt / dt - n) > 1e-9 * max(1, n):
+        raise ValueError(f"control_dt ({control_dt}) must be a whole multiple of dt ({dt})")
+    return n
+
+
 def simulate(
     dynamics: Dynamics,
     controller: Controller,
@@ -53,13 +65,15 @@ def simulate(
     latency     seconds between the controller computing a torque and that
                 torque reaching the actuator (sensing, computation, and driver
                 delay lumped together). On top of the hold set by control_dt.
+                Applied at the first physics step at or after it is due, so a
+                latency between steps is rounded up to the next one.
     The run stops early if the dynamics reports the robot has fallen.
     """
     if latency < 0:
         raise ValueError("latency must be non-negative")
     if control_dt is None:
         control_dt = dt
-    steps_per_control = max(1, round(control_dt / dt))
+    spc = steps_per_control(control_dt, dt)
     n_steps = int(round(duration / dt))
 
     state = dynamics.initial_state() if initial_state is None else np.array(initial_state, dtype=float)
@@ -74,7 +88,7 @@ def simulate(
 
     for k in range(n_steps):
         t = k * dt
-        if k % steps_per_control == 0:
+        if k % spc == 0:
             measured = state if sensor is None else sensor.measure(state)
             pending.append((t + latency, controller.update(measured, control_dt)))
         while pending and pending[0][0] <= t + 1e-12:

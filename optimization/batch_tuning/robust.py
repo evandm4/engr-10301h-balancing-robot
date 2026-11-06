@@ -84,6 +84,11 @@ class RobustnessConfig:
             raise ValueError(f"{sorted(both)} can't be in both randomize and randomize_range")
         if self.latency_range is not None and not 0 <= self.latency_range[0] <= self.latency_range[1]:
             raise ValueError(f"latency_range must have 0 <= low <= high, got {self.latency_range}")
+        overlap = set(self.train_seeds) & set(self.validation_seeds)
+        if overlap:
+            # Validation seeds also pick the validation robots, so an overlap would score
+            # "unseen" robots that training already saw (e.g. --seeds 1000 or more).
+            raise ValueError(f"train_seeds and validation_seeds overlap: {sorted(overlap)[:5]}...")
         if self.sensitivity_weight < 0 or self.sensitivity_nudge <= 0:
             raise ValueError("sensitivity_weight must be >= 0 and sensitivity_nudge > 0")
 

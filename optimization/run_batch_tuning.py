@@ -50,7 +50,7 @@ from batch_tuning import (
     differential_evolution_search,
     random_search,
 )
-from tuning import Evaluator, gains_cells, gains_header, save_example_runs, save_result, tuning_summary_figure
+from tuning import Evaluator, gains_cells, gains_header, provenance, save_example_runs, save_result, tuning_summary_figure
 
 
 def example_runs(gains_by_label):
@@ -103,7 +103,7 @@ def plot_robustness(check: BatchEvaluator, validation, names):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--de-iters", type=int, default=30, help="differential evolution generations")
-    parser.add_argument("--de-pop", type=int, default=24, help="DE population multiplier (x 5 gains)")
+    parser.add_argument("--de-pop", type=int, default=24, help="DE population multiplier (x 4 gains)")
     parser.add_argument("--cma-iters", type=int, default=30, help="CMA-ES generations")
     parser.add_argument("--cma-pop", type=int, default=120, help="CMA-ES population")
     parser.add_argument("--backend", choices=["numpy", "torch"], default="numpy")
@@ -217,6 +217,7 @@ def main():
                                       "backend": args.backend, "dtype": np.dtype(evaluator.dtype).name})
     (folder / "comparison.json").write_text(json.dumps({
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "provenance": provenance(),
         "run_arguments": vars(args),
         "simulations_per_evaluation": sims_per_eval,
         "results": comparison,

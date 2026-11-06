@@ -45,7 +45,7 @@ whose output is labeled with this document's section numbers. It takes about 20 
 **What could break on hardware**, in order of severity (Section 9):
 
 1. **The motor driver.** The model assumes the driver delivers the commanded current. If the real driver instead sets PWM duty in proportion to the torque command, the tuned gains fall in 30 of 30 validation runs. Its back-EMF drag is above the gains' runaway threshold (9.3, 9.4).
-2. **Friction.** It is zero in the model, and the robust tuner cannot vary it. With viscous friction of 0.003 N m s/rad or more, the tuned gains fall. The tuned gains have a small $k_pk_v$, and any load torque then pushes the speed up by $\tau_L/(k_pk_v)$ (9.4).
+2. **Friction.** Its size is unmeasured. With the earlier cost, viscous friction of 0.003 N m s/rad or more made the 2026-09-30 tuned gains fall: they have a small $k_pk_v$, and any load torque then pushes the speed up by $\tau_L/(k_pk_v)$ (9.4). Since 2026-11-06 robust scoring randomizes friction, and the retuned gains nearly triple $k_pk_v$ (9.4).
 3. **Traction.** The no-slip assumption needs a friction coefficient up to 0.91 (tuned) or 1.43 (hand-tuned) during transients.
 4. **The IMU model.** It is idealized: a raw accelerometer tilt estimate would be off by up to 72° during these transients.
 
@@ -109,7 +109,7 @@ With forward drawn to the right, $\varphi$ and $\theta$ both increase clockwise.
 \omega = \dot\varphi - \dot\theta = \frac{\dot x}{r} - \dot\theta .
 ```
 
-This is `relative_wheel_speed` (`planar2d.py:69`).
+This is `relative_wheel_speed` (`planar2d.py:102`).
 
 $\tau$ is the total torque the motors apply to the wheels. By Newton's third law the body receives $-\tau$. The state vector is $(x, \dot x, \theta, \dot\theta)$ (`dynamics.py:10`).
 
@@ -150,7 +150,7 @@ In matrix form $T = \tfrac12\dot q^{\mathsf T}\mathbf M(\theta)\dot q$, with
 \mathbf M(\theta) = \begin{pmatrix} a & Ml\cos\theta \\ Ml\cos\theta & d \end{pmatrix}.
 ```
 
-These are the $T$ and $V$ in the `planar2d.py` docstring and in `Planar2D.energy` (`planar2d.py:99`).
+These are the $T$ and $V$ in the `planar2d.py` docstring and in `Planar2D.energy` (`planar2d.py:139`).
 
 ### 2.3 Generalized forces
 
@@ -172,7 +172,7 @@ so the generalized forces are
 Q_x = \frac{\tau_{\text{net}}}{r},\qquad Q_\theta = -\tau_{\text{net}} .
 ```
 
-`planar2d.py:70-71` computes $\tau_{\text{net}}$ the same way: it gets the delivered torque from the actuator (Section 4), then subtracts friction. Friction modeled this way is equivalent to a Rayleigh dissipation function $\mathcal F = \tfrac12 b\omega^2$. Because it acts between two parts of the robot, it can only dissipate energy (2.7).
+`planar2d.py:103-107` computes $\tau_{\text{net}}$ the same way: it gets the delivered torque from the actuator (Section 4), then subtracts friction. Friction modeled this way is equivalent to a Rayleigh dissipation function $\mathcal F = \tfrac12 b\omega^2$. Because it acts between two parts of the robot, it can only dissipate energy (2.7).
 
 ### 2.4 Euler–Lagrange equations
 
@@ -219,12 +219,12 @@ In (E2) the $\dot x\dot\theta$ terms cancel. The two equations have a direct phy
 
 | Term | Code |
 |---|---|
-| $\omega = \dot x/r - \dot\theta$ | `planar2d.py:69` |
-| $\tau_{\text{net}}$ = actuator output $- b\omega$ | `planar2d.py:70-71` |
-| $a$, $b(\theta)$, $d$ | `planar2d.py:76-78` |
-| $\text{rhs}_x = \tau_{\text{net}}/r + Ml\sin\theta\,\dot\theta^2$ | `planar2d.py:80` |
-| $\text{rhs}_\theta = -\tau_{\text{net}} + Mgl\sin\theta$ | `planar2d.py:81` |
-| $\Delta$, $\ddot x$, $\ddot\theta$ | `planar2d.py:83-85` |
+| $\omega = \dot x/r - \dot\theta$ | `planar2d.py:102` |
+| $\tau_{\text{net}}$ = actuator output $- b\omega$ | `planar2d.py:103-107` |
+| $a$, $b(\theta)$, $d$ | `planar2d.py:112-114` |
+| $\text{rhs}_x = \tau_{\text{net}}/r + Ml\sin\theta\,\dot\theta^2$ | `planar2d.py:116` |
+| $\text{rhs}_\theta = -\tau_{\text{net}} + Mgl\sin\theta$ | `planar2d.py:117` |
+| $\Delta$, $\ddot x$, $\ddot\theta$ | `planar2d.py:119-121` |
 
 **The solve never fails.** Because $\cos^2\theta \le 1$,
 
@@ -360,7 +360,7 @@ The simulator shows this (3 output, tuned gains, seed 100):
 
 The RHP zero is a fundamental limit on velocity control (6.2).
 
-### 3.4 Critical pitch gain (`critical_pitch_gain`, `planar2d.py:37`)
+### 3.4 Critical pitch gain (`critical_pitch_gain`, `planar2d.py:41`)
 
 Eliminate $\ddot x$ between the two linear equations. (E1) gives $\ddot x = (\tau/r - Ml\ddot\theta)/a$; substituting into (E2):
 
@@ -476,7 +476,7 @@ The scenario asks for 1.4 m/s, and tuned runs briefly reach 2.0 m/s (9.1–9.5 o
 
 ### 4.5 Ideal actuator and friction
 
-`IdealActuator` returns $\operatorname{clip}(\tau_{\text{cmd}}, \pm\tau_{\max})$. It is the DC motor model in the limit $V_s, i_{\max}\to\infty$. Friction is applied after either actuator (`planar2d.py:71`), as derived in 2.3.
+`IdealActuator` returns $\operatorname{clip}(\tau_{\text{cmd}}, \pm\tau_{\max})$. It is the DC motor model in the limit $V_s, i_{\max}\to\infty$. Friction is applied after either actuator (`planar2d.py:104-107`), as derived in 2.3.
 
 ### 4.6 The cost's "effort" is copper loss
 
@@ -530,7 +530,7 @@ Section 9.5 covers what this sensor model leaves out.
 
 ## 6. Controller (`controllers.py`)
 
-### 6.1 Inner pitch loop (`controllers.py:155-166`)
+### 6.1 Inner pitch loop (`controllers.py:187-198`)
 
 At each tick $k$, with period $T = 5$ ms:
 
@@ -544,7 +544,7 @@ u_k = \operatorname{clip}\bigl(k_p e_k + k_i I_k + k_d\hat{\dot\theta}_k,\ \pm\t
 - **The derivative acts on the measurement:** the term is $k_d\hat{\dot\theta}$ (the gyro), not $k_d\,\dot e$. When the goal velocity steps, $\theta_{\text{sp}}$ can jump by the full 25° in one tick, and $\dot e$ would spike ("derivative kick"). Using the gyro also avoids differencing noisy angles. The cost of this choice is that it treats $\dot\theta_{\text{sp}}$ as zero.
 - **Sign:** $\theta > 0$ gives $\tau > 0$, which drives the wheels under the body (3.1).
 
-### 6.2 Outer velocity loop (`controllers.py:247-257`)
+### 6.2 Outer velocity loop (`controllers.py:279-289`)
 
 ```math
 \theta_{\text{sp}} = \operatorname{clip}\bigl(k_v\,(v_{\text{goal}} - \hat{\dot x}) + k_{vi}\!\textstyle\int(\cdot),\ \pm 25^\circ\bigr),\qquad k_{vi} = 0 \text{ in this project}.
@@ -655,7 +655,7 @@ with the torque command held constant over the step. The actuator and friction a
 
 **Closed loop.** The clips make the right-hand side non-smooth, which costs some order at the switching instants. Even so, the full scenario at 2.5 ms differs from 0.25 ms by at most $4.4\times10^{-6}$ rad in pitch and $6.7\times10^{-5}$ m/s in velocity (7.5 output).
 
-### 7.2 Multi-rate timing and latency (`simulator.py:62-84`)
+### 7.2 Multi-rate timing and latency (`simulator.py:72-96`)
 
 **Rates.** The physics step is $h = 2.5$ ms, the control period is $T = 5$ ms (2 steps), and the latency is $L = 10$ ms (4 steps). A command computed from the measurement at $t_k$ takes effect at the first physics step at or after $t_k + L$. It is held until the next command arrives, which is a zero-order hold.
 
@@ -663,7 +663,7 @@ with the torque command held constant over the step. The actuator and friction a
 
 **Unchecked condition.** The code does not check that $T$ and $L$ are multiples of $h$. If $T$ is not, the real control period becomes `round(T/h)·h` while the integrators still use $T$ (10.4).
 
-### 7.3 Fall detection (`planar2d.py:92`)
+### 7.3 Fall detection (`planar2d.py:129`)
 
 A run ends when $\lvert\theta\rvert > 60°$. This threshold only decides when bookkeeping stops; it does not change the dynamics.
 
@@ -722,7 +722,7 @@ The tuned $k_v = 0.252$ sits on the flat part of its curve, where the margin is 
 
 ### 7.5 Accuracy of the cost integrals
 
-The cost (Section 8) is accumulated as a left Riemann sum, $\sum_k f(t_k)\,h$ (`metrics.py:96-101`; `batch_sim/simulate.py:109-114`). On each smooth stretch $[t_a, t_b]$ of the integrand, the Euler–Maclaurin formula gives the error:
+The cost (Section 8) is accumulated as a left Riemann sum, $\sum_k f(t_k)\,h$ (`metrics.py:96-101`; `batch_sim/simulate.py:136-141`). On each smooth stretch $[t_a, t_b]$ of the integrand, the Euler–Maclaurin formula gives the error:
 
 ```math
 \sum_k f(t_k)\,h - \int_{t_a}^{t_b} f\,dt = \frac{h}{2}\bigl(f(t_a) - f(t_b)\bigr) + O(h^2).
@@ -760,16 +760,28 @@ Since 2026-10-24 the parameters are $w_u = 9$, $w_v = 2.25$, $P = 500$, and $\th
 
 ### 8.2 What the cost actually measures
 
-**These numbers use the earlier cost and the earlier step-shaped goal, and are still to be regenerated.** That needs the retuned gains, which wait on the GPU runs listed in `docs/evan's_to_do.md`. They are kept as a record; `physics_checks.py` no longer reproduces them, since its tuned gains and `config.py`'s goal have both changed. With the current cost (nominal 30 validation runs), the tuned PID's cost splits about 20% pitch, 12% effort and 69% velocity (total 0.17), and the cost-matched LQR's about 7%, 8% and 85% (total 0.38). Effort is now a real part of the cost.
-
-Mean over the 30 validation runs (8 output):
+**Current cost (2026-11-06).** Mean over the 30 validation runs, nominal robot (8 output). "Tuned 2026-11-06" is `physics_checks.py`'s `TUNED_NOW`: the CMA-ES result in `results/batch_tuning/20261106-154750/` ($k_p = 0.660$, $k_i = 0.498$, $k_d = 0.112$, $k_v = 0.796$), tuned for this cost with friction and latency randomized. "Tuned 2026-09-30" is the set this document quotes elsewhere, which was tuned for the earlier cost.
 
 | Gains | Pitch term | Effort term | Velocity term | Total |
 |---|---|---|---|---|
-| Tuned | 0.087 (3.8%) | 0.0003 (0.01%) | 2.232 (96.2%) | 2.319 |
-| Hand-tuned | 0.006 (0.1%) | 0.0007 (0.02%) | 4.505 (99.9%) | 4.512 |
+| Tuned 2026-11-06 | 0.031 (22%) | 0.034 (25%) | 0.075 (53%) | 0.140 |
+| Tuned 2026-09-30 | 0.023 (5%) | 0.016 (4%) | 0.391 (91%) | 0.430 |
+| Hand-tuned | 0.009 (0.4%) | 0.312 (15%) | 1.809 (85%) | 2.130 |
 
 So:
+
+- **All three terms now matter for a controller tuned for this cost.** Velocity tracking is about half of it, and pitch and effort a quarter each. The pitch term includes the floor of about 0.027 that scoring from upright imposes (8.1), so the tuned gains are close to it.
+- **Gains tuned for the earlier cost are poor at this one** (0.430, 3x the current tuned). Their outer loop is slow ($k_v = 0.25$, against 0.80), and the velocity term is what the new weights punish.
+- **The hand-tuned gains pay most for effort and velocity.** Their fast inner loop spends 9 times the effort of the tuned gains, and their slow outer loop ($k_v = 0.1$) tracks poorly.
+
+**Earlier cost and step-shaped goal (kept as a record).** $w_u = 0.01$, $w_v = 1$, pitch from the commanded lean. `physics_checks.py` no longer reproduces these numbers.
+
+| Gains | Pitch term | Effort term | Velocity term | Total |
+|---|---|---|---|---|
+| Tuned 2026-09-30 | 0.087 (3.8%) | 0.0003 (0.01%) | 2.232 (96.2%) | 2.319 |
+| Hand-tuned | 0.006 (0.1%) | 0.0007 (0.02%) | 4.505 (99.9%) | 4.512 |
+
+Under that cost:
 
 - **The cost is almost entirely velocity tracking.** The hand-tuned gains score twice as high mainly because their outer loop is 2.5 times slower (6.2), not because of their poor delay margin. The delay margin is a robustness problem, not the cost driver.
 - **The effort weight is inactive.** At 0.01, the effort term is 0.01% of the cost and cannot influence the optimum (10.5).
@@ -785,7 +797,7 @@ A fall adds between $P$ and $2P$, more the earlier it happens ($P = 500$ since 2
 
 In practice, tuned controllers cost 0.15–0.4. But 45,000 random-search runs (1,500 random gain sets on 30 randomized robots) included a slow, wandering controller that never fell and cost up to 186 at the current weights (velocity term 174), where the same gains cost 80 at the old ones. With $P = 100$ that exceeds the cheapest fall (110), which is why $P$ was raised to 500. **If a cost limit or the scenario changes, re-check this headroom.**
 
-### 8.4 Robust scoring (`robust.py:76-92`)
+### 8.4 Robust scoring (`robust.py:100-126`)
 
 **Randomization.** Each scenario scales a parameter $p$ by $1 + s\,U(-1, 1)$, with spreads $s$ from `RobustnessSettings`. Three physical consequences:
 
@@ -853,12 +865,15 @@ A motor-shaft encoder measures $\hat\omega$ directly, because it reads the rotor
 
 ### 9.4 Friction
 
-`wheel_friction` is 0, and robust scoring cannot change it (8.4). Sensitivity, for one run (seed 100, 5.73° start; 9.4 output):
+Nominal friction is 0. Since 2026-11-06 robust scoring draws it per scenario (8.4): viscous $b \in [0, 0.001]$ N m s/rad and Coulomb $\tau_c \in [0, 0.02]$ N m. Sensitivity to viscous friction, for one run (seed 100, 5.73° start; 9.4 output), with the current cost and smooth goal:
 
 | $b$ (N m s/rad) | 0 | 0.001 | 0.002 | 0.003 | 0.005 |
 |---|---|---|---|---|---|
-| Tuned | 2.32 | 2.63 | 3.50 | falls at 4.56 s | falls at 3.41 s |
-| Hand-tuned | 4.52 | 4.72 | 4.97 | 5.32 | falls at 5.80 s |
+| Tuned 2026-11-06 (with friction in the scoring) | 0.15 | 0.15 | 0.20 | 0.29 | 0.67 |
+| Tuned 2026-09-30 | 0.44 | 0.50 | 0.79 | 1.58 | 8.21 |
+| Hand-tuned | 2.14 | 2.15 | 2.25 | 2.41 | 2.99 |
+
+With the earlier cost and step goal, the 2026-09-30 gains fell at $b \ge 0.003$ (2.32, 2.63, 3.50, then falls at 4.56 s and 3.41 s). The smooth goal keeps them up here, but their cost still grows 19-fold by $b = 0.005$. The gains tuned with friction in the scoring grow 4.5-fold. They raised $k_pk_v$ from 0.18 to 0.53 N m per m/s and $k_i$ from 0.23 to 0.50, which is the trade this section predicts below.
 
 **Why the tuned gains are the fragile ones: load torque shifts the speed.** Any steady load torque $\tau_L$ across the wheel–body joint has to be supplied by the motor. Friction, a slope and back-EMF drag are all examples. Until the slow integrator takes the load over, the proportional term must supply it, which needs a pitch error $\theta - \theta_{\text{sp}} = \tau_L/k_p$. At constant speed $\theta = 0$ (2.8), so the lean command must be $\theta_{\text{sp}} = -\tau_L/k_p$. The outer loop only commands that lean when
 
@@ -874,7 +889,7 @@ Viscous friction is a load that grows with speed, $\tau_L = b\,v/r$ (taking $\do
 v = \frac{v_{\text{goal}}}{1 - b/(r\,k_p k_v)},
 ```
 
-and no steady speed at all once $b \ge r\,k_pk_v$. That threshold is 0.0064 N m s/rad for the tuned gains and 0.014 for the hand-tuned ones. The tuner's small $k_p$ cut $k_pk_v$ from 0.40 to 0.18 N m per m/s, and the robot's resistance to load torque with it.
+and no steady speed at all once $b \ge r\,k_pk_v$. That threshold is 0.0064 N m s/rad for the 2026-09-30 tuned gains and 0.014 for the hand-tuned ones. The 2026-11-06 gains, tuned with friction randomized, raised it to 0.018. The tuner's small $k_p$ cut $k_pk_v$ from 0.40 to 0.18 N m per m/s, and the robot's resistance to load torque with it.
 
 *Check (9.4 output):* with $b = 0.003$, $k_i = 0$, the ideal actuator and a constant 1.4 m/s goal, the formula predicts 2.618 m/s (tuned) and 1.782 m/s (hand-tuned). The simulator settles at exactly those values.
 
@@ -912,8 +927,8 @@ Grouped by how strong the evidence is that each one matters.
 | Limitation | Evidence | Next iteration |
 |---|---|---|
 | Driver assumed to be current-controlled with exact back-EMF compensation | Voltage-mode driver: 30 of 30 falls (9.3) | Decide the hardware driver. Either add the back-EMF feedforward of 9.3 to the firmware, or move the `VoltageModeActuator` from `physics_checks.py` into `actuators.py` and retune (or randomize between the two). |
-| Friction is zero and cannot be randomized | Tuned gains fall at $b \ge 0.003$; the runaway threshold is $rk_pk_v$ (9.4) | *Implemented 2026-11-06; retune pending.* Both engines model $\tau_f = b\omega + \tau_c\tanh(\omega/\omega_\epsilon)$ (`RobotConfig.wheel_friction`, `coulomb_friction`, `coulomb_friction_speed`). `linearize` includes the slope $\tau_c/\omega_\epsilon$, and robust scoring draws $b$ and $\tau_c$ per scenario (8.4). With $\omega_\epsilon = 1$ rad/s, $\lvert\lambda h\rvert \approx 0.17$ at the largest $\tau_c$ (7.1). Still to do: measure friction (9.4) and replace the guessed ranges. |
-| Latency is fixed at 10 ms | Delay margin is the key robustness number (7.4) | *Implemented 2026-11-06; retune pending.* Robust scoring gives each scenario its own latency, uniform over the whole physics steps in 5–20 ms (`RobustnessSettings.latency_range_s`; `simulate_batch(delay_steps=...)`, `TorchSimulator(max_delay_steps=...)`). The alternative, adding the delay margin to the objective, is not done. |
+| Friction is zero and cannot be randomized | Tuned gains fall at $b \ge 0.003$; the runaway threshold is $rk_pk_v$ (9.4) | *Implemented and retuned 2026-11-06* (`results/batch_tuning/20261106-154750/`; 8.2, 9.4). Both engines model $\tau_f = b\omega + \tau_c\tanh(\omega/\omega_\epsilon)$ (`RobotConfig.wheel_friction`, `coulomb_friction`, `coulomb_friction_speed`). `linearize` includes the slope $\tau_c/\omega_\epsilon$, and robust scoring draws $b$ and $\tau_c$ per scenario (8.4). With $\omega_\epsilon = 1$ rad/s, $\lvert\lambda h\rvert \approx 0.17$ at the largest $\tau_c$ (7.1). Still to do: measure friction (9.4) and replace the guessed ranges. |
+| Latency is fixed at 10 ms | Delay margin is the key robustness number (7.4) | *Implemented and retuned 2026-11-06.* The retuned gains' nominal linear loop is stable from 0 to 35.75 ms (`results/lqr_comparison/20261106-154350/`). Robust scoring gives each scenario its own latency, uniform over the whole physics steps in 5–20 ms (`RobustnessSettings.latency_range_s`; `simulate_batch(delay_steps=...)`, `TorchSimulator(max_delay_steps=...)`). The alternative, adding the delay margin to the objective, is not done. |
 
 ### 10.2 Assumptions violated during transients
 
@@ -931,7 +946,7 @@ Grouped by how strong the evidence is that each one matters.
   \mathbf M(\theta) = \begin{pmatrix} a + J/r^2 & Ml\cos\theta - J/r \\ Ml\cos\theta - J/r & d + J \end{pmatrix}.
   ```
 
-  Folding $J$ into $I_w$ gets the first entry right but misses the $-J/r$ coupling and the $+J$ on the body. The matrix stays positive definite, because $T$ is still a sum of squares. Only `planar2d.py:76-78` (and `batch_sim/physics.py:49-51`) would change.
+  Folding $J$ into $I_w$ gets the first entry right but misses the $-J/r$ coupling and the $+J$ on the body. The matrix stays positive definite, because $T$ is still a sum of squares. Only `planar2d.py:112-114` (and `batch_sim/physics.py:56-58`) would change.
 - **Winding inductance.** If $L/R$ is not much less than 5 ms, add the current as a state: $L\,di/dt = V - Ri - k_eN\omega$.
 - **Gearbox efficiency and backlash.** Multiply the output torque by an efficiency $\eta$. Model backlash as a dead band in $\varphi - \theta$.
 - **Battery sag.** Use $V_s(t) = V_{oc} - R_{\text{batt}}\,i_{\text{total}}$ instead of a constant per run (`CONDITIONS.md` already lists this).
@@ -956,13 +971,13 @@ Grouped by how strong the evidence is that each one matters.
 
 | Physics | Reference (`balance_sim`) | Batched (`batch_sim`) |
 |---|---|---|
-| Equations of motion (Section 2) | `planar2d.py:64-87` | `physics.py:36-59` |
-| DC motor and ideal actuator (Section 4) | `actuators.py:38, 99-112` | `physics.py:21-33` |
-| RK4 (7.1) | `simulator.py:26-31` | `physics.py:66-73` |
-| Anti-windup integrator (6.4) | `controllers.py:14-51` | `controller.py:26-49` |
-| Cascaded controller (6.1–6.2) | `controllers.py:155-166, 247-257` | `controller.py:52-85` |
-| Latency and hold (7.2) | `simulator.py:75-84` (deque) | `schedule.py` (precomputed ring buffer) |
-| Cost, left Riemann sums (7.5, 8.1) | `metrics.py:96-105` | `simulate.py:109-114, 131-133` |
+| Equations of motion (Section 2) | `planar2d.py:97-123` | `physics.py:41-66` |
+| DC motor and ideal actuator (Section 4) | `actuators.py:38, 99-112` | `physics.py:26-38` |
+| RK4 (7.1) | `simulator.py:26-31` | `physics.py:73-80` |
+| Anti-windup integrator (6.4) | `controllers.py:14-51` | `controller.py:29-52` |
+| Cascaded controller (6.1–6.2) | `controllers.py:187-198, 279-289` | `controller.py:55-88` |
+| Latency and hold (7.2) | `simulator.py:85-96` (deque) | `schedule.py` (precomputed ring buffer) |
+| Cost, left Riemann sums (7.5, 8.1) | `metrics.py:96-105` | `simulate.py:136-141, 157-160` |
 
 In float64 the NumPy backend reproduces `balance_sim` bit for bit (`simulation/tests/test_equivalence.py`; `BATCHED.md`). So every derivation, limitation and fix above applies to both engines. A physics change made in `planar2d.py` or `actuators.py` must be mirrored in `batch_sim/physics.py`, and the equivalence tests will catch a missed one.
 

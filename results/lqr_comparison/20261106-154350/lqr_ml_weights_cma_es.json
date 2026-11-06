@@ -1,0 +1,12 @@
+{
+  "method": "lqr_ml_weights_cma_es",
+  "gains": {
+    "w_integral": 5.098244889702851
+  },
+  "best_training_cost": 0.23928849220275877,
+  "n_evals": 4800,
+  "elapsed_s": 99.79,
+  "controller": "LQR, ML-tuned weights",
+  "backend": "torch",
+  "dtype": "float32"
+}
