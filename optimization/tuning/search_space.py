@@ -95,7 +95,8 @@ def cascaded_pid_space(
 
 # ---- LQR weights ---------------------------------------------------------------
 
-LQR_WEIGHT_NAMES = ("w_velocity", "w_pitch_rate", "w_torque", "w_integral")
+# Each per unit of torque weight: the torque weight is fixed at 1 (see lqr_weight_space).
+LQR_WEIGHT_NAMES = ("w_pitch", "w_velocity", "w_pitch_rate", "w_integral")
 
 
 def _searched_weights(fixed: Optional[Dict[str, float]]) -> List[str]:
@@ -107,30 +108,34 @@ def _searched_weights(fixed: Optional[Dict[str, float]]) -> List[str]:
 
 
 def lqr_weight_space(bounds: Dict[str, Tuple[float, float]], fixed: Optional[Dict[str, float]] = None) -> SearchSpace:
-    """Search space for the LQR's cost weights, relative to a pitch weight of 1.
+    """Search space for the LQR's cost weights, per unit of torque weight.
 
-    Four numbers, like the cascaded PID's four gains: the weights on velocity
-    error, pitch rate, torque and the integral of velocity error
-    (balance_sim.LQRWeights). Only ratios matter to an LQR, so fixing the
-    pitch weight loses nothing. All on a log scale: each spans orders of
-    magnitude, and the low end of the rate and integral ranges is "off" in
-    practice. `fixed` holds weights at a value instead of searching them
-    ({"w_pitch_rate": 0.0} is exactly off, which a log scale cannot reach); the
-    space then has only the others. Bounds come from config.py (LQRConfig);
-    build it with CONFIG.build_lqr_space().
+    Up to four numbers: the weights on pitch, velocity error, pitch rate and
+    the integral of velocity error (balance_sim.LQRWeights), all relative to a
+    torque weight of 1. Only ratios matter to an LQR, so one weight can be
+    fixed. It is the torque weight because it is the one that must stay
+    positive: every state weight may be 0, and for this robot and score the
+    best pitch and velocity weights are 0 (LQR.md). Fixing the pitch weight
+    at 1 instead, as before 2026-11-06, made "pitch weight 0" reachable only
+    as "every other weight infinite", so the search ran into its bounds.
+
+    All on a log scale, since each spans orders of magnitude. `fixed` holds
+    weights at a value instead of searching them ({"w_pitch": 0.0} is exactly
+    off, which a log scale cannot reach); the space then has only the others.
+    Bounds come from config.py (LQRConfig); build it with CONFIG.build_lqr_space().
     """
     return SearchSpace([Parameter(name, *bounds[name], log=True) for name in _searched_weights(fixed)])
 
 
 def lqr_weights(values: Sequence[float], fixed: Optional[Dict[str, float]] = None):
-    """A point of lqr_weight_space (built with the same `fixed`) -> balance_sim.LQRWeights."""
+    """A point of lqr_weight_space (built with the same `fixed`) -> balance_sim.LQRWeights (torque weight 1)."""
     from balance_sim import LQRWeights
 
     searched = _searched_weights(fixed)
     if len(values) != len(searched):
         raise ValueError(f"expected {len(searched)} weights {searched}, got {len(values)}")
     w = {**(fixed or {}), **{name: float(v) for name, v in zip(searched, values)}}
-    return LQRWeights(velocity=w["w_velocity"], pitch=1.0, pitch_rate=w["w_pitch_rate"], torque=w["w_torque"],
+    return LQRWeights(velocity=w["w_velocity"], pitch=w["w_pitch"], pitch_rate=w["w_pitch_rate"], torque=1.0,
                       velocity_integral=w["w_integral"])
 
 
@@ -162,7 +167,7 @@ class LQRWeightDesigner:
             return np.zeros(self.n_gains)
 
     def __call__(self, points) -> np.ndarray:
-        """(P, 4) weights -> (P, 4 + commands in flight) gains."""
+        """(P, searched weights) -> (P, 4 + commands in flight) gains."""
         return np.array([self.gain(w) for w in np.atleast_2d(points)])
 
 

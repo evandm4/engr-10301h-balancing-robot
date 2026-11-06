@@ -8,9 +8,10 @@ Six controllers:
                             configured latency. Model-based, no tuning, no simulation.
     LQR, latency ignored    the same weights, designed as if there were no latency (the
                             textbook design), run with the real latency
-    LQR, ML-tuned weights   the LQR weights searched; every candidate is an LQR design.
-                            config.py's LQRConfig holds the pitch-rate weight off, so
-                            3 weights (velocity, torque, integral) are searched, not 4
+    LQR, ML-tuned weights   the LQR weights searched, per unit of torque weight; every
+                            candidate is an LQR design. config.py's LQRConfig holds the
+                            pitch, velocity and pitch-rate weights at 0 (where searching
+                            them ended up), so only the integral weight is searched
     LQR, ML-tuned gains     the LQR gains searched directly, starting from the
                             cost-matched design and keeping the nominal linear loop stable
                             (no integral gain: LQR.md explains why). LQRConfig holds the
@@ -20,8 +21,8 @@ Six controllers:
 The common score is config.py's cost with pitch error measured from upright. The LQR
 commands no lean, so the default ("commanded") would score the two kinds of controller
 against different references. Every search minimizes that same score with the robust
-scoring of config.py's RobustnessSettings (50 seeds x 3 tilts, randomized robots, chaos
-penalty), runs both CMA-ES and differential evolution at the same budget, and keeps the
+scoring of config.py's RobustnessSettings (50 seeds x 3 tilts, randomized robots, friction
+and latency, chaos penalty), runs both CMA-ES and differential evolution at the same budget, and keeps the
 better result. The three searches get the same budget whatever their dimension.
 
 Then, for every controller:
@@ -179,7 +180,9 @@ def main():
     }
     sims = evaluators[PID_ML].simulations_per_evaluation()
     print(f"Score: config.py's cost, pitch from upright. Robust scoring: {len(robustness.train_seeds)} seeds x "
-          f"{len(eval_config.start_pitches)} tilts, randomized robots, chaos penalty weight "
+          f"{len(eval_config.start_pitches)} tilts, randomized robots and friction, "
+          f"latency {'fixed' if robustness.latency_range is None else '%g-%g ms' % tuple(1000 * x for x in robustness.latency_range)}, "
+          f"chaos penalty weight "
           f"{robustness.sensitivity_weight:g} -> {sims} simulations per evaluation")
 
     # ---- searches ----
@@ -218,7 +221,8 @@ def main():
 
     # ---- latency sweep ----
     sweep_seeds = robustness.validation_seeds[:args.sweep_seeds]
-    sweep_robust = replace(robustness, validation_seeds=sweep_seeds, sensitivity_weight=0.0)
+    # Each sweep point runs every scenario at that one latency (friction and robots still randomized).
+    sweep_robust = replace(robustness, validation_seeds=sweep_seeds, sensitivity_weight=0.0, latency_range=None)
     sweep_backend = dict(backend=args.backend, dtype=np.float64)
     sweep = {name: {"latency_ms": [], "mean_cost": [], "falls": []} for name in NAMES}
     latencies = (0.0, 10.0, 20.0) if args.quick else SWEEP_LATENCIES_MS
@@ -336,6 +340,9 @@ def replot(folder: Path, show: bool):
         robustness = replace(cfg.build_robustness(), train_seeds=tuple(saved["train_seeds"]),
                              validation_seeds=tuple(saved["validation_seeds"]),
                              randomize=tuple(tuple(r) for r in saved["randomize"]), robot_seed=saved["robot_seed"],
+                             # Runs saved before 2026-11-06 had no friction or latency randomization.
+                             randomize_range=tuple(tuple(r) for r in saved.get("randomize_range", ())),
+                             latency_range=None if saved.get("latency_range") is None else tuple(saved["latency_range"]),
                              sensitivity_weight=saved["sensitivity_weight"], sensitivity_nudge=saved["sensitivity_nudge"])
         check = {kind: BatchEvaluator(cfg.build_eval_config(), cfg.build_lqr_space() if kind == "lqr"
                                       else cfg.build_search_space(), robustness=robustness, controller=kind)

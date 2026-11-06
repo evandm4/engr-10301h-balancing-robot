@@ -20,7 +20,7 @@ class _TorchOps:
     def __init__(self):
         import torch
         self._torch = torch
-        self.sin, self.cos, self.abs = torch.sin, torch.cos, torch.abs
+        self.sin, self.cos, self.abs, self.tanh = torch.sin, torch.cos, torch.abs, torch.tanh
         self._constants = {}
 
     def _constant(self, value, like):

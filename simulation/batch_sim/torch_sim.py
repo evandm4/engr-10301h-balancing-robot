@@ -30,7 +30,7 @@ import numpy as np
 from .controller import LQR_STATE_GAINS, cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
 from .physics import rk4_step
 from .robot import BatchRobot
-from .schedule import Schedule, SimSpec, build_schedule
+from .schedule import Schedule, SimSpec, build_schedule, per_sim_ring_size
 from .simulate import BatchResult
 from .xp import torch_ops
 
@@ -50,12 +50,15 @@ class TorchSimulator:
         use_graphs: Optional[bool] = None,
         record: bool = False,
         n_gains: Optional[int] = None,
+        max_delay_steps: Optional[int] = None,
     ):
         """noise: (n_ticks, 4, n_seeds) table from schedule.noise_table, or None for a perfect sensor.
         dtype: torch.float32 (default; fast) or torch.float64 (for checking against NumPy).
         record: also keep the full state history on the GPU (n_steps x B x 4 values).
         n_gains: gains per simulation. Cascaded: always 5 (a 4-gain set gets kv_i = 0).
         LQR (spec.controller "lqr"): required, 4 + the commands in flight its gains feed back.
+        max_delay_steps: give every simulation its own latency (run's delay_steps, in physics
+        steps, up to this many) instead of spec.latency; None uses spec.latency for all.
         """
         import torch
 
@@ -76,7 +79,9 @@ class TorchSimulator:
         tensor = lambda a, dt=dtype: torch.as_tensor(np.asarray(a), dtype=dt, device=device)
 
         # ---- lookup tables, indexed on the GPU by the step / tick counters ----
-        R = s.ring_size
+        self.per_sim_delay = max_delay_steps is not None
+        R = per_sim_ring_size(s, [max_delay_steps]) if self.per_sim_delay else s.ring_size
+        self.ring_size = R
         # Ring slot holding the command that reaches the motor at each step.
         # Slot R is an extra row of zeros, for the steps before any command arrives.
         self.slot_per_step = tensor(np.where(s.active_command >= 0, s.active_command % R, R), torch.long)
@@ -91,6 +96,8 @@ class TorchSimulator:
         self.gains = torch.zeros(self.n_gains, B, dtype=dtype, device=device)
         self.start_pitch = zeros()
         self.seed_index = zeros(torch.long)
+        self.max_delay_steps = max_delay_steps
+        self.delay_steps = zeros(torch.long)   # used only with per-simulation latency
 
         # ---- state, updated in place every step ----
         self.state = tuple(zeros() for _ in range(4))
@@ -142,7 +149,14 @@ class TorchSimulator:
     def _physics_step(self):
         spec, xp, torch = self.spec, self.xp, self.torch
         dt, alive = spec.dt, self.alive
-        torque = self.ring[self.slot_per_step[self.step]][0]
+        if self.per_sim_delay:
+            # The command issued at tick (step - delay) // spc, or the zero row before the first arrives.
+            since = self.step - self.delay_steps
+            slot = torch.where(since >= 0, torch.div(since, self.schedule.steps_per_control, rounding_mode="floor")
+                               % self.ring_size, self.ring_size)
+            torque = self.ring.gather(0, slot.unsqueeze(0))[0]
+        else:
+            torque = self.ring[self.slot_per_step[self.step]][0]
 
         # Cost terms at this sample, only for robots still up.
         x, x_dot, theta, theta_dot = self.state
@@ -196,13 +210,17 @@ class TorchSimulator:
             self._physics_step()
         self._graphs = (control, physics)
 
-    def run(self, gains, start_pitch, seed_index=None, robot: Optional[BatchRobot] = None) -> BatchResult:
+    def run(self, gains, start_pitch, seed_index=None, robot: Optional[BatchRobot] = None,
+            delay_steps=None) -> BatchResult:
         """gains (B, 4) [kp, ki, kd, kv_p] or (B, 5) with kv_i, or (B, n_gains) LQR gains;
         start_pitch scalar or (B,); seed_index (B,) column of the noise table.
 
         robot: new values for the per-simulation robot parameters (the fields
         that were (B,) arrays in the robot this simulator was built with).
         Other fields keep the values it was built with.
+
+        delay_steps: (B,) latency per simulation in physics steps (required, and only
+        allowed, for a simulator built with max_delay_steps).
         """
         torch, s = self.torch, self.schedule
         if self.lqr:
@@ -213,6 +231,13 @@ class TorchSimulator:
             gains = five_gain_columns(gains)
             if len(gains) != self.B:
                 raise ValueError(f"gains must have shape ({self.B}, 4) or ({self.B}, 5), got {np.shape(gains)}")
+        if self.per_sim_delay != (delay_steps is not None):
+            raise ValueError("delay_steps must be given exactly when the simulator was built with max_delay_steps")
+        if delay_steps is not None:
+            delay_steps = np.broadcast_to(np.asarray(delay_steps, dtype=np.int64), (self.B,))
+            if delay_steps.min() < 0 or delay_steps.max() > self.max_delay_steps:
+                raise ValueError(f"delay_steps must be in [0, {self.max_delay_steps}]")
+            self.delay_steps.copy_(torch.as_tensor(delay_steps.copy(), dtype=torch.long))
         if self.noise is not None and seed_index is None:
             raise ValueError("seed_index is required when noise is given")
         if robot is not None:

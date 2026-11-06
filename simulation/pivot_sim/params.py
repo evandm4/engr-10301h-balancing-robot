@@ -114,6 +114,8 @@ class PivotRobotParams:
             wheel_inertia=self.wheel_inertia,
             max_torque=self.max_torque,
             wheel_friction=self.wheel_friction,
+            coulomb_friction=0.0,           # the pivot model has viscous friction only
+            coulomb_friction_speed=1.0,     # unused while coulomb_friction is 0
             gravity=self.gravity,
         )
 

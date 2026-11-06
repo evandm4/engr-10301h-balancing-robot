@@ -12,6 +12,7 @@ from batch_tuning import (
     cma_es_search,
     decode_units,
     robot_at,
+    sample_delay_steps,
     sample_robots,
 )
 from tuning import Evaluator
@@ -44,6 +45,51 @@ def test_config_validation():
         RobustnessConfig((1,), randomize=(("body_mass", 1.5),))
     with pytest.raises(ValueError):
         RobustnessConfig((1,), sensitivity_nudge=0.0)
+
+
+def test_range_and_latency_validation():
+    with pytest.raises(ValueError, match="low <= high"):
+        RobustnessConfig((1,), randomize_range=(("wheel_friction", 0.002, 0.001),))
+    with pytest.raises(ValueError, match="both"):
+        RobustnessConfig((1,), randomize=(("body_mass", 0.1),), randomize_range=(("body_mass", 0.7, 0.9),))
+    with pytest.raises(ValueError, match="latency_range"):
+        RobustnessConfig((1,), latency_range=(0.02, 0.01))
+    with pytest.raises(ValueError, match="whole number"):
+        sample_delay_steps(RobustnessConfig((1,), latency_range=(0.006, 0.007)), (1,), 1, 0.0025)
+
+
+def test_ranged_parameters_are_drawn_in_range_without_moving_the_scaled_ones():
+    base = BatchEvaluator(SHORT, CONFIG.build_search_space()).robot
+    scaled_only = replace(ROBUST, randomize_range=())
+    both = replace(ROBUST, randomize_range=(("wheel_friction", 0.0, 0.001), ("coulomb_friction", 0.005, 0.02)))
+    a = sample_robots(base, scaled_only, (1, 2, 3), 3)
+    b = sample_robots(base, both, (1, 2, 3), 3)
+    np.testing.assert_array_equal(a.body_mass, b.body_mass)
+    assert b.wheel_friction.min() >= 0 and b.wheel_friction.max() <= 0.001
+    assert b.coulomb_friction.min() >= 0.005 and b.coulomb_friction.max() <= 0.02
+    assert len(set(np.round(b.coulomb_friction, 12))) == 9
+
+
+def test_latency_draws_are_whole_steps_in_range_and_repeatable():
+    config = replace(ROBUST, latency_range=(0.005, 0.020))
+    d = sample_delay_steps(config, tuple(range(1, 41)), 3, 0.0025)
+    assert d.min() >= 2 and d.max() <= 8 and set(d) == set(range(2, 9))
+    np.testing.assert_array_equal(d, sample_delay_steps(config, tuple(range(1, 41)), 3, 0.0025))
+    # The same scenario gets the same latency whatever else is in the seed list.
+    np.testing.assert_array_equal(d[3:6], sample_delay_steps(config, (2,), 3, 0.0025))
+    assert sample_delay_steps(replace(ROBUST, latency_range=None), (1,), 3, 0.0025) is None
+
+
+def test_twins_share_their_scenario_latency(space):
+    ev = BatchEvaluator(SHORT, space, robustness=ROBUST)
+    s = ev._scenario_set(ROBUST.train_seeds)
+    np.testing.assert_array_equal(s.delay_steps[:s.n_base], s.delay_steps[s.n_base:])
+
+
+def test_project_config_randomizes_friction_and_latency():
+    r = CONFIG.build_robustness()
+    assert {name for name, _, _ in r.randomize_range} == {"wheel_friction", "coulomb_friction"}
+    assert r.latency_range is not None and r.latency_range[0] <= CONFIG.timing.latency_s <= r.latency_range[1]
 
 
 def test_simulations_per_evaluation(space):
@@ -91,10 +137,10 @@ def test_robots_are_fixed_per_scenario_and_within_spread(space):
 def test_randomized_robot_scores_match_reference_runs_with_those_parameters(space):
     ev = BatchEvaluator(SHORT, space, robustness=replace(ROBUST, train_seeds=(1, 2), sensitivity_weight=0.0))
     result = ev.evaluate_population([HAND_TUNED])
-    robots = ev.robots()
+    robots, delays = ev.robots(), ev.delay_steps()
     for i, (pitch, seed) in enumerate(ev.scenarios()):
         params, motor = robot_at(robots, i)
-        ref = Evaluator(replace(SHORT, params=params, motor=motor), space)
+        ref = Evaluator(replace(SHORT, params=params, motor=motor, latency=delays[i] * SHORT.dt), space)
         assert result.costs[0, i] == pytest.approx(ref.score(ref.run(HAND_TUNED, pitch, seed)), rel=1e-12)
 
 

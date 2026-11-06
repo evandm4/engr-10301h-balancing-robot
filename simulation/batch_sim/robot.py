@@ -20,6 +20,8 @@ class BatchRobot:
     wheel_inertia: object
     max_torque: object
     wheel_friction: object
+    coulomb_friction: object
+    coulomb_friction_speed: object
     gravity: object
     # DC motor model; ideal actuator (and these unused) when dc_motor is False.
     # Filled from MotorParams by from_params.
@@ -41,7 +43,8 @@ class BatchRobot:
         """
         values = {name: getattr(params, name) for name in (
             "body_mass", "body_com_height", "body_inertia", "wheel_mass", "wheel_radius",
-            "wheel_inertia", "max_torque", "wheel_friction", "gravity")}
+            "wheel_inertia", "max_torque", "wheel_friction", "coulomb_friction",
+            "coulomb_friction_speed", "gravity")}
         if motor is not None:
             values["dc_motor"] = True
             values.update({name: getattr(motor, name) for name in (

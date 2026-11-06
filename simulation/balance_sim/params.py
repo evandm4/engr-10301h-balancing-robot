@@ -24,6 +24,9 @@ class RobotParams:
     wheel_inertia: float    # kg m^2, both wheels about the axle
     max_torque: float       # N m, total motor torque limit (both motors)
     wheel_friction: float   # N m s/rad, viscous friction between wheels and body
+    coulomb_friction: float  # N m, Coulomb (dry) friction torque between wheels and body
+    coulomb_friction_speed: float  # rad/s, relative wheel speed over which the Coulomb torque
+                                   # rises smoothly: tau_c tanh(speed / this) (keeps RK4 accurate)
     gravity: float          # m/s^2
 
     def __post_init__(self):
@@ -42,6 +45,10 @@ class RobotParams:
                 raise ValueError(f"{name} must be positive, got {getattr(self, name)}")
         if self.wheel_friction < 0:
             raise ValueError("wheel_friction must be non-negative")
+        if self.coulomb_friction < 0:
+            raise ValueError("coulomb_friction must be non-negative")
+        if self.coulomb_friction_speed <= 0:
+            raise ValueError("coulomb_friction_speed must be positive")
 
     def with_changes(self, **changes) -> "RobotParams":
         """Return a copy with some fields changed (handy for design sweeps)."""

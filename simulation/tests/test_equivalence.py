@@ -35,6 +35,8 @@ CONFIGS = {
     "commanded_reference": replace(SHORT, pitch_reference="commanded"),
     "friction_weak_motor": replace(SHORT, params=SHORT.params.with_changes(wheel_friction=0.003, max_torque=0.3),
                                    motor=replace(SHORT.motor, supply_voltage=6.0)),
+    "coulomb_friction": replace(SHORT, params=SHORT.params.with_changes(coulomb_friction=0.02,
+                                                                        coulomb_friction_speed=0.5)),
 }
 
 

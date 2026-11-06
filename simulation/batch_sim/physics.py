@@ -18,6 +18,11 @@ import numpy as np
 from .robot import BatchRobot
 
 
+def _is_zero(value) -> bool:
+    """True for a plain number equal to 0 (a per-simulation array or tensor never counts)."""
+    return isinstance(value, (int, float)) and value == 0
+
+
 def actuator_torque(robot: BatchRobot, command, relative_wheel_speed, xp=np):
     """Applied torque for a torque command. See Actuator.torque in the CPU code."""
     if not robot.dc_motor:
@@ -41,6 +46,8 @@ def derivatives(robot: BatchRobot, state, torque, xp=np):
     relative_wheel_speed = xp.divide(x_dot, p.wheel_radius) - theta_dot
     tau = actuator_torque(p, torque, relative_wheel_speed, xp)
     tau = tau - p.wheel_friction * relative_wheel_speed
+    if not _is_zero(p.coulomb_friction):   # skipped for a frictionless batch, as in Planar2D
+        tau = tau - p.coulomb_friction * xp.tanh(xp.divide(relative_wheel_speed, p.coulomb_friction_speed))
 
     sin_t, cos_t = xp.sin(theta), xp.cos(theta)
     ml = p.body_mass * p.body_com_height

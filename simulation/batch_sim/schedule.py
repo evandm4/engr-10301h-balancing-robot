@@ -7,6 +7,7 @@ worked out once, before the batch runs, using the same float arithmetic as the
 CPU loop so the two agree exactly.
 """
 
+import math
 from collections import deque
 from dataclasses import dataclass
 from typing import Callable, Sequence
@@ -97,6 +98,24 @@ def build_schedule(spec: SimSpec) -> Schedule:
     goal_per_step = np.array([spec.goal(k * dt) for k in range(n_steps)])
 
     return Schedule(n_steps, steps_per_control, n_ticks, active, ring_size, goal_per_tick, goal_per_step)
+
+
+def latency_steps(latency: float, dt: float) -> int:
+    """The latency in whole physics steps, as the simulators apply it: a command takes
+    effect at the first physics step at or after it is due, so the delay rounds up."""
+    if latency < 0:
+        raise ValueError("latency must be non-negative")
+    return math.ceil(latency / dt - 1e-9)
+
+
+def per_sim_ring_size(schedule: Schedule, delay_steps) -> int:
+    """Ring slots needed when each simulation has its own delay (in physics steps).
+
+    At step k the newest command is tick k // spc and the one in use is tick
+    (k - d) // spc, at most ceil(d / spc) ticks older, so d // spc + 2 slots hold
+    every command still needed.
+    """
+    return max(schedule.ring_size, int(np.max(delay_steps)) // schedule.steps_per_control + 2)
 
 
 def noise_table(seeds: Sequence[int], n_ticks: int) -> np.ndarray:

@@ -19,6 +19,10 @@ Q_x = tau / r and Q_theta = -tau. The Euler-Lagrange equations give
 with a = m_w + I_w/r^2 + M, b = M l cos(theta), d = M l^2 + I_b. The 2x2 system
 is solved in closed form for x'' and theta''.
 
+Friction between wheels and body, tau_f = b w + tau_c tanh(w / w_eps) with w
+the relative wheel speed, comes off the motor torque (viscous plus smoothed
+Coulomb; both zero by default).
+
 Assumptions: rolling without slip and a rigid body. The motors are handled by
 a swappable Actuator: by default the commanded torque is delivered as-is (clipped
 to the torque limit); pass a DCMotorActuator for back-EMF and current limits.
@@ -49,8 +53,10 @@ def critical_pitch_gain(p: RobotParams) -> float:
 def linearize(p: RobotParams):
     """The model linearized about upright: d/dt [x, x_dot, theta, theta_dot] = A s + B tau.
 
-    PHYSICS.md 3.1, plus the viscous wheel friction (zero by default), which
-    takes b (x_dot / r - theta_dot) off the motor torque. The actuator is taken
+    PHYSICS.md 3.1, plus the wheel friction (zero by default), which takes
+    b (x_dot / r - theta_dot) off the motor torque. The smoothed Coulomb term
+    tau_c tanh(w / w_eps) enters through its slope at zero speed, tau_c / w_eps:
+    a large damping, but only within about w_eps of zero. The actuator is taken
     as unsaturated: below its limits the DC motor model delivers the command
     exactly (PHYSICS.md 4.3). Returns A (4, 4) and B (4, 1).
     """
@@ -65,7 +71,8 @@ def linearize(p: RobotParams):
     A[0, 1] = A[2, 3] = 1.0
     A[1, 2] = -ml * ml * p.gravity / det
     A[3, 2] = a * ml * p.gravity / det
-    friction = np.array([-p.wheel_friction / p.wheel_radius, p.wheel_friction])   # net torque per (x_dot, theta_dot)
+    damping = p.wheel_friction + p.coulomb_friction / p.coulomb_friction_speed
+    friction = np.array([-damping / p.wheel_radius, damping])   # net torque per (x_dot, theta_dot)
     A[1, [1, 3]] += x_per_torque * friction
     A[3, [1, 3]] += theta_per_torque * friction
     B = np.array([[0.0], [x_per_torque], [0.0], [theta_per_torque]])
@@ -95,6 +102,9 @@ class Planar2D(Dynamics):
         relative_wheel_speed = x_dot / p.wheel_radius - theta_dot
         tau = self.actuator.torque(torque, relative_wheel_speed)
         tau -= p.wheel_friction * relative_wheel_speed
+        if p.coulomb_friction:
+            # np.tanh, not math.tanh: they differ in the last bit, and batch_sim uses NumPy's.
+            tau -= p.coulomb_friction * float(np.tanh(relative_wheel_speed / p.coulomb_friction_speed))
 
         sin_t, cos_t = math.sin(theta), math.cos(theta)
         ml = p.body_mass * p.body_com_height

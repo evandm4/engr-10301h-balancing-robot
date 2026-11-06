@@ -760,7 +760,7 @@ Since 2026-10-24 the parameters are $w_u = 9$, $w_v = 2.25$, $P = 500$, and $\th
 
 ### 8.2 What the cost actually measures
 
-**These numbers use the earlier cost and the earlier step-shaped goal.** They are kept as a record; `physics_checks.py` no longer reproduces them, since its tuned gains and `config.py`'s goal have both changed. With the current cost (nominal 30 validation runs), the tuned PID's cost splits about 20% pitch, 12% effort and 69% velocity (total 0.17), and the cost-matched LQR's about 7%, 8% and 85% (total 0.38). Effort is now a real part of the cost.
+**These numbers use the earlier cost and the earlier step-shaped goal, and are still to be regenerated.** That needs the retuned gains, which wait on the GPU runs listed in `docs/evan's_to_do.md`. They are kept as a record; `physics_checks.py` no longer reproduces them, since its tuned gains and `config.py`'s goal have both changed. With the current cost (nominal 30 validation runs), the tuned PID's cost splits about 20% pitch, 12% effort and 69% velocity (total 0.17), and the cost-matched LQR's about 7%, 8% and 85% (total 0.38). Effort is now a real part of the cost.
 
 Mean over the 30 validation runs (8 output):
 
@@ -789,7 +789,7 @@ In practice, tuned controllers cost 0.15–0.4. But 45,000 random-search runs (1
 
 **Randomization.** Each scenario scales a parameter $p$ by $1 + s\,U(-1, 1)$, with spreads $s$ from `RobustnessSettings`. Three physical consequences:
 
-- **Zero stays zero.** Multiplicative noise cannot perturb a parameter whose nominal value is zero. `wheel_friction` is 0 (and not in the list), so robust tuning never sees friction, and friction turns out to matter (9.4).
+- **Zero stays zero.** Multiplicative noise cannot perturb a parameter whose nominal value is zero. Friction is 0 nominally, so until 2026-11-06 robust tuning never saw it, and friction turns out to matter (9.4). Since then `RobustnessSettings.randomize_range` draws such parameters outright per scenario: viscous $b \in [0, 0.001]$ N m s/rad and Coulomb $\tau_c \in [0, 0.02]$ N m (guesses; see 9.4). `latency_range_s` draws each scenario's latency from the whole physics steps in 5–20 ms. The controllers are still designed for the nominal 10 ms.
 - **Correlations are lost.** Masses and inertias are drawn independently, but for a fixed shape $I_b \propto M$. Independent draws explore some unphysical combinations (harmless at ±15–25%) and under-sample the correlated extremes.
 - **The voltage spread reaches the voltage limit.** At the low-battery, high-resistance corner (6.66 V, 3.45 Ω), stall current falls to $V/R = 1.93$ A < 2 A. So the randomization does reach voltage-limited stall torque (0.386 N m), as intended.
 
@@ -900,7 +900,7 @@ Mounting the IMU above the axle adds $l_{\text{imu}}\ddot\theta$ and $l_{\text{i
 | Quasi-static motor current ($L$ ignored) | $L/R \ll 5$ ms | current lags the command; extra phase lag in the loop |
 | Lossless, stiff gearbox, no backlash | efficiency near 1, little play | backlash is a dead zone around zero torque, exactly where balancing operates |
 | Rotor inertia ignored | $nN^2J_r$ small next to $I_w$ | see 10.3: it enters the mass matrix in three places |
-| No Coulomb friction or rolling resistance | rarely, on hardware | Coulomb friction is a dead zone, like backlash |
+| Coulomb friction smoothed, $\tau_c\tanh(\omega/\omega_\epsilon)$ with $\omega_\epsilon = 1$ rad/s; no rolling resistance | the wheels rarely sit near zero speed for long | real stiction is a dead zone, like backlash; the smoothing understates it near $\omega = 0$ |
 | Sensing and actuation aligned to physics steps | latency and control period are multiples of $h$ | see 7.2 |
 
 ## 10. Limitations and future iterations
@@ -912,8 +912,8 @@ Grouped by how strong the evidence is that each one matters.
 | Limitation | Evidence | Next iteration |
 |---|---|---|
 | Driver assumed to be current-controlled with exact back-EMF compensation | Voltage-mode driver: 30 of 30 falls (9.3) | Decide the hardware driver. Either add the back-EMF feedforward of 9.3 to the firmware, or move the `VoltageModeActuator` from `physics_checks.py` into `actuators.py` and retune (or randomize between the two). |
-| Friction is zero and cannot be randomized | Tuned gains fall at $b \ge 0.003$; the runaway threshold is $rk_pk_v$ (9.4) | Measure it (9.4). Add Coulomb plus viscous friction, $\tau_f = \tau_c\tanh(\omega/\omega_\epsilon) + b\omega$; the smooth tanh keeps RK4 accurate. Randomize it additively (e.g. $b \in [0, b_{\max}]$), since multiplicative spread cannot move a zero. Then the tuner must trade delay margin (small $k_p$) against load-torque rejection (large $k_pk_v$) explicitly. |
-| Latency is fixed at 10 ms | Delay margin is the key robustness number (7.4) | Randomize latency per scenario (e.g. 5–20 ms), or add the delay margin from 7.4 to the objective. It is cheap: the eigenvalues of a 6×6 matrix at 10 ms latency. |
+| Friction is zero and cannot be randomized | Tuned gains fall at $b \ge 0.003$; the runaway threshold is $rk_pk_v$ (9.4) | *Implemented 2026-11-06; retune pending.* Both engines model $\tau_f = b\omega + \tau_c\tanh(\omega/\omega_\epsilon)$ (`RobotConfig.wheel_friction`, `coulomb_friction`, `coulomb_friction_speed`). `linearize` includes the slope $\tau_c/\omega_\epsilon$, and robust scoring draws $b$ and $\tau_c$ per scenario (8.4). With $\omega_\epsilon = 1$ rad/s, $\lvert\lambda h\rvert \approx 0.17$ at the largest $\tau_c$ (7.1). Still to do: measure friction (9.4) and replace the guessed ranges. |
+| Latency is fixed at 10 ms | Delay margin is the key robustness number (7.4) | *Implemented 2026-11-06; retune pending.* Robust scoring gives each scenario its own latency, uniform over the whole physics steps in 5–20 ms (`RobustnessSettings.latency_range_s`; `simulate_batch(delay_steps=...)`, `TorchSimulator(max_delay_steps=...)`). The alternative, adding the delay margin to the objective, is not done. |
 
 ### 10.2 Assumptions violated during transients
 

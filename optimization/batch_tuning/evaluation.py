@@ -26,7 +26,7 @@ from balance_sim import step_profile
 from batch_sim import BatchRobot, SimSpec, build_schedule, noise_table, simulate_batch
 from tuning import EvalConfig, EvalResult, SearchSpace
 
-from .robust import RobustnessConfig, sample_robots
+from .robust import RobustnessConfig, sample_delay_steps, sample_robots
 
 
 def spec_from_eval_config(config: EvalConfig, controller: str = "cascaded") -> SimSpec:
@@ -88,6 +88,7 @@ class _ScenarioSet:
     seed_col: np.ndarray     # (n_total,) column of the noise table
     robot: BatchRobot        # nominal, or (n_total,) arrays for per-scenario robots
     n_base: int              # the first n_base columns are the scenarios; any after are the nudged twins
+    delay_steps: Optional[np.ndarray] = None   # (n_total,) latency per column in physics steps; None: spec.latency
 
 
 class BatchEvaluator:
@@ -176,25 +177,34 @@ class BatchEvaluator:
             scenarios = self.scenarios(seeds)
             pitch = np.array([p for p, _ in scenarios])
             seed_col = np.array([seeds.index(s) for _, s in scenarios])
-            robot, n_base = self.robot, len(scenarios)
+            robot, n_base, delay = self.robot, len(scenarios), None
             r = self.robustness
             if r is not None:
-                robot = sample_robots(self.robot, r, seeds, len(self.config.start_pitches))
+                n_pitches = len(self.config.start_pitches)
+                robot = sample_robots(self.robot, r, seeds, n_pitches)
+                delay = sample_delay_steps(r, seeds, n_pitches, self.spec.dt)
                 if r.twin_runs:
-                    # Twins: same noise and robot, start tilt nudged.
+                    # Twins: same noise, robot and latency, start tilt nudged.
                     pitch = np.concatenate([pitch, pitch + r.sensitivity_nudge])
                     seed_col = np.concatenate([seed_col, seed_col])
                     robot = robot.take(np.tile(np.arange(n_base), 2))
-            self._scenario_sets[seeds] = _ScenarioSet(pitch, seed_col, robot, n_base)
+                    delay = None if delay is None else np.tile(delay, 2)
+            self._scenario_sets[seeds] = _ScenarioSet(pitch, seed_col, robot, n_base, delay)
         return self._scenario_sets[seeds]
 
-    def _torch_simulator(self, batch_size: int, seeds: Tuple[int, ...], robot: BatchRobot, n_gains: int):
+    def delay_steps(self, seeds: Optional[Sequence[int]] = None) -> Optional[np.ndarray]:
+        """Each scenario's latency in physics steps (order of scenarios(seeds)); None if all use the configured one."""
+        s = self._scenario_set(tuple(self.train_seeds if seeds is None else seeds))
+        return None if s.delay_steps is None else s.delay_steps[:s.n_base]
+
+    def _torch_simulator(self, batch_size: int, seeds: Tuple[int, ...], robot: BatchRobot, n_gains: int,
+                         max_delay_steps: Optional[int] = None):
         """A captured TorchSimulator for this (padded) batch size, seed set and gain width, reused across calls.
 
         robot only sets which fields are per-simulation; their values are
         copied in on every run.
         """
-        key = (batch_size, seeds, n_gains)
+        key = (batch_size, seeds, n_gains, max_delay_steps)
         if key in self._torch_sims:
             self._torch_sims.move_to_end(key)
             return self._torch_sims[key]
@@ -206,24 +216,28 @@ class BatchEvaluator:
             torch.cuda.empty_cache()
         sim = TorchSimulator(self.spec, robot, batch_size, noise=self.noise_for(seeds),
                              schedule=self.schedule, device=self.device, n_gains=n_gains,
+                             max_delay_steps=max_delay_steps,
                              dtype=torch.float32 if self.dtype == np.float32 else torch.float64)
         self._torch_sims[key] = sim
         return sim
 
     CHUNK_FIELDS = ("cost", "fell", "pitch_error", "effort", "velocity_error")
 
-    def _simulate_chunk(self, gains, start_pitch, seed_index, robot: BatchRobot, seeds: Tuple[int, ...]):
+    def _simulate_chunk(self, gains, start_pitch, seed_index, robot: BatchRobot, seeds: Tuple[int, ...],
+                        delay_steps=None, max_delay_steps=None):
         """Run one chunk on the chosen backend; returns the CHUNK_FIELDS arrays of its BatchResult."""
         if self.backend == "numpy":
             result = simulate_batch(self.spec, robot, gains, start_pitch, noise=self.noise_for(seeds),
-                                    seed_index=seed_index, schedule=self.schedule, dtype=self.dtype)
+                                    seed_index=seed_index, schedule=self.schedule, dtype=self.dtype,
+                                    delay_steps=delay_steps)
             return tuple(getattr(result, f) for f in self.CHUNK_FIELDS)
         n = len(gains)
         padded = -(-n // self.TORCH_BATCH_ROUNDING) * self.TORCH_BATCH_ROUNDING
         filler = np.concatenate([np.arange(n), np.zeros(padded - n, dtype=int)])   # extra rows copy row 0, ignored
         robot = robot.take(filler)
-        sim = self._torch_simulator(padded, seeds, robot, gains.shape[1])
-        result = sim.run(gains[filler], start_pitch[filler], seed_index[filler], robot=robot)
+        sim = self._torch_simulator(padded, seeds, robot, gains.shape[1], max_delay_steps)
+        result = sim.run(gains[filler], start_pitch[filler], seed_index[filler], robot=robot,
+                         delay_steps=None if delay_steps is None else delay_steps[filler])
         return tuple(getattr(result, f)[:n] for f in self.CHUNK_FIELDS)
 
     def evaluate_population(self, gains, seeds: Optional[Sequence[int]] = None) -> BatchEvalResult:
@@ -240,11 +254,13 @@ class BatchEvaluator:
         # Row i of the flattened batch is candidate i // n_total on simulation column i % n_total.
         out = {f: np.empty(P * n_total, dtype=bool if f == "fell" else float) for f in self.CHUNK_FIELDS}
         per_chunk = max(1, self.max_batch // n_total) * n_total
+        max_delay = None if s.delay_steps is None else int(s.delay_steps.max())
         for start in range(0, P * n_total, per_chunk):
             rows = np.arange(start, min(start + per_chunk, P * n_total))
             col = rows % n_total
             chunk = self._simulate_chunk(
-                gains[rows // n_total], s.pitch[col], s.seed_col[col], s.robot.take(col), seeds)
+                gains[rows // n_total], s.pitch[col], s.seed_col[col], s.robot.take(col), seeds,
+                None if s.delay_steps is None else s.delay_steps[col], max_delay)
             for f, values in zip(self.CHUNK_FIELDS, chunk):
                 out[f][rows] = values
         self.n_sims += P * n_total

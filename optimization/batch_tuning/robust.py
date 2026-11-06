@@ -10,8 +10,13 @@ more of every candidate:
 
   2. Randomized robots (domain randomization). Every scenario gets its own
      robot, with each listed parameter scaled by a random factor in
-     [1 - spread, 1 + spread]. A scenario's robot is drawn from a generator
-     seeded by (robot_seed, noise seed, tilt index), so:
+     [1 - spread, 1 + spread] (`randomize`), or drawn outright from a range
+     [low, high] (`randomize_range`: for parameters whose nominal value is 0,
+     such as friction, which a scale factor can't move). Each scenario can
+     also get its own latency, drawn from `latency_range` in whole physics
+     steps. A scenario's robot is drawn from a generator seeded by
+     (robot_seed, noise seed, tilt index), and its latency from one seeded by
+     (robot_seed, noise seed, tilt index, 1), so:
        * every candidate faces exactly the same robots, which keeps scores
          repeatable (the optimizers rely on that);
        * the robot doesn't depend on batch order or chunking;
@@ -30,7 +35,8 @@ more of every candidate:
 """
 
 from dataclasses import dataclass, fields, replace
-from typing import Sequence, Tuple
+import math
+from typing import Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -40,7 +46,8 @@ from batch_sim import BatchRobot
 # gravity constant and the (integer) motor count.
 RANDOMIZABLE = tuple(f.name for f in fields(BatchRobot) if f.name not in ("dc_motor", "n_motors", "gravity"))
 ROBOT_PARAM_FIELDS = ("body_mass", "body_com_height", "body_inertia", "wheel_mass", "wheel_radius",
-                      "wheel_inertia", "max_torque", "wheel_friction", "gravity")
+                      "wheel_inertia", "max_torque", "wheel_friction", "coulomb_friction",
+                      "coulomb_friction_speed", "gravity")
 MOTOR_PARAM_FIELDS = ("gear_ratio", "torque_constant", "resistance", "supply_voltage", "current_limit", "n_motors")
 
 
@@ -55,6 +62,8 @@ class RobustnessConfig:
     train_seeds: Tuple[int, ...]                  # scored during tuning
     validation_seeds: Tuple[int, ...] = ()        # unseen seeds (and robots) for checking
     randomize: Tuple[Tuple[str, float], ...] = ()  # (parameter, relative spread)
+    randomize_range: Tuple[Tuple[str, float, float], ...] = ()   # (parameter, low, high): drawn uniformly
+    latency_range: Optional[Tuple[float, float]] = None          # s, (low, high); None: the configured latency
     robot_seed: int = 0
     sensitivity_weight: float = 0.0               # 0 turns the chaos penalty (and its twin runs) off
     sensitivity_nudge: float = 1e-4               # rad: far below anything physical, far above rounding
@@ -65,6 +74,16 @@ class RobustnessConfig:
                 raise ValueError(f"can't randomize {name!r}; choose from {RANDOMIZABLE}")
             if not 0 <= spread < 1:
                 raise ValueError(f"spread for {name} must be in [0, 1), got {spread}")
+        for name, low, high in self.randomize_range:
+            if name not in RANDOMIZABLE:
+                raise ValueError(f"can't randomize {name!r}; choose from {RANDOMIZABLE}")
+            if not low <= high:
+                raise ValueError(f"range for {name} must have low <= high, got ({low}, {high})")
+        both = {name for name, _ in self.randomize} & {name for name, _, _ in self.randomize_range}
+        if both:
+            raise ValueError(f"{sorted(both)} can't be in both randomize and randomize_range")
+        if self.latency_range is not None and not 0 <= self.latency_range[0] <= self.latency_range[1]:
+            raise ValueError(f"latency_range must have 0 <= low <= high, got {self.latency_range}")
         if self.sensitivity_weight < 0 or self.sensitivity_nudge <= 0:
             raise ValueError("sensitivity_weight must be >= 0 and sensitivity_nudge > 0")
 
@@ -80,16 +99,45 @@ def sample_robots(base: BatchRobot, config: RobustnessConfig, seeds: Sequence[in
     (they're unused), but still drawn, so the other parameters come out the
     same either way.
     """
-    if not config.randomize:
+    if not config.randomize and not config.randomize_range:
         return base
     names = [name for name, _ in config.randomize]
     spreads = np.array([spread for _, spread in config.randomize])
-    factors = np.array([
-        1.0 + spreads * np.random.default_rng([config.robot_seed, seed, i]).uniform(-1.0, 1.0, len(names))
-        for seed in seeds for i in range(n_pitches)
-    ])
-    return replace(base, **{name: getattr(base, name) * factors[:, j] for j, name in enumerate(names)
-                            if getattr(base, name) is not None})
+    ranged = [name for name, _, _ in config.randomize_range]
+    lows = np.array([low for _, low, _ in config.randomize_range])
+    highs = np.array([high for _, _, high in config.randomize_range])
+    factors, values = [], []
+    for seed in seeds:
+        for i in range(n_pitches):
+            # Scale factors first, then ranged values, from the same generator: adding
+            # randomize_range leaves the scaled parameters exactly as they were.
+            rng = np.random.default_rng([config.robot_seed, seed, i])
+            factors.append(1.0 + spreads * rng.uniform(-1.0, 1.0, len(names)))
+            values.append(rng.uniform(lows, highs) if ranged else np.empty(0))
+    factors, values = np.array(factors), np.array(values)
+    changes = {name: getattr(base, name) * factors[:, j] for j, name in enumerate(names)
+               if getattr(base, name) is not None}
+    changes.update({name: values[:, j] for j, name in enumerate(ranged) if getattr(base, name) is not None})
+    return replace(base, **changes)
+
+
+def sample_delay_steps(config: RobustnessConfig, seeds: Sequence[int], n_pitches: int,
+                       dt: float) -> Optional[np.ndarray]:
+    """Each scenario's latency in whole physics steps (scenario order as in sample_robots),
+    or None when config.latency_range is None.
+
+    Drawn uniformly from the whole numbers of steps in the range: those are exactly
+    the latencies the simulators represent (a command takes effect at the first
+    physics step at or after it is due).
+    """
+    if config.latency_range is None:
+        return None
+    low = math.ceil(config.latency_range[0] / dt - 1e-9)
+    high = math.floor(config.latency_range[1] / dt + 1e-9)
+    if high < low:
+        raise ValueError(f"latency_range {config.latency_range} contains no whole number of {dt} s steps")
+    return np.array([np.random.default_rng([config.robot_seed, seed, i, 1]).integers(low, high + 1)
+                     for seed in seeds for i in range(n_pitches)], dtype=np.int64)
 
 
 def robot_at(robot: BatchRobot, index: int):

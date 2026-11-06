@@ -70,7 +70,13 @@ class RobotConfig:
     wheel_inertia: float = 6.1e-5      # kg m^2, both wheels about the axle
     max_torque: float = 0.40           # N m, total torque limit (both motors). Applies to both
                                        # actuator models; the DC motor can limit it further.
-    wheel_friction: float = 0.0        # N m s/rad, viscous friction between wheels and body
+    # Friction between wheels and body (bearings, gearbox), as a torque against the
+    # relative wheel speed w: wheel_friction * w + coulomb_friction * tanh(w / coulomb_friction_speed).
+    # Unmeasured, so zero here; RobustnessSettings.randomize_range draws both per scenario.
+    # Measure them as in PHYSICS.md 9.4.
+    wheel_friction: float = 0.0        # N m s/rad, viscous
+    coulomb_friction: float = 0.0      # N m, Coulomb (dry), both wheels together
+    coulomb_friction_speed: float = 1.0   # rad/s, smoothing of the Coulomb step (PHYSICS.md 9.4)
     gravity: float = 9.81              # m/s^2
 
     def build(self) -> RobotParams:
@@ -83,6 +89,8 @@ class RobotConfig:
             wheel_inertia=self.wheel_inertia,
             max_torque=self.max_torque,
             wheel_friction=self.wheel_friction,
+            coulomb_friction=self.coulomb_friction,
+            coulomb_friction_speed=self.coulomb_friction_speed,
             gravity=self.gravity,
         )
 
@@ -294,15 +302,16 @@ class LQRConfig:
     feedback designed on the linearized nominal robot, for the configured
     control period and latency. A design minimizes, per second,
 
-        pitch^2 + w_velocity (velocity error)^2 + w_pitch_rate (pitch rate)^2
-        + w_integral (integral of velocity error)^2 + w_torque torque^2
+        w_pitch pitch^2 + w_velocity (velocity error)^2 + w_pitch_rate (pitch rate)^2
+        + w_integral (integral of velocity error)^2 + torque^2
 
     with pitch from upright. The "cost-matched" design takes its weights from
-    CostConfig (w_velocity = velocity_weight, w_torque = effort_weight, no rate
-    or integral term): on the linear model it is the optimum of the cost the
-    tuner scores. The ML-tuned design searches the four weights within the
-    bounds below, on a log scale (only ratios matter, so pitch stays at 1).
-    The integral is capped at ControllerConfig.velocity_integral_limit.
+    CostConfig (pitch 1, velocity_weight, torque effort_weight, no rate or
+    integral term; the same as w_pitch = 1 / effort_weight and so on): on the
+    linear model it is the optimum of the cost the tuner scores. The ML-tuned design searches the weights within the bounds
+    below, on a log scale, each per unit of torque weight (only ratios matter,
+    so torque stays at 1). The integral is capped at
+    ControllerConfig.velocity_integral_limit.
 
     The "direct" search skips the weights and tunes the gains themselves:
     each of the cost-matched design's gains scaled by a factor in
@@ -310,29 +319,34 @@ class LQRConfig:
     loop stable (tuning.LQRGainScaling).
     """
 
-    # Widened 2026-10-24: the search had ended on w_velocity's old floor (1e-2), w_integral's
-    # old ceiling (10) and direct_gain_scale's old limit (20, so a floor of 0.05).
-    w_velocity_bounds: Tuple[float, float] = (1e-4, 1e2)
-    w_pitch_rate_bounds: Tuple[float, float] = (1e-6, 1.0)     # low end: no rate term, in practice
-    w_torque_bounds: Tuple[float, float] = (1e-4, 1e2)
-    w_integral_bounds: Tuple[float, float] = (1e-6, 1e3)       # low end: no integral action, in practice
+    # Weights per unit of torque weight. Normalized by torque since 2026-11-06: with
+    # pitch fixed at 1 the search ended on w_velocity's floor and w_torque's ceiling,
+    # which is the same design as pitch and velocity weights of 0 (LQR.md).
+    w_pitch_bounds: Tuple[float, float] = (1e-6, 1e2)
+    w_velocity_bounds: Tuple[float, float] = (1e-6, 1e2)
+    w_pitch_rate_bounds: Tuple[float, float] = (1e-8, 1.0)
+    w_integral_bounds: Tuple[float, float] = (1e-3, 1e3)
     direct_gain_scale: float = 100.0
-    # Parameters held at "off" instead of searched. Both searches kept driving
-    # these to the floor of their log range (1e-6 for the pitch-rate weight,
-    # 0.01-0.05 for the command-feedback scales), which a log scale can only
-    # approach. None searches them again, as before 2026-10-24.
-    w_pitch_rate_fixed: Optional[float] = 0.0       # the weight on pitch rate; 0 = no rate term
+    # Parameters held at "off" instead of searched; None searches them. With them searched,
+    # the pitch, velocity and pitch-rate weights all went to the floor of their log range,
+    # which a log scale can only approach, and the score was flat there to 1e-5 (LQR.md;
+    # likewise the command-feedback scales of the direct search, 0.01-0.05).
+    w_pitch_fixed: Optional[float] = 0.0            # 0 = no pitch term (pitch is still stabilized)
+    w_velocity_fixed: Optional[float] = 0.0         # 0 = velocity enters only through its integral
+    w_pitch_rate_fixed: Optional[float] = 0.0       # 0 = no rate term
     direct_commands_scale: Optional[float] = 0.0    # multiple of the design's gains on the commands in flight; 0 = none
 
     @property
     def fixed_weights(self) -> dict:
         """Weights the weight search holds fixed (tuning.lqr_weight_space's `fixed`)."""
-        return {} if self.w_pitch_rate_fixed is None else {"w_pitch_rate": self.w_pitch_rate_fixed}
+        held = {"w_pitch": self.w_pitch_fixed, "w_velocity": self.w_velocity_fixed,
+                "w_pitch_rate": self.w_pitch_rate_fixed}
+        return {name: value for name, value in held.items() if value is not None}
 
     @property
     def bounds(self) -> dict:
-        return {"w_velocity": self.w_velocity_bounds, "w_pitch_rate": self.w_pitch_rate_bounds,
-                "w_torque": self.w_torque_bounds, "w_integral": self.w_integral_bounds}
+        return {"w_pitch": self.w_pitch_bounds, "w_velocity": self.w_velocity_bounds,
+                "w_pitch_rate": self.w_pitch_rate_bounds, "w_integral": self.w_integral_bounds}
 
 
 # ------------------------------------------------------------ ROBUSTNESS ---
@@ -360,6 +374,20 @@ class RobustnessSettings:
         ("resistance", 0.15),
         ("supply_voltage", 0.10),      # battery from about 6.7 V (low) to 8.1 V (fully charged)
     )
+    # (parameter, low, high): each scenario's robot has that parameter drawn
+    # uniformly from [low, high]. For parameters whose nominal value is 0, which
+    # a relative spread can't move (PHYSICS.md 8.4). Friction is unmeasured, so
+    # these are guesses: a viscous term up to 1/3 of where the old tuned gains
+    # ran away (0.003, PHYSICS.md 9.4), and Coulomb up to 5% of the torque limit
+    # (about 0.1 A of no-load current per motor). Replace with measured values.
+    randomize_range: Tuple[Tuple[str, float, float], ...] = (
+        ("wheel_friction", 0.0, 0.001),       # N m s/rad
+        ("coulomb_friction", 0.0, 0.02),      # N m
+    )
+    # Each scenario's latency, drawn uniformly from the whole physics steps in this
+    # range (s); None keeps TimingConfig.latency_s for every scenario. Controllers are
+    # still designed for latency_s: they don't know the latency they get.
+    latency_range_s: Optional[Tuple[float, float]] = (0.005, 0.020)
     robot_seed: int = 0                # which set of random robots
     sensitivity_weight: float = 1.0    # chaos penalty weight; 0 turns it (and its twin runs) off
     sensitivity_nudge_deg: float = 0.0057   # start-tilt nudge for the twin runs (1e-4 rad)
@@ -520,6 +548,8 @@ class ProjectConfig:
             train_seeds=tuple(range(1, r.n_train_seeds + 1)),
             validation_seeds=tuple(r.validation_seeds),
             randomize=tuple(r.randomize),
+            randomize_range=tuple(r.randomize_range),
+            latency_range=r.latency_range_s,
             robot_seed=r.robot_seed,
             sensitivity_weight=r.sensitivity_weight,
             sensitivity_nudge=r.sensitivity_nudge_rad,
