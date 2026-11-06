@@ -2,10 +2,9 @@
 
 Each block prints the values one section of PHYSICS.md relies on, under the
 same section number. Robot, motor, timing and scenario all come from config.py;
-the tuned gains are the CMA-ES result in results/batch_tuning/20260930-103458
-(TUNED, which Sections 2-7 and 9 quote), and sections 8 and 9.4 also show the
-current ones, from results/batch_tuning/20261106-154750 (TUNED_NOW: Bryson cost,
-friction and latency randomized).
+the tuned gains (TUNED) are the CMA-ES result in results/batch_tuning/20261106-154750
+(Bryson cost, friction and latency randomized). Sections 8 and 9.4 also show the
+earlier tuned set, TUNED_0930 (results/batch_tuning/20260930-103458), for comparison.
 Takes under a minute.
 
 From the project folder:   python simulation/examples/physics_checks.py
@@ -28,8 +27,8 @@ from balance_sim.simulator import _rk4_step
 from batch_sim import BatchRobot, actuator_torque, derivatives
 from config import CONFIG
 
-TUNED = (0.7301658711001224, 0.2299853606594764, 0.05724669986164053, 0.25232718798097314)  # CMA-ES, 2026-09-30
-TUNED_NOW = (0.659938589993706, 0.4980220464276531, 0.11153595895763543, 0.7956961244475451)  # CMA-ES, 2026-11-06
+TUNED = (0.659938589993706, 0.4980220464276531, 0.11153595895763543, 0.7956961244475451)  # CMA-ES, 2026-11-06
+TUNED_0930 = (0.7301658711001224, 0.2299853606594764, 0.05724669986164053, 0.25232718798097314)  # CMA-ES, 2026-09-30
 HAND = tuple(CONFIG.controller.hand_tuned_gains)
 
 P = CONFIG.build_robot_params()
@@ -294,7 +293,7 @@ def delay_margins():
               f"{abs(worst):.1f} rad/s ({abs(worst) / (2 * math.pi):.1f} Hz), damping ratio {-worst.real / abs(worst):.3f}")
     for name, inner in (("hand-tuned", HAND[:3]), ("tuned", TUNED[:3])):
         margins = []
-        for kv in (0.1, 0.2, 0.25, 0.3, 0.4, 0.5):
+        for kv in (0.1, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9):
             margin = _delay_margin(tuple(inner) + (kv,))
             margins.append(f"{kv}: " + ("unstable" if margin == 0 else f"{margin * 1000:.2f} ms"))
         print(f"{name} inner loop, delay margin by kv_p: " + ", ".join(margins))
@@ -303,7 +302,7 @@ def delay_margins():
     dyn = CONFIG.build_dynamics(ideal_actuator=True)
     for name, make, latencies, duration in (
             ("hand-tuned pitch-only", lambda: CONFIG.build_pitch_controller(), (0.009, 0.0095, 0.020, 0.030), 6.0),
-            ("tuned cascade", lambda: controller(TUNED), (0.025, 0.030, 0.031, 0.032), 10.0)):
+            ("tuned cascade", lambda: controller(TUNED), (0.030, 0.035, 0.036, 0.037), 10.0)):
         for lat in latencies:
             res = simulate(dyn, make(), duration=duration, dt=0.0005, initial_state=dyn.initial_state(0.02),
                            control_dt=CONFIG.timing.control_dt_s, latency=lat)
@@ -354,7 +353,7 @@ def cost_accuracy():
 def cost_breakdown():
     heading("8. Cost terms, mean over the 30 validation runs (nominal robot, configured cost)")
     c = CONFIG.cost
-    for name, gains in (("tuned 2026-11-06", TUNED_NOW), ("tuned 2026-09-30", TUNED), ("hand-tuned", HAND)):
+    for name, gains in (("tuned", TUNED), ("tuned 2026-09-30", TUNED_0930), ("hand-tuned", HAND)):
         terms = []
         for res in validation_runs(gains):
             dt, s = np.diff(res.t), res.states
@@ -388,7 +387,11 @@ def _trapezoid_cost(res):
     # The reference is held over each step, as in the run, so only the state moves between ends.
     pitch_ref = s[:-1, 2] - pitch_err[:-1]
     pitch = trap(pitch_err[:-1], s[1:, 2] - pitch_ref)
-    velocity = trap(s[:-1, 1] - goal, s[1:, 1] - goal)
+    # A step goal jumps at a step boundary, so it is held over each step. A smooth goal
+    # moves within the step like the state, so it is taken at both ends (holding it would
+    # add a first-order error of its own).
+    goal_end = res.velocity_goal[1:] if CONFIG.scenario.goal_transition_s > 0 else goal
+    velocity = trap(s[:-1, 1] - goal, s[1:, 1] - goal_end)
     return pitch + c.effort_weight * np.sum(res.torques[:-1] ** 2 * dt) + c.velocity_weight * velocity
 
 
@@ -442,7 +445,7 @@ def friction():
     for b in (0.0, 0.001, 0.002, 0.003, 0.005):
         p = P.with_changes(wheel_friction=b)
         row = []
-        for name, gains in (("tuned 2026-11-06", TUNED_NOW), ("tuned", TUNED), ("hand-tuned", HAND)):
+        for name, gains in (("tuned", TUNED), ("tuned 2026-09-30", TUNED_0930), ("hand-tuned", HAND)):
             res = scenario_run(gains, tilt, 100, Planar2D(p, CONFIG.timing.fall_angle_rad, CONFIG.build_actuator(p)))
             row.append(f"{name} " + (f"fell at {res.fall_time:.2f} s after reaching {np.max(res.states[:, 1]):.2f} m/s"
                                      if res.fell else f"cost {CONFIG.score(res):.2f}"))
@@ -450,7 +453,7 @@ def friction():
 
     heading("9.4 Load torque: speed shift before the integrator catches up")
     goal = 1.4
-    for name, (kp, ki, kd, kv) in (("tuned 2026-11-06", TUNED_NOW), ("tuned", TUNED), ("hand-tuned", HAND)):
+    for name, (kp, ki, kd, kv) in (("tuned", TUNED), ("tuned 2026-09-30", TUNED_0930), ("hand-tuned", HAND)):
         threshold = R * kp * kv
         shifts = ", ".join(f"b = {b:.4f}: {goal / (1 - b / threshold):.3f} m/s" if b < threshold
                            else f"b = {b:.4f}: no steady speed" for b in (0.001, 0.003, C_M))

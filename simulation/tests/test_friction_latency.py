@@ -191,3 +191,33 @@ def test_torch_per_sim_delay_matches_numpy(device, controller):
         sim.run(gains, pitch, seed_index, robot=robot)
     with pytest.raises(ValueError, match="delay_steps"):
         sim.run(gains, pitch, seed_index, robot=robot, delay_steps=np.full(B, 9))
+
+
+# ---- gyro bias without a noise table ----------------------------------------------------
+
+@pytest.mark.parametrize("device", ["numpy", "cpu", "cuda"])
+def test_gyro_bias_applies_without_a_noise_table(device):
+    """A batch run with no noise table matches the reference simulator with every std at 0
+    and only the gyro bias (before 2026-11-06 the batch engines dropped the bias)."""
+    from balance_sim import SensorNoise
+
+    config = replace(SHORT, sensor=SensorNoise(pitch_rate_bias=0.02), train_seeds=(1,))
+    ref = Evaluator(config, SPACE)
+    spec = spec_from_eval_config(config)
+    robot = BatchRobot.from_params(config.params, config.motor)
+    gains = HAND_TUNED[None, :]
+    expected = ref.evaluate_gains(HAND_TUNED).costs[0]
+    pitch = config.start_pitches[0]
+    if device == "numpy":
+        got = simulate_batch(spec, robot, gains, pitch).cost[0]
+        assert got == pytest.approx(expected, rel=1e-12)
+    else:
+        torch = pytest.importorskip("torch")
+        if device == "cuda" and not torch.cuda.is_available():
+            pytest.skip("needs a CUDA GPU")
+        from batch_sim.torch_sim import TorchSimulator
+        sim = TorchSimulator(spec, robot, 1, device=device, dtype=torch.float64)
+        got = sim.run(gains, pitch).cost[0]
+        assert got == pytest.approx(expected, rel=1e-9)
+    no_bias = simulate_batch(replace(spec, pitch_rate_bias=0.0), robot, gains, pitch).cost[0]
+    assert abs(no_bias - expected) > 1e-6       # the bias really changes the run

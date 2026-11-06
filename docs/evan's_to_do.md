@@ -14,5 +14,4 @@
 
 - results/lqr_comparison/20261106-154350 (LQR.md), results/batch_tuning/20261106-154750 (PHYSICS.md 8.2, 9.4),
   results/pivot_tuning/20261106-154343 (PIVOT.md).
-- Still open: PHYSICS.md Sections 2-7 and 9 quote the 2026-09-30 tuned gains (delay margins, Routh-Hurwitz, the
-  assumption audit). Switching physics_checks.py's TUNED to TUNED_NOW and re-quoting those numbers is a separate pass.
+- PHYSICS.md now quotes the 2026-11-06 tuned gains throughout (physics_checks.py TUNED; TUNED_0930 kept for 8.2 and 9.4).

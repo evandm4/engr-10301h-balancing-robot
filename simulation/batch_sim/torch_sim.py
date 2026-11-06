@@ -52,7 +52,8 @@ class TorchSimulator:
         n_gains: Optional[int] = None,
         max_delay_steps: Optional[int] = None,
     ):
-        """noise: (n_ticks, 4, n_seeds) table from schedule.noise_table, or None for a perfect sensor.
+        """noise: (n_ticks, 4, n_seeds) table from schedule.noise_table, or None for no random noise
+        (the spec's gyro bias still applies, as in simulate_batch).
         dtype: torch.float32 (default; fast) or torch.float64 (for checking against NumPy).
         record: also keep the full state history on the GPU (n_steps x B x 4 values).
         n_gains: gains per simulation. Cascaded: always 5 (a 4-gain set gets kv_i = 0).
@@ -124,6 +125,8 @@ class TorchSimulator:
             x_dot = x_dot + spec.velocity_std * n[0]
             theta = theta + spec.pitch_std * n[1]
             theta_dot = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
+        elif spec.pitch_rate_bias:
+            theta_dot = theta_dot + spec.pitch_rate_bias   # deterministic, so it needs no table
         if self.lqr:
             command, velocity_integral = lqr_update(
                 x_dot, theta, theta_dot, self.goal_per_tick[self.tick], spec.control_dt,

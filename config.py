@@ -291,7 +291,10 @@ class ScenarioConfig:
 class SearchConfig:
     """Bounds the tuner searches within for each gain. kp_min_factor is a
     multiple of the physics-derived minimum Kp that can hold the robot up at
-    all (see balance_sim.critical_pitch_gain), not a raw value."""
+    all (see balance_sim.critical_pitch_gain), not a raw value. That minimum is
+    taken for the most demanding robot robust scoring can draw (every
+    RobustnessSettings.randomize spread at its worst end; ProjectConfig.
+    kp_floor_robot), so no candidate is below it for any scenario."""
 
     kp_min_factor: float = 1.1
     kp_max: float = 30.0
@@ -531,6 +534,7 @@ class ProjectConfig:
             "max_lean_rad": self.controller.max_lean_rad,
             "start_pitches_rad": list(self.scenario.start_pitches_rad),
             "critical_pitch_gain": float(critical_pitch_gain(dyn.p)),
+            "critical_pitch_gain_kp_floor_robot": float(critical_pitch_gain(self.kp_floor_robot())),
             "search_bounds": {
                 p.name: {"low": float(p.low), "high": float(p.high), "log_scale": p.log}
                 for p in space.parameters
@@ -560,12 +564,28 @@ class ProjectConfig:
             sensitivity_nudge=r.sensitivity_nudge_rad,
         )
 
+    def kp_floor_robot(self) -> RobotParams:
+        """The robot whose critical pitch gain sets the search's Kp floor: of every
+        corner of the RobustnessSettings.randomize box (robot parameters only; motor
+        parameters don't enter critical_pitch_gain), the one needing the most Kp.
+        Before 2026-11-06 the floor came from the nominal robot (0.230 N m/rad);
+        the most demanding randomized robot needs 0.273, 1.19 times as much."""
+        from itertools import product
+
+        nominal = self.build_robot_params()
+        robot_fields = set(RobotParams.__dataclass_fields__)
+        spreads = [(name, s) for name, s in self.robustness.randomize if name in robot_fields]
+        corners = (nominal.with_changes(**{name: getattr(nominal, name) * (1 + sign * s)
+                                           for (name, s), sign in zip(spreads, signs)})
+                   for signs in product((-1, 1), repeat=len(spreads)))
+        return max(corners, key=critical_pitch_gain)
+
     def build_search_space(self):
         """Build a tuning.SearchSpace that matches this project configuration."""
         from tuning import cascaded_pid_space
 
         return cascaded_pid_space(
-            self.build_robot_params(),
+            self.kp_floor_robot(),
             kp_min_factor=self.search.kp_min_factor,
             kp_max=self.search.kp_max,
             ki_max=self.search.ki_max,

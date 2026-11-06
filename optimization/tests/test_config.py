@@ -213,3 +213,18 @@ def test_fall_penalty_exceeds_any_non_fall_cost():
              + c.velocity_weight * (v_max + goal_max) ** 2 * T)
     assert CONFIG.actuator.model == "dc_motor", "with the ideal actuator nothing bounds the speed"
     assert bound < c.fall_penalty, f"a non-fall run could cost up to {bound:.0f}, over the fall penalty"
+
+
+def test_kp_floor_covers_every_randomized_robot():
+    """No scenario's robot needs more Kp than the robot the search floor is set from."""
+    from balance_sim import critical_pitch_gain
+    from batch_tuning import BatchEvaluator
+
+    floor_robot = CONFIG.kp_floor_robot()
+    ev = BatchEvaluator(CONFIG.build_eval_config(), CONFIG.build_search_space(), robustness=CONFIG.build_robustness())
+    robots = ev.robots(CONFIG.robustness.validation_seeds)
+    needed = robots.critical_pitch_gain()
+    assert np.max(needed) <= critical_pitch_gain(floor_robot) + 1e-12
+    assert critical_pitch_gain(floor_robot) > critical_pitch_gain(CONFIG.build_robot_params())
+    kp_low = CONFIG.build_search_space().parameters[0].low
+    assert kp_low == pytest.approx(CONFIG.search.kp_min_factor * critical_pitch_gain(floor_robot))

@@ -57,7 +57,9 @@ def simulate_batch(
                 or (B, 5) with kv_i as well. "lqr": (B, 4 + m) LQR gains (balance_sim.lqr),
                 the last m for the commands in flight.
     start_pitch scalar or (B,) initial body tilt (rad)
-    noise       (n_ticks, 4, n_seeds) from schedule.noise_table, or None for a perfect sensor
+    noise       (n_ticks, 4, n_seeds) from schedule.noise_table, or None for no random noise. The
+                spec's gyro bias applies either way, as in SensorNoise with every std at 0;
+                for a perfect sensor, also use a spec with pitch_rate_bias = 0.
     seed_index  (B,) which noise column each simulation uses (required with noise)
     schedule    pass a prebuilt one to skip rebuilding it for every batch
     record      also return the full state history (memory: n_steps x B x 4 values)
@@ -111,6 +113,8 @@ def simulate_batch(
                 x_dot = x_dot + spec.velocity_std * n[0]
                 theta = theta + spec.pitch_std * n[1]
                 theta_dot = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
+            elif spec.pitch_rate_bias:
+                theta_dot = theta_dot + spec.pitch_rate_bias   # deterministic, so it needs no table
             if lqr:
                 command, velocity_integral = lqr_update(
                     x_dot, theta, theta_dot, goal_per_tick[j], control_dt,

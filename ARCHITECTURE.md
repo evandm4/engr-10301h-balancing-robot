@@ -128,7 +128,7 @@ flowchart TD
 | Batched tuner: evaluator, vectorized DE, random search, CMA-ES | optimization/batch_tuning/, run_batch_tuning.py | Built |
 | Robust scoring: 50 seeds, randomized robots, chaos penalty | optimization/batch_tuning/robust.py, config.py (`RobustnessSettings`) | Built |
 | Benchmarks | optimization/benchmark.py, benchmark_batch.py | Built |
-| Tuner + config tests | optimization/tests/ | Built (297 tests in total with simulation/tests) |
+| Tuner + config tests | optimization/tests/ | Built (301 tests in total with simulation/tests) |
 | Config snapshot saved with every run | config.py (`snapshot()`), both run scripts | Built |
 | LQR tuning: weights, or gains directly (kept nominally stable) | optimization/tuning/search_space.py, config.py (`LQRConfig`) | Built |
 | PID vs LQR comparison (hand-designed and ML-tuned, latency sweep) | optimization/run_lqr_comparison.py, LQR.md | Built |
@@ -174,3 +174,4 @@ flowchart TD
   - Guards: `control_dt` must be a whole multiple of `dt`; train and validation seeds may not overlap; results JSONs record git commit and library versions (`tuning.provenance`); a test checks the fall-penalty headroom.
   - Re-runs: `results/lqr_comparison/20261106-154350` (tuned PID 0.169, tuned LQR gains 0.199, tuned weights 0.241), `results/batch_tuning/20261106-154750` (same PID gains), `results/pivot_tuning/20261106-154343`.
   - Tests: 297.
+- 2026-11-06 (later): `physics_checks.py`'s `TUNED` is now the 2026-11-06 set (`TUNED_0930` keeps the old one for 8.2 and 9.4), and PHYSICS.md quotes it throughout. The search's Kp floor comes from the most demanding randomized robot (`ProjectConfig.kp_floor_robot`; 0.300 instead of 0.253, still far below the tuned 0.66, so the recorded results stand). The batched engines apply the gyro bias without a noise table, as `SensorNoise` does with every std at 0. Tests: 301.
