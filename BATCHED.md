@@ -71,7 +71,7 @@ A Python loop of 2,400 steps that launches ~200 small GPU kernels per step would
 ## Verified agreement
 
 **NumPy float64 vs the reference code:**
-- Trajectories, final states and fall times are bit-identical to `balance_sim` runs. Tested with the DC motor and ideal actuator, zero latency, a latency between physics steps, control every step, the upright pitch reference, friction with a weak motor, and per-robot parameters.
+- Trajectories, final states and fall times are bit-identical to `balance_sim` runs. Tested with the DC motor and ideal actuator, zero latency, a latency between physics steps, control every step, the commanded pitch reference (`config.py` now scores from upright, so the default case covers that one), friction with a weak motor, and per-robot parameters.
 - Costs agree to about 1e-15; only the summation order differs.
 - Random search and deferred DE pick the same candidates as the `tuning` searches.
 

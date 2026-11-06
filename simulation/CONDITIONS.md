@@ -62,3 +62,4 @@ The velocity loop is touchy: with the inner loop unchanged, outer gains much abo
 - 2026-09-19: Added 9 (goal velocity profile) with the cascaded velocity controller and a velocity term in the cost function.
 - 2026-09-28 (corrected version): #2 now applies to the DC motor too (it used to ignore `max_torque`). Both controller loops got anti-windup. The cost's pitch term now defaults to measuring error from the commanded lean instead of from upright (`CostConfig.pitch_reference`).
 - 2026-09-28: Added 10 (parameter uncertainty), as part of the batched tuner's robust scoring.
+- 2026-10-24: The cost now scores pitch from upright again (`pitch_reference` default), with weights derived from acceptable-value limits by Bryson's rule (velocity 2.25, effort 9; fall penalty 500). The goal profile is smooth (`goal_transition_s`). Runs before this change used the old weights and are not comparable.

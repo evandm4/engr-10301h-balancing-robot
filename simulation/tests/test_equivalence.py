@@ -31,7 +31,8 @@ CONFIGS = {
     "no_noise_no_latency": replace(SHORT, sensor=SensorNoise(), latency=0.0),
     "latency_between_steps": replace(SHORT, latency=0.0037),
     "control_every_step": replace(SHORT, control_dt=0.0025),
-    "upright_reference": replace(SHORT, pitch_reference="upright"),
+    # CONFIG scores pitch from upright, so the default case covers that branch; this covers the other.
+    "commanded_reference": replace(SHORT, pitch_reference="commanded"),
     "friction_weak_motor": replace(SHORT, params=SHORT.params.with_changes(wheel_friction=0.003, max_torque=0.3),
                                    motor=replace(SHORT.motor, supply_voltage=6.0)),
 }

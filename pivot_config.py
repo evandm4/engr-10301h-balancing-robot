@@ -9,18 +9,20 @@ Only what is new lives here: how the old body splits into a lower body and an
 upper body, the servo, the pivot sensor, the pivot loop's gains, the extra
 cost terms, the LQR weights, and the extra search bounds. Everything shared
 with the base robot (wheels, wheel motors, IMU noise, latency, timing, the
-goal-velocity scenario, the base cost weights) is read from config.py's
-CONFIG, so changing it there changes it here too. Nothing in config.py or in
-the base simulation is changed by this file.
+goal-velocity scenario) is read from config.py's CONFIG, so changing it there
+changes it here too. The exception is the base cost: it is pinned to the
+original weights below (see PIVOT_BASE_COST), because the servo and LQR torque
+weights here were chosen against them. Nothing in config.py or in the base
+simulation is changed by this file.
 
 Angles are in degrees below for readability; *_rad properties convert.
 """
 
 import math
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Optional, Tuple
 
-from config import CONFIG, ProjectConfig  # also puts simulation/ and optimization/ on the path
+from config import CONFIG, CostConfig, ProjectConfig  # also puts simulation/ and optimization/ on the path
 
 from pivot_sim import (
     PIVOT_GAIN_NAMES,
@@ -163,9 +165,21 @@ class PivotSearchConfig:
 
 
 # --------------------------------------------------------- PUT IT TOGETHER -
+# The base cost this side project was built and tuned with: weights 1 (velocity)
+# and 0.01 (effort) against pitch 1, pitch from the commanded lean, fall penalty
+# 100. config.py's cost now uses Bryson-rule weights (a different scale and
+# ratio), which would leave servo_effort_weight and the LQR torque weight here
+# out of proportion and change every number in PIVOT.md. These limits give the
+# old weights exactly: (1 / 1)^2 = 1 and (1 / 10)^2 = 0.01. To move the pivot to
+# the base cost, drop this override and rescale servo_effort_weight and
+# LQRConfig's torque weight with it.
+PIVOT_BASE_COST = CostConfig(pitch_limit_rad=1.0, velocity_limit=1.0, torque_limit=10.0,
+                             fall_penalty=100.0, pitch_reference="commanded")
+
+
 @dataclass(frozen=True)
 class PivotProjectConfig:
-    base: ProjectConfig = CONFIG
+    base: ProjectConfig = replace(CONFIG, cost=PIVOT_BASE_COST)
     body: PivotBodyConfig = field(default_factory=PivotBodyConfig)
     servo: ServoConfig = field(default_factory=ServoConfig)
     sensor: PivotSensorConfig = field(default_factory=PivotSensorConfig)

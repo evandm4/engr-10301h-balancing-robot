@@ -20,7 +20,7 @@ optimization/run_pivot_tuning.py        tune the 7 gains, compare with the basel
 results/pivot_tuning/                   its output
 ```
 
-Everything shared with the base robot (wheels, wheel motors, IMU noise, latency, control rate, the goal-velocity scenario, start tilts, seeds, the base cost weights, the wheel-gain search bounds) is read from `config.py`'s `CONFIG`, so it can't drift apart. Only what is new is written in `pivot_config.py`.
+Everything shared with the base robot (wheels, wheel motors, IMU noise, latency, control rate, the goal-velocity scenario, start tilts, seeds, the wheel-gain search bounds) is read from `config.py`'s `CONFIG`, so it can't drift apart. Only what is new is written in `pivot_config.py`. The one exception is the base cost: `config.py` now derives its weights from acceptable-value limits (Bryson's rule: velocity 2.25, effort 9, fall penalty 500, pitch from upright), but the pivot keeps the original ones (1, 0.01, 100, pitch from the commanded lean) as `PIVOT_BASE_COST`. Its servo and LQR torque weights were chosen against those, and every number below was produced with them. Moving the pivot to the new cost means rescaling those weights and re-running.
 
 ## The robot
 

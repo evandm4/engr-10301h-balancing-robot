@@ -33,7 +33,7 @@ More detail: `ARCHITECTURE.md` (design, status, change log), `BATCHED.md` (the b
 
 ## Side project: pivot robot
 
-An offshoot that adds a servo-driven pivot on top of the robot with a second body piece on it (a third degree of freedom and a second actuator). It lives next to the main system and changes none of it: it reuses `balance_sim`'s motor, sensor, cascaded PID and cost code, and `tuning`'s search methods, by calling them. Shared values (wheels, motors, noise, timing, scenario, cost weights) come from `config.py`; only the new ones are in `pivot_config.py`.
+An offshoot that adds a servo-driven pivot on top of the robot with a second body piece on it (a third degree of freedom and a second actuator). It lives next to the main system and changes none of it: it reuses `balance_sim`'s motor, sensor, cascaded PID and cost code, and `tuning`'s search methods, by calling them. Shared values (wheels, motors, noise, timing, scenario) come from `config.py`; only the new ones are in `pivot_config.py`. The base cost is the exception: the pivot keeps the original cost weights (`PIVOT_BASE_COST`), not `config.py`'s current ones.
 
 ```
 pivot_config.py                         body split, servo, pivot sensor, pivot gains, LQR weights, extra search bounds
@@ -96,10 +96,10 @@ flowchart LR
         - Both integrators have anti-windup.
       - The command joins the **latency** queue.
    2. The command whose 10 ms delay has passed becomes the torque the **actuator** receives. It's held until the next one arrives.
-   3. The **cost terms** for this step are added: pitch error from the commanded lean, torque², and velocity error from the goal.
+   3. The **cost terms** for this step are added: pitch error from upright (`CostConfig.pitch_reference`), torque², and velocity error from the goal.
    4. An **RK4 step** calls `Planar2D.derivatives` four times. Each call asks the **actuator** (`DCMotorActuator`: back-EMF, supply voltage, current limit) what torque is actually delivered, then solves the equations of motion.
    5. **Fall check:** past 60° of tilt the robot has fallen. The reference loop stops; the batched loop freezes that robot and keeps going with the rest.
-7. Each run's **cost** is: pitch error + 0.01 × effort + velocity error, plus a fall penalty of 100 × (1 + the fraction of the run left).
+7. Each run's **cost** is: pitch error + 9 × effort + 2.25 × velocity error, plus a fall penalty of 500 × (1 + the fraction of the run left). The 9 and 2.25 are derived from three limits in `config.py` (`CostConfig`: pitch 0.3 rad, velocity 0.2 m/s, torque 0.1 N m) by Bryson's rule; change the limits, never the weights, and keep them consistent with the scenario (see the comment there).
    - **Reference:** `metrics.cost` computes it from the recorded trajectory.
    - **Batched:** the terms are summed during the run instead.
 8. The evaluator averages the costs over scenarios and returns the result to the optimizer.
@@ -131,7 +131,7 @@ flowchart LR
 From the project folder, with `C:\venvs\balancebot` active:
 
 ```
-python -m pytest                                                     # every test (262: 24 the pivot side project, 65 the LQR), ~1.5 min
+python -m pytest                                                     # every test (268: 24 the pivot side project, 65 the LQR), ~1.5 min
 python simulation/examples/run_velocity_demo.py                      # one run, plotted
 python simulation/animate.py                                         # animate hand-tuned vs the latest tuning result
 python simulation/animate.py --gains 1.03 0.2 0.1 0.33 --speed 0.5   # any gains, slow motion

@@ -132,12 +132,14 @@ def test_repeated_runs_are_identical(short_eval):
     np.testing.assert_array_equal(a.cost, b.cost)
 
 
+@pytest.mark.parametrize("reference", ["upright", "commanded"])   # CONFIG scores one; the other needs an override
 @pytest.mark.parametrize("device", DEVICES)
-def test_float64_matches_numpy_for_well_behaved_gains(device, short_eval):
-    G, pitch, seed_index, noise = _flat(short_eval, _near_hand_tuned(32))
-    ref = simulate_batch(short_eval.spec, short_eval.robot, G, pitch, noise, seed_index, short_eval.schedule,
+def test_float64_matches_numpy_for_well_behaved_gains(device, reference):
+    evaluator = BatchEvaluator(replace(SHORT, pitch_reference=reference), SPACE)
+    G, pitch, seed_index, noise = _flat(evaluator, _near_hand_tuned(32))
+    ref = simulate_batch(evaluator.spec, evaluator.robot, G, pitch, noise, seed_index, evaluator.schedule,
                          record=True)
-    got = TorchSimulator(short_eval.spec, short_eval.robot, len(G), noise, short_eval.schedule, device=device,
+    got = TorchSimulator(evaluator.spec, evaluator.robot, len(G), noise, evaluator.schedule, device=device,
                          dtype=torch.float64, record=True).run(G, pitch, seed_index)
     assert not ref.fell.any() and not got.fell.any()
     np.testing.assert_allclose(got.cost, ref.cost, rtol=1e-9)

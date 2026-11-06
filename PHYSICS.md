@@ -752,13 +752,15 @@ J = \int_0^{t_{\text{end}}}\!\Bigl[(\theta - \theta_{\text{ref}})^2 + w_u\,\tau^
 \;+\; \mathbb 1_{\text{fell}}\;P\Bigl(1 + \frac{t_{\text{dur}} - t_{\text{fall}}}{t_{\text{dur}}}\Bigr).
 ```
 
-The parameters are $w_u = 0.01$, $w_v = 1$, $P = 100$, and $\theta_{\text{ref}}$ = the commanded lean.
+Since 2026-10-24 the parameters are $w_u = 9$, $w_v = 2.25$, $P = 500$, and $\theta_{\text{ref}} = 0$ (upright). The weights come from Bryson's rule (10.5) and are derived in `config.py` from three limits. Everything in 8.2 and in Sections 6 to 9 that quotes a cost was computed with the earlier values: $w_u = 0.01$, $w_v = 1$, $P = 100$, $\theta_{\text{ref}}$ = the commanded lean, and a step goal.
 
 - **Units.** The weights carry units, which makes each term comparable to rad² s: $w_u$ is in rad²/(N m)² and $w_v$ in rad²/(m/s)².
-- **Why measure pitch against the commanded lean.** Following a velocity goal requires leaning (2.8). Measuring pitch from upright would penalize the lean the task needs.
+- **Why the reference changed (2026-10-24).** Measuring pitch against the commanded lean avoids penalizing the lean the task needs (2.8), but only a controller with a lean command has one. The LQR commands none, so it was scored from upright anyway, and the PID-vs-LQR comparison had to override the setting. Scoring everyone from upright gives one number for all controllers. The price is a floor: the start tilt must be recovered and the goal needs about 0.12 rad of lean, so $\int\theta^2\,dt \approx 0.027$ rad² s is unavoidable and the cost cannot reach zero. The limit $\theta_{\max} = 0.3$ rad is about 2.4 times the lean the goal needs, so it does not make that lean an error.
 - **Effort.** $\tau$ here is the command after latency. While the motor is unsaturated, $\tau^2$ is proportional to winding loss (4.6).
 
 ### 8.2 What the cost actually measures
+
+**These numbers use the earlier cost and the earlier step-shaped goal.** They are kept as a record; `physics_checks.py` no longer reproduces them, since its tuned gains and `config.py`'s goal have both changed. With the current cost (nominal 30 validation runs), the tuned PID's cost splits about 20% pitch, 12% effort and 69% velocity (total 0.17), and the cost-matched LQR's about 7%, 8% and 85% (total 0.38). Effort is now a real part of the cost.
 
 Mean over the 30 validation runs (8 output):
 
@@ -775,13 +777,13 @@ So:
 
 ### 8.3 Fall penalty
 
-A fall adds between 100 and 200, more the earlier it happens. That gives the optimizer a slope to climb out of falling gains. "A fall is always worse than any non-fall" holds whenever a non-fall run costs under 100. It is not guaranteed by construction:
+A fall adds between $P$ and $2P$, more the earlier it happens ($P = 500$ since 2026-10-24, 100 before). That gives the optimizer a slope to climb out of falling gains. "A fall is always worse than any non-fall" holds whenever a non-fall run costs under $P$. It is not guaranteed by construction:
 
-- the pitch term is bounded, by $(60° + 25°)^2 \times 10\,\text{s} = (1.48\ \text{rad})^2 \times 10\,\text{s} = 22$;
-- the effort term is bounded, by 0.016;
-- the velocity term has no a priori bound.
+- the pitch term (from upright, 12 s runs) is bounded, by $(60°)^2 \times 12\,\text{s} = (1.05\ \text{rad})^2 \times 12\,\text{s} = 13.2$;
+- the effort term is bounded, by $w_u\,\tau_{\max}^2 \times 12\,\text{s} = 9 \times 0.4^2 \times 12 = 17.3$;
+- the velocity term has no a priori bound (the no-load speed is 2.59 m/s).
 
-In practice, non-fall costs in this project are 2–7.
+In practice, tuned controllers cost 0.15–0.4. But 45,000 random-search runs (1,500 random gain sets on 30 randomized robots) included a slow, wandering controller that never fell and cost up to 186 at the current weights (velocity term 174), where the same gains cost 80 at the old ones. With $P = 100$ that exceeds the cheapest fall (110), which is why $P$ was raised to 500. **If a cost limit or the scenario changes, re-check this headroom.**
 
 ### 8.4 Robust scoring (`robust.py:76-92`)
 
@@ -943,8 +945,8 @@ Grouped by how strong the evidence is that each one matters.
 
 ### 10.5 Cost design
 
-- **Choose the weights deliberately.** The effort term is 0.01% of the cost (8.2). Bryson's rule (Franklin, Powell & Emami-Naeini) sets each weight to $1/(\text{largest acceptable value})^2$. For example, 0.1 rad of pitch error, 0.4 N m of torque and 0.2 m/s of velocity error give $w_u \approx 0.06$ and $w_v \approx 0.25$ relative to pitch. That would make effort and pitch matter.
-- **Use feasible goal profiles.** Step-shaped goals make much of the velocity cost unavoidable (8.2). Ramped goals at or below $a_{\text{cap}}$ would make the cost measure controller quality rather than physics limits.
+- **Choose the weights deliberately.** *Done 2026-10-24.* The effort term was 0.01% of the cost (8.2). Bryson's rule (Franklin, Powell & Emami-Naeini) sets each weight to $1/(\text{largest acceptable value})^2$; normalized to the pitch term, $w_v = (\theta_{\max}/v_{\max})^2$ and $w_u = (\theta_{\max}/\tau_{\max})^2$. The limits are $\theta_{\max} = 0.3$ rad (from upright), $v_{\max} = 0.2$ m/s and $\tau_{\max} = 0.1$ N m, giving $w_v = 2.25$ and $w_u = 9$. They are stored as `CostConfig`'s `pitch_limit_rad`, `velocity_limit` and `torque_limit`, and the weights are derived from them. $\tau_{\max}$ is a typical operating torque, not the 0.4 N m hardware limit, which would leave effort negligible. $\theta_{\max}$ is a tolerance on the lean error: it must sit above the lean the goal needs (about 0.12 rad here) and below the 25° lean cap. Result: pitch, effort and velocity are about 20%, 12% and 69% of the tuned PID's cost. The `kv_p` bound was 0.4 and every retune sat on it; it is now 0.9. A run with the bound at 2.0 settled at `kv_p` 0.82 with the same cost (0.1304 against 0.1305), and the re-run at 0.9 settled at 0.822, inside the bound.
+- **Use feasible goal profiles.** *Done:* `goal_transition_s` blends each goal change smoothly, peaking at 0.9 m/s² (about 7° of lean). Step-shaped goals made much of the velocity cost unavoidable (8.2).
 - **An LQR baseline.** The cost has LQR form, and 3.1 gives $A$ and $B$. Optimal full-state feedback on the linear model, with the same weights, would show how much performance the cascaded-PID structure costs. *Done: see `LQR.md`. The cost-matched LQR comes within 1.8% of the ML-tuned PID with no tuning; the PID still wins on every validation scenario.*
 - **A physical fall criterion.** Replace the 60° threshold, or add to it, a check based on recoverability (7.3).
 

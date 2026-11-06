@@ -113,10 +113,30 @@ def test_eval_config_carries_pitch_reference():
     from config import CostConfig
 
     assert CONFIG.build_eval_config().pitch_reference == CONFIG.cost.pitch_reference
-    ec = ProjectConfig(cost=CostConfig(pitch_reference="upright")).build_eval_config()
-    assert ec.pitch_reference == "upright"
+    ec = ProjectConfig(cost=CostConfig(pitch_reference="commanded")).build_eval_config()   # CONFIG's is "upright"
+    assert ec.pitch_reference == "commanded"
     with pytest.raises(ValueError):
         CostConfig(pitch_reference="sideways")
+
+
+def test_cost_weights_follow_bryson_limits():
+    from config import CostConfig
+
+    c = CostConfig(pitch_limit_rad=0.3, velocity_limit=0.2, torque_limit=0.1)
+    assert c.velocity_weight == pytest.approx(2.25) and c.effort_weight == pytest.approx(9.0)
+    # Loosening a limit lowers that term's weight; an infinite limit switches it off.
+    assert CostConfig(velocity_limit=0.4).velocity_weight < c.velocity_weight
+    assert CostConfig(torque_limit=float("inf")).effort_weight == 0.0
+    for bad in ({"pitch_limit_rad": 0.0}, {"velocity_limit": -1.0}, {"torque_limit": 0.0}):
+        with pytest.raises(ValueError):
+            CostConfig(**bad)
+
+
+def test_snapshot_records_limits_and_derived_weights():
+    snap = CONFIG.snapshot()["cost"]
+    assert snap["pitch_limit_rad"] == CONFIG.cost.pitch_limit_rad
+    assert snap["velocity_weight"] == CONFIG.cost.velocity_weight
+    assert snap["effort_weight"] == CONFIG.cost.effort_weight
 
 
 def test_build_controller_matches_the_evaluator():

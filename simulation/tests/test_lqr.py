@@ -33,6 +33,10 @@ from tuning import Evaluator, LQRGainScaling, LQRWeightDesigner, lqr_weights
 P = CONFIG.build_robot_params()
 T = CONFIG.timing.control_dt_s
 COST_MATCHED = CONFIG.cost_matched_lqr_weights()
+# The cost weights LQR.md's 2026-10-14 results were produced with (before the Bryson-rule weights).
+OLD_COST_WEIGHTS = LQRWeights(velocity=1.0, pitch=1.0, pitch_rate=0.0, torque=0.01)
+# CONFIG holds the pitch-rate weight and the commands' gains off; this searches them too, as before 2026-10-24.
+SEARCHED = replace(CONFIG, lqr=replace(CONFIG.lqr, w_pitch_rate_fixed=None, direct_commands_scale=None))
 WITH_INTEGRAL = LQRWeights(velocity=1.0, pitch=1.0, pitch_rate=0.01, torque=0.05, velocity_integral=0.5)
 COST_RTOL = 1e-12
 
@@ -190,8 +194,12 @@ def test_loop_matches_the_design_model():
 
 
 def test_ignoring_the_latency_is_unstable_at_10_ms():
-    """The textbook design (no latency) on the robot's 10 ms latency: LQR.md's claim."""
-    gain = lqr_gain(P, COST_MATCHED, T, 0.0)
+    """The textbook design (no latency) on the robot's 10 ms latency: LQR.md's claim.
+
+    It holds for the cost weights LQR.md was written with (OLD_COST_WEIGHTS), not for the
+    current Bryson-rule weights, whose much heavier torque penalty makes the design gentle
+    enough to tolerate the delay."""
+    gain = lqr_gain(P, OLD_COST_WEIGHTS, T, 0.0)
     assert spectral_radius(P, LinearController.lqr(gain), T, 0.010) > 1.0
     assert stable_latency_range(P, LinearController.lqr(gain), T, around=0.0)[1] < 0.010
 
@@ -330,7 +338,7 @@ def test_weight_designer_through_the_evaluator():
     units = np.random.default_rng(5).random((3, space.dim))
     expected = evaluator.evaluate_population(designer(decode_units(space, units))).objective
     np.testing.assert_array_equal(evaluator.evaluate_units(units), expected)
-    weights = lqr_weights(space.decode(units[0]))
+    weights = lqr_weights(space.decode(units[0]), CONFIG.lqr.fixed_weights)
     np.testing.assert_allclose(designer(space.decode(units[0])[None, :])[0],
                                lqr_gain(P, weights, T, CONFIG.timing.latency_s))
 
@@ -346,9 +354,14 @@ def test_weight_designer_scores_a_failed_design_as_zero_gains(monkeypatch):
     np.testing.assert_array_equal(designer(np.ones((2, 4))), np.zeros((2, 6)))
 
 
-def test_gain_scaling_keeps_the_loop_stable():
-    space, scaling = CONFIG.build_direct_lqr_space(), CONFIG.build_direct_lqr_designer()
-    reference = CONFIG.build_lqr_gain()
+@pytest.mark.parametrize("cfg", [CONFIG, SEARCHED], ids=["commands_off", "commands_searched"])
+def test_gain_scaling_keeps_the_loop_stable(cfg):
+    space, scaling = cfg.build_direct_lqr_space(), cfg.build_direct_lqr_designer()
+    off = cfg.lqr.direct_commands_scale is not None
+    reference = cfg.build_lqr_gain().copy()
+    if off:
+        reference[4:] *= cfg.lqr.direct_commands_scale          # the design with the commands' gains held
+    np.testing.assert_allclose(scaling.reference, reference)
     np.testing.assert_allclose(scaling(space.decode(np.full(space.dim, 0.5))[None, :])[0], reference)
     # Within a factor of about 1.8 of the reference: some of these stabilize the loop, some don't.
     points = decode_units(space, 0.5 + 0.1 * np.random.default_rng(0).uniform(-1, 1, (40, space.dim)))
@@ -356,23 +369,33 @@ def test_gain_scaling_keeps_the_loop_stable():
     radii = [spectral_radius(P, LinearController.lqr(g), T, CONFIG.timing.latency_s) for g in gains]
     assert max(radii) < 1.0
     np.testing.assert_array_equal(gains[:, 3], 0.0)             # the integral gain is never searched
+    if off:                                                     # held gains stay held, even when pulled back
+        np.testing.assert_array_equal(gains[:, 4:], np.broadcast_to(reference[4:], gains[:, 4:].shape))
     # The unstable ones were pulled back toward the reference, so not every result is a pure scaling.
-    pure = [np.allclose(g[[0, 1, 2, 4, 5]] / reference[[0, 1, 2, 4, 5]], u)
-            for g, u in zip(gains, points)]
+    searched = [0, 1, 2] if off else [0, 1, 2, 4, 5]
+    pure = [np.allclose(g[searched] / reference[searched], u) for g, u in zip(gains, points)]
     assert 0 < sum(pure) < len(pure)
+
+
+def test_held_off_commands_give_a_stable_design_at_the_configured_latency():
+    gain = CONFIG.build_direct_lqr_designer().reference
+    np.testing.assert_array_equal(gain[4:], 0.0)
+    assert spectral_radius(P, LinearController.lqr(gain), T, CONFIG.timing.latency_s) < 1.0
 
 
 def test_gain_scaling_needs_a_stable_reference():
     with pytest.raises(ValueError):
-        LQRGainScaling(lqr_gain(P, COST_MATCHED, T, 0.0), P, T, 0.010)   # unstable at 10 ms
+        LQRGainScaling(lqr_gain(P, OLD_COST_WEIGHTS, T, 0.0), P, T, 0.010)   # unstable at 10 ms
 
 
 # ---- config ------------------------------------------------------------------------
 
 def test_cost_matched_weights_follow_cost_config():
-    cfg = ProjectConfig(cost=CostConfig(effort_weight=0.2, velocity_weight=3.0))
+    cfg = ProjectConfig(cost=CostConfig(pitch_limit_rad=0.6, velocity_limit=0.3, torque_limit=0.3))   # weights 4 and 4
     w = cfg.cost_matched_lqr_weights()
-    assert (w.velocity, w.pitch, w.pitch_rate, w.torque, w.velocity_integral) == (3.0, 1.0, 0.0, 0.2, 0.0)
+    assert (w.pitch, w.pitch_rate, w.velocity_integral) == (1.0, 0.0, 0.0)
+    assert (w.velocity, w.torque) == pytest.approx((4.0, 4.0))
+    assert (w.velocity, w.torque) == (cfg.cost.velocity_weight, cfg.cost.effort_weight)
 
 
 def test_config_builds_the_lqr_controller():
@@ -382,6 +405,18 @@ def test_config_builds_the_lqr_controller():
     assert c.integral_limit == CONFIG.controller.velocity_integral_limit
     assert c.goal_velocity(2.5) == CONFIG.build_goal()(2.5)
     assert len(CONFIG.build_lqr_controller(design_latency=0.0).K) == 4
-    assert CONFIG.build_lqr_space().dim == 4
-    assert CONFIG.build_direct_lqr_space().dim == 5
     assert CONFIG.snapshot()["derived"]["cost_matched_lqr_gain"] == pytest.approx(list(CONFIG.build_lqr_gain()))
+
+
+def test_search_spaces_drop_the_parameters_held_off():
+    assert CONFIG.build_lqr_space().names == ["w_velocity", "w_torque", "w_integral"]
+    assert CONFIG.build_direct_lqr_space().names == ["s_velocity", "s_pitch", "s_pitch_rate"]
+    assert SEARCHED.build_lqr_space().names == ["w_velocity", "w_pitch_rate", "w_torque", "w_integral"]
+    assert SEARCHED.build_direct_lqr_space().dim == 5
+    # A fixed weight reaches the design, in the right place.
+    w = lqr_weights([0.5, 2.0, 30.0], CONFIG.lqr.fixed_weights)
+    assert (w.velocity, w.pitch_rate, w.torque, w.velocity_integral) == (0.5, 0.0, 2.0, 30.0)
+    with pytest.raises(ValueError):
+        lqr_weights([1.0, 2.0], CONFIG.lqr.fixed_weights)       # wrong number of searched weights
+    with pytest.raises(ValueError):
+        lqr_weights([1.0] * 3, {"w_nonsense": 0.0})
