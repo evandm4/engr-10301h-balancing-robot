@@ -145,7 +145,7 @@ def simulate_batch(
         effort += np.where(alive, torque**2 * dt, 0.0)
         velocity_error += np.where(alive, (state[1] - goal_per_step[k]) ** 2 * dt, 0.0)
 
-        stepped = rk4_step(robot, state, torque, dt)
+        stepped = rk4_step(robot, state, torque, dt, np, float(schedule.force_per_step[k]))
         state = tuple(np.where(alive, new, old) for new, old in zip(stepped, state))
         just_fell = alive & (np.abs(state[2]) > spec.fall_angle)
         fall_time[just_fell] = (k + 1) * dt

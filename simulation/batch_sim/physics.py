@@ -38,8 +38,12 @@ def actuator_torque(robot: BatchRobot, command, relative_wheel_speed, xp=np):
     return robot.n_motors * robot.gear_ratio * robot.gear_efficiency * robot.torque_constant * i
 
 
-def derivatives(robot: BatchRobot, state, torque, xp=np):
-    """d(state)/dt for every robot in the batch. See Planar2D.derivatives."""
+def derivatives(robot: BatchRobot, state, torque, xp=np, force=0.0):
+    """d(state)/dt for every robot in the batch. See Planar2D.derivatives.
+
+    force: external horizontal push on the body at its center of mass (N), the
+    same for the whole batch: a plain number (skipped when 0, as in Planar2D)
+    or a 0-d tensor (always added; adding 0.0 changes nothing)."""
     p = robot
     _, x_dot, theta, theta_dot = state
 
@@ -59,6 +63,9 @@ def derivatives(robot: BatchRobot, state, torque, xp=np):
 
     rhs_x = xp.divide(tau, p.wheel_radius) + ml * sin_t * theta_dot**2
     rhs_t = -tau + ml * p.gravity * sin_t
+    if not _is_zero(force):
+        rhs_x = rhs_x + force
+        rhs_t = rhs_t + force * p.body_com_height * cos_t
 
     det = a * d - b * b
     x_ddot = (d * rhs_x - b * rhs_t) / det
@@ -70,11 +77,11 @@ def _axpy(state, h, k):
     return tuple(s + h * ki for s, ki in zip(state, k))
 
 
-def rk4_step(robot: BatchRobot, state, torque, dt: float, xp=np):
-    """One RK4 step with the torque held constant, as in simulator._rk4_step."""
-    k1 = derivatives(robot, state, torque, xp)
-    k2 = derivatives(robot, _axpy(state, 0.5 * dt, k1), torque, xp)
-    k3 = derivatives(robot, _axpy(state, 0.5 * dt, k2), torque, xp)
-    k4 = derivatives(robot, _axpy(state, dt, k3), torque, xp)
+def rk4_step(robot: BatchRobot, state, torque, dt: float, xp=np, force=0.0):
+    """One RK4 step with the torque (and push force) held constant, as in simulator._rk4_step."""
+    k1 = derivatives(robot, state, torque, xp, force)
+    k2 = derivatives(robot, _axpy(state, 0.5 * dt, k1), torque, xp, force)
+    k3 = derivatives(robot, _axpy(state, 0.5 * dt, k2), torque, xp, force)
+    k4 = derivatives(robot, _axpy(state, dt, k3), torque, xp, force)
     h = dt / 6.0
     return tuple(s + h * (a + 2 * b + 2 * c + d) for s, a, b, c, d in zip(state, k1, k2, k3, k4))

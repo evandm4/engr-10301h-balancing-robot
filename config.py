@@ -52,6 +52,7 @@ from balance_sim import (
     cost,
     critical_pitch_gain,
     lqr_gain,
+    push_profile,
     step_profile,
 )
 
@@ -236,18 +237,23 @@ class CostConfig:
     # Keep them consistent with the rest of this file. They are a statement about
     # the task, and the cost only means what they say while that holds:
     #   - pitch_limit_rad is a tolerance on pitch measured from upright. It must
-    #     stay above the lean the goal profile needs (~0.12 rad for the profile
-    #     below, from v_dot / 6.9 m/s^2) and below ControllerConfig.max_lean_deg
-    #     (25 deg = 0.44 rad). Below the first, the task's own lean is penalized
-    #     as an error; above the second, the limit says nothing.
+    #     stay above the lean the goal profile needs (0.25 rad for ScenarioConfig's
+    #     aggressive change, from PHYSICS.md 2.8) and below ControllerConfig.
+    #     max_lean_deg (25 deg = 0.44 rad). Below the first, the task's own lean is
+    #     penalized as an error; above the second, the limit says nothing. The
+    #     scenario's largest start tilt equals it.
     #   - torque_limit is a typical operating torque, deliberately well under
     #     RobotConfig.max_torque (0.34 N m), so effort is a real tradeoff. Set it
     #     near max_torque and the effort term goes quiet again (it was 0.01% of
-    #     the cost at weight 0.01).
+    #     the cost at weight 0.01). Holding 1.3 m/s against the friction robust
+    #     scoring draws takes 0.02-0.14 N m.
     #   - velocity_limit is the tracking error accepted on ScenarioConfig's goal.
     #     Change the goal profile and revisit it.
     #   - fall_penalty must exceed any non-fall cost. These weights scale costs up,
-    #     so changing a limit can silently break that; re-check it (PHYSICS.md 8.3).
+    #     and the bound grows with the run length and top speed, so changing a
+    #     limit or the scenario can silently break that; re-check it (PHYSICS.md
+    #     8.3, test_fall_penalty_exceeds_any_non_fall_cost). For the 20 s scenario
+    #     the bound is 883 (462 for the earlier 12 s one, under its 500).
     # Changing one limit changes every score: runs under different limits are not
     # comparable (every run records them in its config snapshot). A limit of
     # math.inf switches that term off. pitch_limit_rad is in radians, not degrees
@@ -255,7 +261,7 @@ class CostConfig:
     pitch_limit_rad: float = 0.3
     velocity_limit: float = 0.2        # m/s
     torque_limit: float = 0.1          # N m
-    fall_penalty: float = 500.0        # added to the cost if the robot falls
+    fall_penalty: float = 1000.0       # added to the cost if the robot falls (500 for the 12 s scenario)
     # What pitch error is measured against. "upright": vertical, which penalizes
     # every lean including the ones the task requires, and is the only reference
     # every controller has (the LQR commands no lean, so it is scored from
@@ -285,18 +291,79 @@ class CostConfig:
 @dataclass(frozen=True)
 class ScenarioConfig:
     """What the tuner's evaluator asks the robot to do, and the range of
-    conditions it's scored under."""
+    conditions it's scored under.
 
-    duration_s: float = 12.0
-    goal_steps: Tuple[Tuple[float, float], ...] = ((2.0, 1.0), (3.5, 0), (6.0, -0.6), (9.0, 0.2))  # (start time s, goal m/s)
-    # Seconds each goal change takes to blend smoothly into the new velocity
-    # (see balance_sim.step_profile). 0 = instant jumps, which no robot can
-    # follow, so the velocity term can never reach zero. With a smooth blend
-    # the goal is physically trackable: it peaks at about 0.9 m/s^2 (the 0 -> 1
-    # m/s change is cut off at 3.5 s, so the goal tops out at 0.71 m/s), about
-    # 7 deg of lean, well within the 25 deg lean cap.
+    Every element is tied to a test objective and, where possible, to a limit
+    of the robot (PHYSICS.md section numbers; numbers for the nominal robot
+    unless the randomized robots of RobustnessSettings are named):
+
+      t = 0-2 s     start tilt, goal 0: recovery in both directions, then
+                    standing still (where the gyro bias and pitch offset show).
+      t = 2-3.6 s   0 -> 1.3 m/s in 1.6 s: the aggressive change. Its peak
+                    acceleration, 2.1875 x 1.3 / 1.6 = 1.78 m/s^2, needs a
+                    0.25 rad lean (2.8): 56% of the 3.24 m/s^2 the 25 deg lean
+                    cap allows, and under CostConfig.pitch_limit_rad. (Faster
+                    blends make the current tuned gains fall on weak robots:
+                    1.3 s, 0.30 rad, 2 of 300; 1.1 s, 16 of 300.)
+      t = 3.6-9.5 s cruise at 1.3 m/s, the top speed: the highest speed at which
+                    every motor robust scoring draws (any battery, winding
+                    temperature, k_t and gearbox efficiency within their
+                    spreads, with the largest friction) still has, after
+                    friction, the 0.135 N m that accelerating at the lean cap
+                    needs (4.4, 2.8). That is 79% of the nominal motor's
+                    1.65 m/s corner speed and above the weakest motors' 1.16,
+                    so back-EMF binds while recovering from the pushes. Friction
+                    is a steady load here (9.4).
+      t = 5.5, 7.5 s  pushes at top speed, forward (from behind) then backward:
+                    2.9 N on the body's center of mass for 50 ms. 50 ms is under
+                    the 118 ms unstable time constant (3.2), so it acts as an
+                    impulse: 0.145 N s, 97% of the largest forward push that a
+                    full-torque response (after 20 ms of latency) catches at
+                    1.3 m/s on every corner of the robust-scoring box (0.149 N s,
+                    set by the light, tall robot with the weakest motor; 0.85 on
+                    the nominal robot at 10 ms). So every robot scored can be
+                    saved, and a fall is the controller's doing; at 0.325 N s
+                    two validation robots in 300 could not be saved by any
+                    response. The backward push is easy to catch (braking is
+                    current-limited at every speed, 4.4); it tests getting back
+                    up to top speed without overshooting into back-EMF.
+      t = 9.5-12.5 s  1.3 -> -0.5 m/s in 3 s: braking and reversing through zero
+                    speed, where Coulomb friction flips sign (peak 1.31 m/s^2).
+      t = 12.5-14 s cruise backward: the pitch offset acts the other way.
+      t = 14-16.5 s -0.5 -> 0, gentle (0.44 m/s^2, 0.06 rad): small-signal tracking.
+      t = 16.5-20 s standing still again, after everything else.
+
+    Start tilts (each with every seed): 0.05 rad (small: linear regime),
+    -0.15 rad (medium, backward), 0.30 rad (= pitch_limit_rad, the largest
+    pitch the cost accepts; 77% of the 0.39 rad from which a full-torque
+    response with 20 ms latency catches every corner of the robust-scoring box
+    (heavy, tall, weakest motor; 0.79 rad nominal), so a fall is the
+    controller's doing; both PID sets recover up to about 0.5 rad).
+
+    Validation runs the same scenario for validation_duration_s, holding the
+    last goal (standing still) for the extra 40 s: a slow instability, like the
+    6 s runaway an LQR gain search once found (LQR.md), has time to grow from
+    the noise to a fall there, which 20 s doesn't give it. Validation is a few
+    gain sets, so its length costs little; training stays at 20 s.
+    """
+
+    duration_s: float = 20.0
+    # (start time s, goal m/s[, blend time s]); a change without its own blend
+    # time uses goal_transition_s. step_profile's blend peaks at 2.1875 x the
+    # change / blend time (m/s^2).
+    goal_steps: Tuple[Tuple[float, ...], ...] = (
+        (2.0, 1.3, 1.6),      # aggressive: 1.78 m/s^2, 0.25 rad of lean
+        (9.5, -0.5, 3.0),     # brake and reverse: 1.31 m/s^2
+        (14.0, 0.0),          # gentle stop, goal_transition_s: 0.44 m/s^2
+    )
     goal_transition_s: float = 2.5
-    start_pitches_deg: Tuple[float, ...] = (5.73, -4.58, 2.86)                 # initial disturbance, each tried with every seed
+    # (start time s, duration s, force N) on the body's center of mass, forward +.
+    pushes: Tuple[Tuple[float, float, float], ...] = (
+        (5.5, 0.05, 2.9),     # from behind at 1.3 m/s: the robot must speed up past the corner of weak motors
+        (7.5, 0.05, -2.9),    # from the front at 1.3 m/s: brake, then re-accelerate back to top speed
+    )
+    validation_duration_s: float = 60.0
+    start_pitches_deg: Tuple[float, ...] = (2.8648, -8.5944, 17.1887)          # 0.05, -0.15, 0.30 rad; each tried with every seed
     train_seeds: Tuple[int, ...] = (1, 2, 3)                                   # sensor-noise seeds scored during tuning
     validation_seeds: Tuple[int, ...] = tuple(range(100, 110))                 # unseen seeds, checked after tuning
     # Runs per score = len(start_pitches_deg) x number of seeds: 9 per training
@@ -477,6 +544,10 @@ class ProjectConfig:
         """The scenario's goal velocity as a function of time (m/s)."""
         return step_profile(self.scenario.goal_steps, self.scenario.goal_transition_s)
 
+    def build_disturbance(self):
+        """The scenario's pushes as force (N) vs time, for simulate(disturbance=...); None if there are none."""
+        return push_profile(self.scenario.pushes) if self.scenario.pushes else None
+
     def build_controller(self, gains=None) -> CascadedPIDController:
         """The cascaded controller the tuner scores, with the configured goal
         profile, lean cap, integral limits, and torque limit. Defaults to the
@@ -517,8 +588,12 @@ class ProjectConfig:
         c = self.cost
         return cost(result, c.effort_weight, c.fall_penalty, c.velocity_weight, c.pitch_reference)
 
-    def build_eval_config(self):
-        """Build a tuning.EvalConfig that matches this project configuration."""
+    def build_eval_config(self, validation: bool = False):
+        """Build a tuning.EvalConfig that matches this project configuration.
+
+        validation=True gives the held-out validation scenario: the same one,
+        run for ScenarioConfig.validation_duration_s instead of duration_s (the
+        last goal is held for the extra time)."""
         from tuning import EvalConfig
 
         return EvalConfig(
@@ -526,11 +601,12 @@ class ProjectConfig:
             motor=self.actuator.build_motor_params() if self.actuator.model == "dc_motor" else None,
             sensor=self.build_sensor(),
             latency=self.timing.latency_s,
-            duration=self.scenario.duration_s,
+            duration=self.scenario.validation_duration_s if validation else self.scenario.duration_s,
             dt=self.timing.dt_s,
             control_dt=self.timing.control_dt_s,
             goal_steps=self.scenario.goal_steps,
             goal_transition=self.scenario.goal_transition_s,
+            pushes=self.scenario.pushes,
             start_pitches=self.scenario.start_pitches_rad,
             train_seeds=self.scenario.train_seeds,
             effort_weight=self.cost.effort_weight,

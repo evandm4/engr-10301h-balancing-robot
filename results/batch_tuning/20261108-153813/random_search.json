@@ -1,0 +1,590 @@
+{
+  "method": "random_search",
+  "gains": {
+    "kp": 1.512501302391983,
+    "ki": 1.0823397760416176,
+    "kd": 0.3413485818663775,
+    "kv_p": 0.7135566257565924
+  },
+  "best_training_cost": 1.615301297903061,
+  "n_evals": 3600,
+  "elapsed_s": 44.63,
+  "provenance": {
+    "git_commit": "c6b6ffcf63b71ae63113d4023f6502800446ea6a",
+    "git_dirty": true,
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "cma": "4.5.0",
+    "torch": "2.11.0+cu128",
+    "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU"
+  },
+  "config": {
+    "robot": {
+      "body_mass": 0.8,
+      "body_com_height": 0.1,
+      "body_inertia": 0.0065,
+      "wheel_mass": 0.034,
+      "wheel_radius": 0.035,
+      "wheel_inertia": 2.2e-05,
+      "max_torque": 0.34,
+      "wheel_friction": 0.0,
+      "coulomb_friction": 0.0,
+      "coulomb_friction_speed": 1.0,
+      "gravity": 9.81
+    },
+    "actuator": {
+      "model": "dc_motor",
+      "gear_ratio": 20.4,
+      "torque_constant": 0.0053,
+      "resistance": 1.25,
+      "supply_voltage": 7.6,
+      "current_limit": 2.0,
+      "n_motors": 2,
+      "gear_efficiency": 0.78,
+      "rotor_inertia": 5e-07
+    },
+    "sensor": {
+      "pitch_std": 0.005,
+      "pitch_bias": 0.01,
+      "pitch_rate_std": 0.02,
+      "pitch_rate_bias": 0.01,
+      "position_std": 0.0005,
+      "velocity_std": 0.02
+    },
+    "timing": {
+      "latency_s": 0.01,
+      "dt_s": 0.0025,
+      "demo_dt_s": 0.001,
+      "control_dt_s": 0.005,
+      "fall_angle_deg": 60.0
+    },
+    "controller": {
+      "max_lean_deg": 25.0,
+      "pitch_integral_limit": 1.0,
+      "velocity_integral_limit": 0.5,
+      "hand_tuned_gains": [
+        4.0,
+        0.5,
+        0.15,
+        0.1
+      ]
+    },
+    "cost": {
+      "pitch_limit_rad": 0.3,
+      "velocity_limit": 0.2,
+      "torque_limit": 0.1,
+      "fall_penalty": 1000.0,
+      "pitch_reference": "upright",
+      "velocity_weight": 2.2499999999999996,
+      "effort_weight": 8.999999999999998
+    },
+    "scenario": {
+      "duration_s": 20.0,
+      "goal_steps": [
+        [
+          2.0,
+          1.3,
+          1.6
+        ],
+        [
+          9.5,
+          -0.5,
+          3.0
+        ],
+        [
+          14.0,
+          0.0
+        ]
+      ],
+      "goal_transition_s": 2.5,
+      "pushes": [
+        [
+          5.5,
+          0.05,
+          2.9
+        ],
+        [
+          7.5,
+          0.05,
+          -2.9
+        ]
+      ],
+      "validation_duration_s": 60.0,
+      "start_pitches_deg": [
+        2.8648,
+        -8.5944,
+        17.1887
+      ],
+      "train_seeds": [
+        1,
+        2,
+        3
+      ],
+      "validation_seeds": [
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109
+      ]
+    },
+    "search": {
+      "kp_min_factor": 1.1,
+      "kp_max": 30.0,
+      "ki_max": 5.0,
+      "kd_max": 1.0,
+      "kv_p_max": 0.9
+    },
+    "lqr": {
+      "w_pitch_bounds": [
+        1e-06,
+        100.0
+      ],
+      "w_velocity_bounds": [
+        1e-06,
+        100.0
+      ],
+      "w_pitch_rate_bounds": [
+        1e-08,
+        1.0
+      ],
+      "w_integral_bounds": [
+        0.001,
+        1000.0
+      ],
+      "direct_gain_scale": 100.0,
+      "w_pitch_fixed": 0.0,
+      "w_velocity_fixed": 0.0,
+      "w_pitch_rate_fixed": 0.0,
+      "direct_commands_scale": 0.0
+    },
+    "robustness": {
+      "n_train_seeds": 50,
+      "validation_seeds": [
+        1000,
+        1001,
+        1002,
+        1003,
+        1004,
+        1005,
+        1006,
+        1007,
+        1008,
+        1009,
+        1010,
+        1011,
+        1012,
+        1013,
+        1014,
+        1015,
+        1016,
+        1017,
+        1018,
+        1019,
+        1020,
+        1021,
+        1022,
+        1023,
+        1024,
+        1025,
+        1026,
+        1027,
+        1028,
+        1029,
+        1030,
+        1031,
+        1032,
+        1033,
+        1034,
+        1035,
+        1036,
+        1037,
+        1038,
+        1039,
+        1040,
+        1041,
+        1042,
+        1043,
+        1044,
+        1045,
+        1046,
+        1047,
+        1048,
+        1049,
+        1050,
+        1051,
+        1052,
+        1053,
+        1054,
+        1055,
+        1056,
+        1057,
+        1058,
+        1059,
+        1060,
+        1061,
+        1062,
+        1063,
+        1064,
+        1065,
+        1066,
+        1067,
+        1068,
+        1069,
+        1070,
+        1071,
+        1072,
+        1073,
+        1074,
+        1075,
+        1076,
+        1077,
+        1078,
+        1079,
+        1080,
+        1081,
+        1082,
+        1083,
+        1084,
+        1085,
+        1086,
+        1087,
+        1088,
+        1089,
+        1090,
+        1091,
+        1092,
+        1093,
+        1094,
+        1095,
+        1096,
+        1097,
+        1098,
+        1099
+      ],
+      "randomize": [
+        [
+          "body_mass",
+          0.15
+        ],
+        [
+          "body_com_height",
+          0.15
+        ],
+        [
+          "body_inertia",
+          0.25
+        ],
+        [
+          "wheel_inertia",
+          0.2
+        ],
+        [
+          "rotor_inertia",
+          0.5
+        ],
+        [
+          "torque_constant",
+          0.1
+        ],
+        [
+          "resistance",
+          0.15
+        ],
+        [
+          "supply_voltage",
+          0.105
+        ],
+        [
+          "gear_efficiency",
+          0.1
+        ]
+      ],
+      "randomize_range": [
+        [
+          "wheel_friction",
+          0.0,
+          0.0015
+        ],
+        [
+          "coulomb_friction",
+          0.02,
+          0.08
+        ]
+      ],
+      "latency_range_s": [
+        0.005,
+        0.02
+      ],
+      "robot_seed": 0,
+      "sensitivity_weight": 1.0,
+      "sensitivity_nudge_deg": 0.0057
+    },
+    "derived": {
+      "fall_angle_rad": 1.0471975511965976,
+      "max_lean_rad": 0.4363323129985824,
+      "start_pitches_rad": [
+        0.05000019241113355,
+        -0.15000057723340066,
+        0.29999940913754936
+      ],
+      "critical_pitch_gain": 0.29806535142377694,
+      "critical_pitch_gain_kp_floor_robot": 0.3855079985749431,
+      "search_bounds": {
+        "kp": {
+          "low": 0.42405879843243743,
+          "high": 30.0,
+          "log_scale": true
+        },
+        "ki": {
+          "low": 0.0,
+          "high": 5.0,
+          "log_scale": false
+        },
+        "kd": {
+          "low": 0.0,
+          "high": 1.0,
+          "log_scale": false
+        },
+        "kv_p": {
+          "low": 0.0,
+          "high": 0.9,
+          "log_scale": false
+        }
+      },
+      "motor_stall_torque_limit": 0.3373344,
+      "motor_no_load_speed_rad_s": 70.29226785053645,
+      "reflected_rotor_inertia": 0.00041615999999999995,
+      "cost_matched_lqr_gain": [
+        -0.4596754609967633,
+        -1.662900013623945,
+        -0.22175131407578338,
+        0.0,
+        0.1734526975820538,
+        0.16392833746669944
+      ]
+    }
+  },
+  "robustness": {
+    "train_seeds": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50
+    ],
+    "validation_seeds": [
+      1000,
+      1001,
+      1002,
+      1003,
+      1004,
+      1005,
+      1006,
+      1007,
+      1008,
+      1009,
+      1010,
+      1011,
+      1012,
+      1013,
+      1014,
+      1015,
+      1016,
+      1017,
+      1018,
+      1019,
+      1020,
+      1021,
+      1022,
+      1023,
+      1024,
+      1025,
+      1026,
+      1027,
+      1028,
+      1029,
+      1030,
+      1031,
+      1032,
+      1033,
+      1034,
+      1035,
+      1036,
+      1037,
+      1038,
+      1039,
+      1040,
+      1041,
+      1042,
+      1043,
+      1044,
+      1045,
+      1046,
+      1047,
+      1048,
+      1049,
+      1050,
+      1051,
+      1052,
+      1053,
+      1054,
+      1055,
+      1056,
+      1057,
+      1058,
+      1059,
+      1060,
+      1061,
+      1062,
+      1063,
+      1064,
+      1065,
+      1066,
+      1067,
+      1068,
+      1069,
+      1070,
+      1071,
+      1072,
+      1073,
+      1074,
+      1075,
+      1076,
+      1077,
+      1078,
+      1079,
+      1080,
+      1081,
+      1082,
+      1083,
+      1084,
+      1085,
+      1086,
+      1087,
+      1088,
+      1089,
+      1090,
+      1091,
+      1092,
+      1093,
+      1094,
+      1095,
+      1096,
+      1097,
+      1098,
+      1099
+    ],
+    "randomize": [
+      [
+        "body_mass",
+        0.15
+      ],
+      [
+        "body_com_height",
+        0.15
+      ],
+      [
+        "body_inertia",
+        0.25
+      ],
+      [
+        "wheel_inertia",
+        0.2
+      ],
+      [
+        "rotor_inertia",
+        0.5
+      ],
+      [
+        "torque_constant",
+        0.1
+      ],
+      [
+        "resistance",
+        0.15
+      ],
+      [
+        "supply_voltage",
+        0.105
+      ],
+      [
+        "gear_efficiency",
+        0.1
+      ]
+    ],
+    "randomize_range": [
+      [
+        "wheel_friction",
+        0.0,
+        0.0015
+      ],
+      [
+        "coulomb_friction",
+        0.02,
+        0.08
+      ]
+    ],
+    "latency_range": [
+      0.005,
+      0.02
+    ],
+    "robot_seed": 0,
+    "sensitivity_weight": 1.0,
+    "sensitivity_nudge": 9.948376736367679e-05
+  },
+  "backend": "torch",
+  "dtype": "float32"
+}

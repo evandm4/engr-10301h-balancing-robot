@@ -27,6 +27,10 @@ Friction between wheels and body, tau_f = b w + tau_c tanh(w / w_eps) with w
 the relative wheel speed, comes off the motor torque (viscous plus smoothed
 Coulomb; both zero by default).
 
+An external horizontal force F on the body at its center of mass (a push;
+zero unless the simulator is given one) does virtual work F d(x + l sin theta),
+so it adds Q_x = F and Q_theta = F l cos(theta) to the generalized forces.
+
 Assumptions: rolling without slip and a rigid body. The motors are handled by
 a swappable Actuator: by default the commanded torque is delivered as-is (clipped
 to the torque limit); pass a DCMotorActuator for back-EMF and current limits.
@@ -102,7 +106,8 @@ class Planar2D(Dynamics):
         self.fall_angle = fall_angle
         self.actuator = actuator if actuator is not None else IdealActuator(params.max_torque)
 
-    def derivatives(self, state: np.ndarray, torque: float) -> np.ndarray:
+    def derivatives(self, state: np.ndarray, torque: float, force: float = 0.0) -> np.ndarray:
+        """force (N): horizontal push on the body at its center of mass, forward +."""
         p = self.p
         # Plain floats are much faster than numpy scalars in this hot loop.
         x_dot, theta, theta_dot = float(state[1]), float(state[2]), float(state[3])
@@ -123,6 +128,9 @@ class Planar2D(Dynamics):
 
         rhs_x = tau / p.wheel_radius + ml * sin_t * theta_dot**2
         rhs_t = -tau + ml * p.gravity * sin_t
+        if force:   # skipped without a push, so the arithmetic is unchanged (batch_sim does the same)
+            rhs_x = rhs_x + force
+            rhs_t = rhs_t + force * p.body_com_height * cos_t
 
         det = a * d - b * b
         x_ddot = (d * rhs_x - b * rhs_t) / det

@@ -89,6 +89,8 @@ class TorchSimulator:
         self.write_slot_per_tick = tensor(np.arange(s.n_ticks) % R, torch.long)
         self.goal_per_tick = tensor(s.goal_per_tick)
         self.goal_per_step = tensor(s.goal_per_step)
+        self.has_push = bool(np.any(s.force_per_step))
+        self.force_per_step = tensor(s.force_per_step)
         self.step_end_time = tensor([(k + 1) * spec.dt for k in range(s.n_steps)])   # same floats as the CPU loop
         self.noise = None if noise is None else tensor(np.asarray(noise)[:, 1:, :])   # position noise is never read
 
@@ -169,7 +171,8 @@ class TorchSimulator:
         self.effort.add_(torch.where(alive, torque**2 * dt, 0.0))
         self.velocity_error.add_(torch.where(alive, (x_dot - self.goal_per_step[self.step]) ** 2 * dt, 0.0))
 
-        stepped = rk4_step(self.robot, self.state, torque, dt, xp)
+        force = self.force_per_step[self.step][0] if self.has_push else 0.0   # a lookup, so graphs can replay it
+        stepped = rk4_step(self.robot, self.state, torque, dt, xp, force)
         for buffer, new in zip(self.state, stepped):
             buffer.copy_(torch.where(alive, new, buffer))
         just_fell = alive & (torch.abs(self.state[2]) > spec.fall_angle)

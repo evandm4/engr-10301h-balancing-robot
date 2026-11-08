@@ -206,8 +206,12 @@ def main():
     space_of = {"cascaded": cfg.build_search_space(), "lqr": cfg.build_lqr_space()}
     check = {kind: BatchEvaluator(eval_config, space_of[kind], robustness=robustness, controller=kind)
              for kind in ("cascaded", "lqr")}
+    # Validation runs the longer held-out scenario (ScenarioConfig.validation_duration_s).
+    check_val = {kind: BatchEvaluator(cfg.build_eval_config(validation=True), space_of[kind],
+                                      robustness=robustness, controller=kind)
+                 for kind in ("cascaded", "lqr")}
     train = evaluate(check, gains, robustness.train_seeds)
-    val = evaluate(check, gains, robustness.validation_seeds)
+    val = evaluate(check_val, gains, robustness.validation_seeds)
 
     # ---- linear stability ----
     params_nominal = cfg.build_robot_params()

@@ -87,7 +87,7 @@ def _smoothstep(x: float) -> float:
     return x**4 * (35.0 - 84.0 * x + 70.0 * x**2 - 20.0 * x**3)
 
 
-def step_profile(steps: Sequence[Tuple[float, float]], transition: float = 0.0) -> Callable[[float], float]:
+def step_profile(steps: Sequence[Tuple[float, ...]], transition: float = 0.0) -> Callable[[float], float]:
     """Build a goal velocity from (start_time, velocity) pairs.
 
     Example: step_profile([(1.0, 0.3), (5.0, -0.2)]) is 0 until t=1 s, then
@@ -101,25 +101,35 @@ def step_profile(steps: Sequence[Tuple[float, float]], transition: float = 0.0) 
     the robot could follow exactly: acceleration sets the lean, jerk the pitch
     rate, and the torque stays finite. A change that starts before the previous
     one has finished blends from wherever the goal was at that moment.
+
+    A step can also be a triple (start_time, velocity, transition), which sets
+    that change's own blend time in place of `transition`. The blend's peak
+    acceleration is 2.1875 |change| / its transition time (at its midpoint).
     """
     if transition < 0:
         raise ValueError("transition must be non-negative")
-    ordered = sorted(steps)
+    ordered = sorted(tuple(s) for s in steps)
+    for step in ordered:
+        if len(step) not in (2, 3):
+            raise ValueError(f"a step is (start, velocity) or (start, velocity, transition), got {step!r}")
+        if len(step) == 3 and step[2] < 0:
+            raise ValueError("transition must be non-negative")
 
-    # (start, velocity it blends from, velocity it blends to) for each change.
+    # (start, velocity it blends from, velocity it blends to, blend time) for each change.
     segments = []
-    for start, v in ordered:
-        segments.append((start, _segment_value(segments, start, transition), v))
+    for step in ordered:
+        start, v = step[0], step[1]
+        segments.append((start, _segment_value(segments, start), v, step[2] if len(step) == 3 else transition))
 
     def profile(t: float) -> float:
-        return _segment_value(segments, t, transition)
+        return _segment_value(segments, t)
 
     return profile
 
 
-def _segment_value(segments, t: float, transition: float) -> float:
+def _segment_value(segments, t: float) -> float:
     velocity = 0.0
-    for start, v_from, v_to in segments:
+    for start, v_from, v_to, transition in segments:
         if t >= start - 1e-9:
             if transition > 0:
                 velocity = v_from + (v_to - v_from) * _smoothstep((t - start) / transition)
@@ -128,6 +138,30 @@ def _segment_value(segments, t: float, transition: float) -> float:
         else:
             break
     return velocity
+
+
+def push_profile(pushes: Sequence[Tuple[float, float, float]]) -> Callable[[float], float]:
+    """Build an external push as a function of time: the horizontal force (N) on the body.
+
+    pushes: (start_time s, duration s, force N) triples; force > 0 pushes forward
+    (from behind). The force is applied at the body's center of mass (Planar2D),
+    is constant from start_time for duration seconds, and pushes that overlap add.
+    The simulators hold it constant over each physics step, at its value at the
+    step's start time, like the torque.
+    """
+    pushes = tuple(tuple(p) for p in pushes)
+    for p in pushes:
+        if len(p) != 3 or p[1] < 0:
+            raise ValueError(f"a push is (start, duration >= 0, force), got {p!r}")
+
+    def force(t: float) -> float:
+        total = 0.0
+        for start, duration, f in pushes:
+            if start - 1e-9 <= t < start + duration - 1e-9:
+                total += f
+        return total
+
+    return force
 
 
 class PIDController(Controller):

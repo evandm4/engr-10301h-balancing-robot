@@ -35,6 +35,37 @@ def test_eval_config_matches_project_config():
     assert ec.fall_angle == pytest.approx(CONFIG.timing.fall_angle_rad)
     assert ec.motor is not None   # dc_motor is the default actuator model
     assert np.allclose(ec.start_pitches, CONFIG.scenario.start_pitches_rad)
+    assert ec.pushes == CONFIG.scenario.pushes
+
+
+def test_validation_scenario_is_the_training_one_run_longer():
+    from dataclasses import replace
+
+    train, val = CONFIG.build_eval_config(), CONFIG.build_eval_config(validation=True)
+    assert val.duration == CONFIG.scenario.validation_duration_s > train.duration
+    assert replace(val, duration=train.duration) == replace(train, sensor=val.sensor)
+    # Every goal change and push happens within the training run, so the extra time is a hold.
+    s = CONFIG.scenario
+    assert all(step[0] + (step[2] if len(step) == 3 else s.goal_transition_s) <= s.duration_s for step in s.goal_steps)
+    assert all(start + width <= s.duration_s for start, width, _ in s.pushes)
+
+
+def test_cost_limits_are_consistent_with_the_scenario():
+    """CostConfig's comment: the pitch limit is above the lean the goal needs (PHYSICS.md 2.8)
+    and below the lean cap, and no start tilt exceeds it."""
+    import math
+
+    p, c = CONFIG.build_robot_params(), CONFIG.cost
+    goal, dt = CONFIG.build_goal(), 1e-3
+    v = np.array([goal(k * dt) for k in range(int(CONFIG.scenario.duration_s / dt))])
+    peak_accel = np.max(np.abs(np.diff(v))) / dt
+    ml = p.body_mass * p.body_com_height
+    a = p.body_mass + p.wheel_mass + (p.wheel_inertia + p.rotor_inertia) / p.wheel_radius**2
+    lean = lambda th: ml * p.gravity * math.sin(th) / (ml * math.cos(th) - p.rotor_inertia / p.wheel_radius
+                                                        + a * p.wheel_radius)
+    lean_needed = next(th for th in np.arange(0, 0.6, 1e-4) if lean(th) >= peak_accel)
+    assert lean_needed < c.pitch_limit_rad < CONFIG.controller.max_lean_rad
+    assert max(abs(t) for t in CONFIG.scenario.start_pitches_rad) <= c.pitch_limit_rad + 1e-6
 
 
 def test_eval_config_has_no_motor_when_actuator_is_ideal():
@@ -207,7 +238,7 @@ def test_fall_penalty_exceeds_any_non_fall_cost():
     volts = a.supply_voltage * (1 + spreads.get("supply_voltage", 0.0))
     k_t = a.torque_constant * (1 - spreads.get("torque_constant", 0.0))
     v_max = volts / (k_t * a.gear_ratio) * CONFIG.robot.wheel_radius
-    goal_max = max(abs(v) for _, v in CONFIG.scenario.goal_steps)
+    goal_max = max(abs(step[1]) for step in CONFIG.scenario.goal_steps)
     bound = (CONFIG.timing.fall_angle_rad**2 * T
              + c.effort_weight * CONFIG.robot.max_torque**2 * T
              + c.velocity_weight * (v_max + goal_max) ** 2 * T)

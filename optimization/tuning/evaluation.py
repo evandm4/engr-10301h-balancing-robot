@@ -25,6 +25,7 @@ from balance_sim import (
     SensorNoise,
     SimResult,
     cost,
+    push_profile,
     simulate,
     step_profile,
 )
@@ -47,8 +48,9 @@ class EvalConfig:
     duration: float                            # s per scenario
     dt: float                                  # physics step
     control_dt: float                          # controller period
-    goal_steps: Tuple[Tuple[float, float], ...]   # (start time s, goal m/s)
+    goal_steps: Tuple[Tuple[float, ...], ...]  # (start time s, goal m/s[, own blend time s])
     goal_transition: float                     # s; blend time per goal change, 0 = jumps
+    pushes: Tuple[Tuple[float, float, float], ...]   # (start time s, duration s, force N): see balance_sim.push_profile
     start_pitches: Tuple[float, ...]           # rad, each tried with every seed
     train_seeds: Tuple[int, ...]
     effort_weight: float
@@ -128,6 +130,7 @@ class Evaluator:
             control_dt=c.control_dt,
             sensor=sensor,
             latency=c.latency,
+            disturbance=push_profile(c.pushes) if c.pushes else None,
         )
 
     def score(self, result: SimResult) -> float:

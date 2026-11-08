@@ -64,6 +64,7 @@ def main():
     validation_seeds = CONFIG.scenario.validation_seeds
     space = CONFIG.build_search_space()
     evaluator = Evaluator(CONFIG.build_eval_config(), space)
+    validator = Evaluator(CONFIG.build_eval_config(validation=True), space)   # the longer held-out scenario
 
     print(f"Search space: {', '.join(f'{p.name} [{p.low:.3g}, {p.high:.3g}]' for p in space.parameters)}")
     print("Running differential evolution ...")
@@ -103,7 +104,7 @@ def main():
     print(f"{'method':<24}{gains_header(space.names)}{'evals':>7}{'train':>10}{'validation':>12}{'falls':>9}")
     for name, gains in results:
         train = evaluator.evaluate_gains(gains)
-        val = evaluator.evaluate_gains(gains, seeds=validation_seeds)
+        val = validator.evaluate_gains(gains, seeds=validation_seeds)
         n_evals = searches[name].n_evals if name in searches else None
         comparison[name] = {"gains": space.as_dict(gains), "n_evals": n_evals,
                             "train_cost": train.mean_cost, "validation_cost": val.mean_cost,
