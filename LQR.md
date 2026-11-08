@@ -71,7 +71,26 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 
 ### Results
 
-**Current: datasheet robot (2026-11-08).** Run `results/lqr_comparison/20261108-133118/`, same protocol as the 2026-11-06 run below. The robot is now config.py's datasheet values (DATASHEET.md): the motors' reflected rotor inertia in the dynamics, a gearbox efficiency of 0.78, 0.34 N m of torque, a 0.01 rad pitch-estimate offset, and robust scoring with Coulomb friction 0.02–0.08 N m, viscous 0–0.0015 N m s/rad, rotor inertia ±50% and gear efficiency ±10%. No controller fell in validation, and no search ended on a bound.
+**Current: 20 s scenario with pushes (2026-11-08, later).** Run `results/lqr_comparison/20261108-182234/`, same protocol as the run below, on the redesigned scenario (`ScenarioConfig`: start tilts up to 0.30 rad, a 1.6 s speed-up to a 1.3 m/s cruise, two 2.9 N pushes, braking and reversing; 20 s training runs, 60 s validation runs). Same robot, cost and robust scoring.
+
+| Controller | Validation cost | vs ML PID (median per scenario) | Falls (of 300) | Worst run | Effort term | Stable latency (linear) |
+|---|---:|---:|---:|---:|---:|---|
+| PID, hand-tuned | 30.02 | 6.18x | 2 | 1901 | 5.986 | 0-15.75 ms |
+| **PID, ML-tuned** | **2.261** | | **0** | 4.99 | 1.600 | 0-37.25 ms |
+| LQR, cost-matched | 22.32 | 4.35x | 2 | 1900 | 2.260 | 0-44.25 ms |
+| LQR, latency ignored | 7.077 | 3.15x | 0 | 14.90 | 2.197 | 0-36.50 ms |
+| LQR, ML-tuned weights | 48.92 | 1.66x | 7 | 1948 | 2.066 | 0-42.25 ms |
+| LQR, ML-tuned gains | 3.050 | 1.35x | 0 | 6.44 | 2.244 | 0-35.00 ms |
+
+- **The PID still wins, by more.** The tuned LQR gains are 35% behind (18% on the 12 s scenario), the tuned weights 66%, the cost-matched LQR 4.3x.
+- **Falls now separate the controllers.** Three of the six fall at least once on the 300 unseen robots: the hand-tuned PID (2), the cost-matched LQR (2) and the weight-tuned LQR (7). The ML-tuned PID, the tuned LQR gains and the latency-ignoring LQR never fall. A single fall costs 1000-2000, so mean costs with falls are dominated by them; the median ratio is the fairer comparison of the rest.
+- **The PID search confirms the batch tuner.** It lands on kp 1.635, ki 1.767, kd 0.299, kv_p 0.620, the same gains `run_batch_tuning.py` found on this scenario (`results/batch_tuning/20261108-153813/`).
+- **The weight search can't avoid falls.** Its training objective (38.6) includes falls, and its one free parameter (`w_integral`, settled at 6.21) is not enough: with the pitch, velocity and pitch-rate weights held at 0 (the 2026-11-06 normalization below), no design it can reach survives every push. Re-opening those weights (`LQRConfig.w_*_fixed = None`) is the next thing to try.
+- **Ignoring the latency in the design helps again** (7.08 against 22.3 for the delay-aware design, and no falls).
+- **Tuned LQR gain scales:** 3.08 (velocity), 0.861 (pitch), 1.71 (pitch rate), against 3.02, 0.757 and 1.59 on the 12 s scenario.
+- **Latency sweeps** (60 scenarios per point): the tuned PID stays within 5% of its 10 ms cost up to 20 ms (1.58 against 1.50), reaches 2.61 at 30 ms, and falls 3 times at 40 ms. The tuned LQR gains hold to 20 ms, fall once at 30 ms and 32 times at 40 ms. The cost-matched LQR is flat to 15 ms, then falls once from 20 ms. The latency-ignoring LQR is the most delay-tolerant here: no falls up to 40 ms (cost 10.9). The hand-tuned PID falls twice at 20 ms and 50 times at 25 ms.
+
+**Earlier: datasheet robot, 12 s scenario (2026-11-08).** Run `results/lqr_comparison/20261108-133118/`, same protocol as the 2026-11-06 run below. The robot is now config.py's datasheet values (DATASHEET.md): the motors' reflected rotor inertia in the dynamics, a gearbox efficiency of 0.78, 0.34 N m of torque, a 0.01 rad pitch-estimate offset, and robust scoring with Coulomb friction 0.02–0.08 N m, viscous 0–0.0015 N m s/rad, rotor inertia ±50% and gear efficiency ±10%. No controller fell in validation, and no search ended on a bound.
 
 | Controller | Validation cost | vs ML PID (median per scenario) | Worst run | Effort term | Stable latency (linear) |
 |---|---:|---:|---:|---:|---|

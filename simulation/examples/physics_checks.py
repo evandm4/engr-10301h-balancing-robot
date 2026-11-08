@@ -28,7 +28,7 @@ from balance_sim.simulator import _rk4_step
 from batch_sim import BatchRobot, actuator_torque, derivatives
 from config import CONFIG
 
-TUNED = (1.5665012042015811, 2.1008133218371503, 0.2849281098561087, 0.6448938913835949)  # CMA-ES, results/batch_tuning/20261108-132528
+TUNED = (1.6351051516678046, 1.765803347356468, 0.29857655444040127, 0.6197806802419683)  # CMA-ES, results/batch_tuning/20261108-153813 (20 s scenario with pushes)
 TUNED_1106 = (0.659938589993706, 0.4980220464276531, 0.11153595895763543, 0.7956961244475451)  # CMA-ES, 2026-11-06, earlier robot
 HAND = tuple(CONFIG.controller.hand_tuned_gains)
 
@@ -140,7 +140,10 @@ def linear_model():
           f"{math.acosh(CONFIG.timing.fall_angle_rad / 0.05) / pole:.3f} s)")
     print(f"RHP zero of X/T at {zero:.3f} rad/s")
     run = scenario_run(TUNED, CONFIG.scenario.start_pitches_rad[0], 100)
-    for start, span, pick in ((2.0, 0.3, np.min), (6.0, 0.4, np.max)):
+    goal = CONFIG.build_goal()
+    for step in CONFIG.scenario.goal_steps[:2]:      # the speed-up and the brake-and-reverse
+        start, span = step[0], 0.4
+        pick = np.min if step[1] > goal(start - 1e-3) else np.max   # wrong way = opposite to the change
         i = np.searchsorted(run.t, start)
         window = run.states[i:i + int(round(span / CONFIG.timing.dt_s)), 1]
         print(f"  tuned, seed 100: goal step at {start} s, v = {run.states[i, 1]:.3f} m/s, then "

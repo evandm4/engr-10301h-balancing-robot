@@ -87,7 +87,7 @@ flowchart LR
 5. The **evaluator** makes one run per scenario, where a scenario is every start tilt paired with every noise seed.
    - **Reference:** each run is its own `simulate()` call.
    - **Batched:** it builds one big batch of candidates × scenarios (× twins) and passes it in chunks to `simulate_batch` (NumPy) or `TorchSimulator.run` (GPU).
-6. **One simulation** covers 12 s at a 2.5 ms physics step (4,800 steps) with a 5 ms controller (2,400 ticks). Each physics step does this, in order:
+6. **One simulation** covers 20 s at a 2.5 ms physics step (8,000 steps) with a 5 ms controller (4,000 ticks). The scenario (`ScenarioConfig`, whose docstring justifies each element): a start tilt, a fast speed-up to a 1.3 m/s cruise, two pushes on the body at 5.5 s and 7.5 s, braking and reversing to −0.5 m/s, then a stop. Each physics step does this, in order:
    1. *On a controller tick only:*
       - The **sensor** adds noise and gyro bias to the true state (`SensorNoise.measure`).
       - The **controller** (`CascadedPIDController.update`) runs its two loops:
@@ -97,9 +97,9 @@ flowchart LR
       - The command joins the **latency** queue.
    2. The command whose 10 ms delay has passed becomes the torque the **actuator** receives. It's held until the next one arrives.
    3. The **cost terms** for this step are added: pitch error from upright (`CostConfig.pitch_reference`), torque², and velocity error from the goal.
-   4. An **RK4 step** calls `Planar2D.derivatives` four times. Each call asks the **actuator** (`DCMotorActuator`: back-EMF, supply voltage, current limit) what torque is actually delivered, then solves the equations of motion.
+   4. An **RK4 step** calls `Planar2D.derivatives` four times. Each call asks the **actuator** (`DCMotorActuator`: back-EMF, supply voltage, current limit) what torque is actually delivered, adds any **push** acting at that moment (a force at the body's center of mass), then solves the equations of motion.
    5. **Fall check:** past 60° of tilt the robot has fallen. The reference loop stops; the batched loop freezes that robot and keeps going with the rest.
-7. Each run's **cost** is: pitch error + 9 × effort + 2.25 × velocity error, plus a fall penalty of 500 × (1 + the fraction of the run left). The 9 and 2.25 are derived from three limits in `config.py` (`CostConfig`: pitch 0.3 rad, velocity 0.2 m/s, torque 0.1 N m) by Bryson's rule; change the limits, never the weights, and keep them consistent with the scenario (see the comment there).
+7. Each run's **cost** is: pitch error + 9 × effort + 2.25 × velocity error, plus a fall penalty of 1000 × (1 + the fraction of the run left), which exceeds the 883 that any 20 s run that stays up can cost. The 9 and 2.25 are derived from three limits in `config.py` (`CostConfig`: pitch 0.3 rad, velocity 0.2 m/s, torque 0.1 N m) by Bryson's rule; change the limits, never the weights, and keep them consistent with the scenario (see the comment there).
    - **Reference:** `metrics.cost` computes it from the recorded trajectory.
    - **Batched:** the terms are summed during the run instead.
 8. The evaluator averages the costs over scenarios and returns the result to the optimizer.
@@ -108,7 +108,7 @@ flowchart LR
 
 ### 3. Wrap-up
 
-9. **Validation:** the best gains from each method, plus the hand-tuned baseline, are re-scored on noise seeds the search never saw. The batched tuner always does this in float64 with NumPy, both the reference way and the robust way (100 unseen seeds with unseen robots).
+9. **Validation:** the best gains from each method, plus the hand-tuned baseline, are re-scored on noise seeds the search never saw. The batched tuner always does this in float64 with NumPy, both the reference way and the robust way (100 unseen seeds with unseen robots). Validation runs last 60 s: the final standstill is held 40 s longer, so a slow instability has time to show.
 10. **Saved to `results/`:**
     - a JSON summary and a CSV history per method;
     - `comparison.json`, which includes a full snapshot of `config.py`;
@@ -131,14 +131,14 @@ flowchart LR
 From the project folder, with `C:\venvs\balancebot` active:
 
 ```
-python -m pytest                                                     # every test (310: 24 the pivot side project, 70 the LQR), ~1.5 min
+python -m pytest                                                     # every test (325: 24 the pivot side project, 70 the LQR), ~1.5 min
 python simulation/examples/run_velocity_demo.py                      # one run, plotted
 python simulation/animate.py                                         # animate hand-tuned vs the latest tuning result
 python simulation/animate.py --gains 1.03 0.2 0.1 0.33 --speed 0.5   # any gains, slow motion
 python simulation/animate.py --save robot.gif                        # save instead of showing
 python optimization/run_tuning.py --workers -1 --bayesian            # reference tuner
-python optimization/run_batch_tuning.py --backend torch --float32    # batched robust tuner on the GPU, ~70 s
-python optimization/run_lqr_comparison.py --backend torch --float32  # PID vs LQR, tuned and compared, on the GPU, ~10 min
+python optimization/run_batch_tuning.py --backend torch --float32    # batched robust tuner on the GPU, ~5 min on battery
+python optimization/run_lqr_comparison.py --backend torch --float32  # PID vs LQR, tuned and compared, on the GPU, ~15 min
 python optimization/benchmark.py                                     # reference speed baseline
 python optimization/benchmark_batch.py --backend torch --float32     # batched speed
 ```
