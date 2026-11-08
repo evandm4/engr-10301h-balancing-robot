@@ -60,20 +60,33 @@ from balance_sim import (
 @dataclass(frozen=True)
 class RobotConfig:
     """The physical robot the simulation models. These numbers double as the
-    hardware build spec if the physical robot gets made."""
+    hardware build spec if the physical robot gets made. DATASHEET.md gives the
+    source of each value (a reference build: Pololu 25D gearmotors, 70 mm
+    Pololu wheels, a 2S LiPo) and the realistic range around it."""
 
-    body_mass: float = 0.80            # kg, chassis + electronics, excludes wheels
-    body_com_height: float = 0.10      # m, body center of mass above the wheel axle
-    body_inertia: float = 0.0033       # kg m^2, body pitch inertia about its own COM
-    wheel_mass: float = 0.10           # kg, both wheels combined
+    body_mass: float = 0.80            # kg, chassis + electronics + motors, excludes wheels (0.5-0.9 realistic)
+    body_com_height: float = 0.10      # m, body center of mass above the wheel axle (set by where the battery goes)
+    body_inertia: float = 0.0065       # kg m^2, body pitch inertia about its own COM. A tower tall enough
+                                       # for a 0.10 m COM has about 0.006-0.007 (DATASHEET.md 4; was 0.0033)
+    wheel_mass: float = 0.034          # kg, both wheels combined: 2 x (14 g Pololu 70x8 mm wheel + 3.2 g hub)
     wheel_radius: float = 0.035        # m
-    wheel_inertia: float = 6.1e-5      # kg m^2, both wheels about the axle
-    max_torque: float = 0.40           # N m, total torque limit (both motors). Applies to both
-                                       # actuator models; the DC motor can limit it further.
-    wheel_friction: float = 0.0        # N m s/rad, viscous friction between wheels and body
-    gravity: float = 9.81              # m/s^2
+    wheel_inertia: float = 2.2e-5      # kg m^2, both wheels about the axle (0.65 m r^2 each: tire at the rim).
+                                       # The motor rotors are separate: ActuatorConfig.rotor_inertia
+    max_torque: float = 0.34           # N m, total torque limit (both motors). Applies to both actuator
+                                       # models; the DC motor can limit it further. 0.34 is what the motors
+                                       # give at their 2 A limit after gearbox losses (DATASHEET.md 5.1)
+    # Friction between wheels and body (brushes, bearings, gear mesh), as a torque against the
+    # relative wheel speed w: wheel_friction * w + coulomb_friction * tanh(w / coulomb_friction_speed).
+    # Unmeasured, so zero here; RobustnessSettings.randomize_range draws both per scenario, over
+    # ranges set from the motors' free-run current (DATASHEET.md 5.2). Measure them as in PHYSICS.md 9.4.
+    wheel_friction: float = 0.0        # N m s/rad, viscous
+    coulomb_friction: float = 0.0      # N m, Coulomb (dry), both wheels together
+    coulomb_friction_speed: float = 1.0   # rad/s, smoothing of the Coulomb step (PHYSICS.md 9.4)
+    gravity: float = 9.81              # m/s^2 (9.8015 at West Lafayette; the difference is 0.09%)
 
-    def build(self) -> RobotParams:
+    def build(self, rotor_inertia: float) -> RobotParams:
+        """rotor_inertia: the motor rotors reflected to the axle (ActuatorConfig.reflected_rotor_inertia);
+        ProjectConfig.build_robot_params passes it."""
         return RobotParams(
             body_mass=self.body_mass,
             body_com_height=self.body_com_height,
@@ -81,8 +94,11 @@ class RobotConfig:
             wheel_mass=self.wheel_mass,
             wheel_radius=self.wheel_radius,
             wheel_inertia=self.wheel_inertia,
+            rotor_inertia=rotor_inertia,
             max_torque=self.max_torque,
             wheel_friction=self.wheel_friction,
+            coulomb_friction=self.coulomb_friction,
+            coulomb_friction_speed=self.coulomb_friction_speed,
             gravity=self.gravity,
         )
 
@@ -99,14 +115,24 @@ class ActuatorConfig:
 
     model: str = "dc_motor"            # "ideal" or "dc_motor"
 
-    # Only used when model == "dc_motor". Rough guess for a small 7.4 V geared
-    # motor; replace with datasheet or measured values.
-    gear_ratio: float = 20.0           # motor turns per output turn
-    torque_constant: float = 0.005     # N m/A at the motor shaft (= back-EMF constant in SI)
-    resistance: float = 3.0            # ohm, winding resistance
-    supply_voltage: float = 7.4        # V
-    current_limit: float = 2.0         # A, per motor
+    # Pololu 20.4:1 Metal Gearmotor 25Dx65L mm HP 6V with 48 CPR encoder (item 4803), run
+    # from a 2S LiPo. Constants derived from Pololu's catalogue numbers (DATASHEET.md 3.1, 5.1).
+    # Used by the DC motor model only, except gear_ratio, n_motors and rotor_inertia, which
+    # also set the rotor inertia the dynamics see with either model.
+    gear_ratio: float = 20.4           # motor turns per output turn
+    torque_constant: float = 0.0053    # N m/A at the motor shaft (= back-EMF constant in SI)
+    resistance: float = 1.25           # ohm: 1.0 winding (6 V / 6.0 A stall) + about 0.25 driver, wiring, battery
+    supply_voltage: float = 7.6        # V: 2S LiPo, 8.4 full to 6.8 at cutoff under load
+    current_limit: float = 2.0         # A, per motor (DRV8874: 2.1 A continuous; Pololu: <= 25% of 6 A stall)
     n_motors: int = 2
+    gear_efficiency: float = 0.78      # geared stall torque / (20.4 x bare-motor stall torque)
+    rotor_inertia: float = 5.0e-7      # kg m^2 per motor, at the motor shaft. Unpublished: estimated from
+                                       # a 370-size armature (3-8e-7, DATASHEET.md 5.3); measure by spin-down
+
+    @property
+    def reflected_rotor_inertia(self) -> float:
+        """All rotors seen at the wheel axle, n N^2 J_r (kg m^2): RobotParams.rotor_inertia."""
+        return self.n_motors * self.gear_ratio**2 * self.rotor_inertia
 
     def build_motor_params(self) -> MotorParams:
         return MotorParams(
@@ -116,6 +142,7 @@ class ActuatorConfig:
             supply_voltage=self.supply_voltage,
             current_limit=self.current_limit,
             n_motors=self.n_motors,
+            gear_efficiency=self.gear_efficiency,
         )
 
     def build(self, robot: RobotParams):
@@ -134,15 +161,21 @@ class SensorConfig:
     std to 0 for a perfect sensor. The random seed is set per test scenario
     elsewhere (see ScenarioConfig), not here."""
 
+    # DATASHEET.md 2.3: the gyro and pitch noise are 10-30x the IMU datasheets' (ICM-42688-P,
+    # MPU-6050), kept conservative for chassis vibration until measured on the robot; the
+    # encoder values match a 48 CPR motor encoder (979.62 counts per wheel turn) at 200 Hz.
     pitch_std: float = 0.005           # rad
+    pitch_bias: float = 0.01           # rad, constant pitch-estimate offset: IMU mounting and balance-point
+                                       # error, typically 0.5-1 deg until calibrated out
     pitch_rate_std: float = 0.02       # rad/s, gyro
-    pitch_rate_bias: float = 0.01      # rad/s, constant gyro offset
-    position_std: float = 0.0005       # m
-    velocity_std: float = 0.02         # m/s
+    pitch_rate_bias: float = 0.01      # rad/s, constant gyro offset (what is left after calibrating at boot)
+    position_std: float = 0.0005       # m (quantization is 0.065 mm; this also stands in for gear backlash)
+    velocity_std: float = 0.02         # m/s (differencing encoder counts 5 ms apart gives 0.018)
 
     def build(self, seed: int = 0) -> SensorNoise:
         return SensorNoise(
             pitch_std=self.pitch_std,
+            pitch_bias=self.pitch_bias,
             pitch_rate_std=self.pitch_rate_std,
             pitch_rate_bias=self.pitch_rate_bias,
             position_std=self.position_std,
@@ -154,7 +187,8 @@ class SensorConfig:
 # ---------------------------------------------------------------- TIMING ---
 @dataclass(frozen=True)
 class TimingConfig:
-    latency_s: float = 0.010           # controller-to-actuator delay
+    latency_s: float = 0.010           # controller-to-actuator delay (conservative: about 1.5-6 ms
+                                       # is expected from the IMU filter, bus and driver; DATASHEET.md 6)
     dt_s: float = 0.0025               # physics step used while tuning (coarser = faster)
     demo_dt_s: float = 0.001           # finer physics step used for one-off demo plots
     control_dt_s: float = 0.005        # controller period (200 Hz)
@@ -207,7 +241,7 @@ class CostConfig:
     #     (25 deg = 0.44 rad). Below the first, the task's own lean is penalized
     #     as an error; above the second, the limit says nothing.
     #   - torque_limit is a typical operating torque, deliberately well under
-    #     RobotConfig.max_torque (0.4 N m), so effort is a real tradeoff. Set it
+    #     RobotConfig.max_torque (0.34 N m), so effort is a real tradeoff. Set it
     #     near max_torque and the effort term goes quiet again (it was 0.01% of
     #     the cost at weight 0.01).
     #   - velocity_limit is the tracking error accepted on ScenarioConfig's goal.
@@ -268,6 +302,11 @@ class ScenarioConfig:
     # Runs per score = len(start_pitches_deg) x number of seeds: 9 per training
     # evaluation and 30 per validation with the defaults above.
 
+    def __post_init__(self):
+        overlap = set(self.train_seeds) & set(self.validation_seeds)
+        if overlap:
+            raise ValueError(f"train_seeds and validation_seeds overlap: {sorted(overlap)}")
+
     @property
     def start_pitches_rad(self) -> Tuple[float, ...]:
         return tuple(math.radians(d) for d in self.start_pitches_deg)
@@ -278,7 +317,10 @@ class ScenarioConfig:
 class SearchConfig:
     """Bounds the tuner searches within for each gain. kp_min_factor is a
     multiple of the physics-derived minimum Kp that can hold the robot up at
-    all (see balance_sim.critical_pitch_gain), not a raw value."""
+    all (see balance_sim.critical_pitch_gain), not a raw value. That minimum is
+    taken for the most demanding robot robust scoring can draw (every
+    RobustnessSettings.randomize spread at its worst end; ProjectConfig.
+    kp_floor_robot), so no candidate is below it for any scenario."""
 
     kp_min_factor: float = 1.1
     kp_max: float = 30.0
@@ -294,15 +336,16 @@ class LQRConfig:
     feedback designed on the linearized nominal robot, for the configured
     control period and latency. A design minimizes, per second,
 
-        pitch^2 + w_velocity (velocity error)^2 + w_pitch_rate (pitch rate)^2
-        + w_integral (integral of velocity error)^2 + w_torque torque^2
+        w_pitch pitch^2 + w_velocity (velocity error)^2 + w_pitch_rate (pitch rate)^2
+        + w_integral (integral of velocity error)^2 + torque^2
 
     with pitch from upright. The "cost-matched" design takes its weights from
-    CostConfig (w_velocity = velocity_weight, w_torque = effort_weight, no rate
-    or integral term): on the linear model it is the optimum of the cost the
-    tuner scores. The ML-tuned design searches the four weights within the
-    bounds below, on a log scale (only ratios matter, so pitch stays at 1).
-    The integral is capped at ControllerConfig.velocity_integral_limit.
+    CostConfig (pitch 1, velocity_weight, torque effort_weight, no rate or
+    integral term; the same as w_pitch = 1 / effort_weight and so on): on the
+    linear model it is the optimum of the cost the tuner scores. The ML-tuned design searches the weights within the bounds
+    below, on a log scale, each per unit of torque weight (only ratios matter,
+    so torque stays at 1). The integral is capped at
+    ControllerConfig.velocity_integral_limit.
 
     The "direct" search skips the weights and tunes the gains themselves:
     each of the cost-matched design's gains scaled by a factor in
@@ -310,29 +353,34 @@ class LQRConfig:
     loop stable (tuning.LQRGainScaling).
     """
 
-    # Widened 2026-10-24: the search had ended on w_velocity's old floor (1e-2), w_integral's
-    # old ceiling (10) and direct_gain_scale's old limit (20, so a floor of 0.05).
-    w_velocity_bounds: Tuple[float, float] = (1e-4, 1e2)
-    w_pitch_rate_bounds: Tuple[float, float] = (1e-6, 1.0)     # low end: no rate term, in practice
-    w_torque_bounds: Tuple[float, float] = (1e-4, 1e2)
-    w_integral_bounds: Tuple[float, float] = (1e-6, 1e3)       # low end: no integral action, in practice
+    # Weights per unit of torque weight. Normalized by torque since 2026-11-06: with
+    # pitch fixed at 1 the search ended on w_velocity's floor and w_torque's ceiling,
+    # which is the same design as pitch and velocity weights of 0 (LQR.md).
+    w_pitch_bounds: Tuple[float, float] = (1e-6, 1e2)
+    w_velocity_bounds: Tuple[float, float] = (1e-6, 1e2)
+    w_pitch_rate_bounds: Tuple[float, float] = (1e-8, 1.0)
+    w_integral_bounds: Tuple[float, float] = (1e-3, 1e3)
     direct_gain_scale: float = 100.0
-    # Parameters held at "off" instead of searched. Both searches kept driving
-    # these to the floor of their log range (1e-6 for the pitch-rate weight,
-    # 0.01-0.05 for the command-feedback scales), which a log scale can only
-    # approach. None searches them again, as before 2026-10-24.
-    w_pitch_rate_fixed: Optional[float] = 0.0       # the weight on pitch rate; 0 = no rate term
+    # Parameters held at "off" instead of searched; None searches them. With them searched,
+    # the pitch, velocity and pitch-rate weights all went to the floor of their log range,
+    # which a log scale can only approach, and the score was flat there to 1e-5 (LQR.md;
+    # likewise the command-feedback scales of the direct search, 0.01-0.05).
+    w_pitch_fixed: Optional[float] = 0.0            # 0 = no pitch term (pitch is still stabilized)
+    w_velocity_fixed: Optional[float] = 0.0         # 0 = velocity enters only through its integral
+    w_pitch_rate_fixed: Optional[float] = 0.0       # 0 = no rate term
     direct_commands_scale: Optional[float] = 0.0    # multiple of the design's gains on the commands in flight; 0 = none
 
     @property
     def fixed_weights(self) -> dict:
         """Weights the weight search holds fixed (tuning.lqr_weight_space's `fixed`)."""
-        return {} if self.w_pitch_rate_fixed is None else {"w_pitch_rate": self.w_pitch_rate_fixed}
+        held = {"w_pitch": self.w_pitch_fixed, "w_velocity": self.w_velocity_fixed,
+                "w_pitch_rate": self.w_pitch_rate_fixed}
+        return {name: value for name, value in held.items() if value is not None}
 
     @property
     def bounds(self) -> dict:
-        return {"w_velocity": self.w_velocity_bounds, "w_pitch_rate": self.w_pitch_rate_bounds,
-                "w_torque": self.w_torque_bounds, "w_integral": self.w_integral_bounds}
+        return {"w_pitch": self.w_pitch_bounds, "w_velocity": self.w_velocity_bounds,
+                "w_pitch_rate": self.w_pitch_rate_bounds, "w_integral": self.w_integral_bounds}
 
 
 # ------------------------------------------------------------ ROBUSTNESS ---
@@ -348,18 +396,35 @@ class RobustnessSettings:
     n_train_seeds: int = 50            # noise seeds 1..N scored during tuning
     validation_seeds: Tuple[int, ...] = tuple(range(1000, 1100))   # unseen seeds (and robots)
     # (parameter, relative spread): each scenario's robot has that parameter
-    # scaled by a random factor in [1 - spread, 1 + spread]. Rough guesses at
-    # build and datasheet tolerances; replace with measured spreads. Names are
-    # RobotConfig / ActuatorConfig fields.
+    # scaled by a random factor in [1 - spread, 1 + spread]. Build and datasheet
+    # tolerances (DATASHEET.md 2); replace with measured spreads. Names are
+    # batch_sim.BatchRobot fields: RobotParams and MotorParams, so "rotor_inertia"
+    # is the reflected total (RobotParams.rotor_inertia).
     randomize: Tuple[Tuple[str, float], ...] = (
         ("body_mass", 0.15),
         ("body_com_height", 0.15),
         ("body_inertia", 0.25),
         ("wheel_inertia", 0.20),
+        ("rotor_inertia", 0.50),       # estimated, not published: 2.5-6.2e-4 kg m^2 reflected
         ("torque_constant", 0.10),
-        ("resistance", 0.15),
-        ("supply_voltage", 0.10),      # battery from about 6.7 V (low) to 8.1 V (fully charged)
+        ("resistance", 0.15),          # copper +0.39%/degC: a winding 40 degC hot is 16% higher
+        ("supply_voltage", 0.105),     # 2S LiPo from 6.8 V (cutoff under load) to 8.4 V (fully charged)
+        ("gear_efficiency", 0.10),     # 0.70-0.86
     )
+    # (parameter, low, high): each scenario's robot has that parameter drawn
+    # uniformly from [low, high]. For parameters whose nominal value is 0, which
+    # a relative spread can't move (PHYSICS.md 8.4). Friction is unmeasured; the
+    # ranges come from the motors' 0.42 A free-run current, which means 0.091 N m
+    # of drag (both motors, at the wheels) at the 51 rad/s free-run speed, split
+    # anywhere from 30% to 80% Coulomb (DATASHEET.md 5.2). Replace with measured values.
+    randomize_range: Tuple[Tuple[str, float, float], ...] = (
+        ("wheel_friction", 0.0, 0.0015),      # N m s/rad
+        ("coulomb_friction", 0.02, 0.08),     # N m
+    )
+    # Each scenario's latency, drawn uniformly from the whole physics steps in this
+    # range (s); None keeps TimingConfig.latency_s for every scenario. Controllers are
+    # still designed for latency_s: they don't know the latency they get.
+    latency_range_s: Optional[Tuple[float, float]] = (0.005, 0.020)
     robot_seed: int = 0                # which set of random robots
     sensitivity_weight: float = 1.0    # chaos penalty weight; 0 turns it (and its twin runs) off
     sensitivity_nudge_deg: float = 0.0057   # start-tilt nudge for the twin runs (1e-4 rad)
@@ -386,7 +451,7 @@ class ProjectConfig:
     # ---- builders: turn this configuration into the objects other code uses ----
 
     def build_robot_params(self) -> RobotParams:
-        return self.robot.build()
+        return self.robot.build(self.actuator.reflected_rotor_inertia)
 
     def build_actuator(self, robot: Optional[RobotParams] = None):
         return self.actuator.build(robot if robot is not None else self.build_robot_params())
@@ -498,6 +563,7 @@ class ProjectConfig:
             "max_lean_rad": self.controller.max_lean_rad,
             "start_pitches_rad": list(self.scenario.start_pitches_rad),
             "critical_pitch_gain": float(critical_pitch_gain(dyn.p)),
+            "critical_pitch_gain_kp_floor_robot": float(critical_pitch_gain(self.kp_floor_robot())),
             "search_bounds": {
                 p.name: {"low": float(p.low), "high": float(p.high), "log_scale": p.log}
                 for p in space.parameters
@@ -507,6 +573,7 @@ class ProjectConfig:
             motor = self.actuator.build_motor_params()
             derived["motor_stall_torque_limit"] = float(motor.stall_torque_limit)   # N m, total
             derived["motor_no_load_speed_rad_s"] = float(motor.no_load_speed)       # output shaft
+        derived["reflected_rotor_inertia"] = float(self.actuator.reflected_rotor_inertia)   # kg m^2
         derived["cost_matched_lqr_gain"] = [float(k) for k in self.build_lqr_gain()]
         data["derived"] = derived
         return data
@@ -520,17 +587,35 @@ class ProjectConfig:
             train_seeds=tuple(range(1, r.n_train_seeds + 1)),
             validation_seeds=tuple(r.validation_seeds),
             randomize=tuple(r.randomize),
+            randomize_range=tuple(r.randomize_range),
+            latency_range=r.latency_range_s,
             robot_seed=r.robot_seed,
             sensitivity_weight=r.sensitivity_weight,
             sensitivity_nudge=r.sensitivity_nudge_rad,
         )
+
+    def kp_floor_robot(self) -> RobotParams:
+        """The robot whose critical pitch gain sets the search's Kp floor: of every
+        corner of the RobustnessSettings.randomize box (robot parameters only; motor
+        parameters don't enter critical_pitch_gain), the one needing the most Kp.
+        Before 2026-11-06 the floor came from the nominal robot (0.230 N m/rad);
+        the most demanding randomized robot needs 0.273, 1.19 times as much."""
+        from itertools import product
+
+        nominal = self.build_robot_params()
+        robot_fields = set(RobotParams.__dataclass_fields__)
+        spreads = [(name, s) for name, s in self.robustness.randomize if name in robot_fields]
+        corners = (nominal.with_changes(**{name: getattr(nominal, name) * (1 + sign * s)
+                                           for (name, s), sign in zip(spreads, signs)})
+                   for signs in product((-1, 1), repeat=len(spreads)))
+        return max(corners, key=critical_pitch_gain)
 
     def build_search_space(self):
         """Build a tuning.SearchSpace that matches this project configuration."""
         from tuning import cascaded_pid_space
 
         return cascaded_pid_space(
-            self.build_robot_params(),
+            self.kp_floor_robot(),
             kp_min_factor=self.search.kp_min_factor,
             kp_max=self.search.kp_max,
             ki_max=self.search.ki_max,

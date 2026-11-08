@@ -126,8 +126,9 @@ def test_evaluator_dc_motor_respects_robot_torque_limit():
 
 def test_pitch_reference_option_changes_the_score():
     # An instant step: a smooth blend over 2.5 s needs almost no lean in a 2 s run, so the two references would nearly tie.
+    # No pitch-estimate offset: it adds a lean error under both references and nearly ties them.
     short = replace(BASE, duration=2.0, goal_steps=((0.3, 0.3),), goal_transition=0.0, start_pitches=(0.05,),
-                    train_seeds=(1,))
+                    train_seeds=(1,), sensor=replace(BASE.sensor, pitch_bias=0.0))
     a = Evaluator(replace(short, pitch_reference="commanded"), SPACE).evaluate_gains(BASELINE).mean_cost
     b = Evaluator(replace(short, pitch_reference="upright"), SPACE).evaluate_gains(BASELINE).mean_cost
     assert a < b   # leaning to accelerate is only penalized by the "upright" reference

@@ -24,7 +24,7 @@ import numpy as np
 from .controller import cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
 from .physics import rk4_step
 from .robot import BatchRobot
-from .schedule import Schedule, SimSpec, build_schedule
+from .schedule import Schedule, SimSpec, build_schedule, per_sim_ring_size
 
 
 @dataclass
@@ -49,6 +49,7 @@ def simulate_batch(
     schedule: Optional[Schedule] = None,
     record: bool = False,
     dtype=np.float64,
+    delay_steps: Optional[np.ndarray] = None,
 ) -> BatchResult:
     """Simulate B robots, each with its own gains and starting tilt.
 
@@ -56,11 +57,17 @@ def simulate_batch(
                 or (B, 5) with kv_i as well. "lqr": (B, 4 + m) LQR gains (balance_sim.lqr),
                 the last m for the commands in flight.
     start_pitch scalar or (B,) initial body tilt (rad)
-    noise       (n_ticks, 4, n_seeds) from schedule.noise_table, or None for a perfect sensor
+    noise       (n_ticks, 4, n_seeds) from schedule.noise_table, or None for no random noise. The
+                spec's gyro bias applies either way, as in SensorNoise with every std at 0;
+                for a perfect sensor, also use a spec with pitch_rate_bias = 0.
     seed_index  (B,) which noise column each simulation uses (required with noise)
     schedule    pass a prebuilt one to skip rebuilding it for every batch
     record      also return the full state history (memory: n_steps x B x 4 values)
     dtype       np.float64 to match the CPU code; np.float32 to preview GPU precision
+    delay_steps (B,) integers: each simulation's own latency, in physics steps, in place
+                of spec.latency. A command issued at step k reaches the motor at step
+                k + delay_steps, which is what the CPU simulator does with
+                latency = delay_steps * dt (see per_sim_ring_size).
     """
     schedule = build_schedule(spec) if schedule is None else schedule
     lqr = spec.controller == "lqr"
@@ -82,7 +89,14 @@ def simulate_batch(
     state = (zeros(), zeros(), np.broadcast_to(np.asarray(start_pitch, dtype=dtype), (B,)).copy(), zeros())
     pitch_integral, velocity_integral, setpoint = zeros(), zeros(), zeros()   # setpoint stays 0 for the LQR
     in_flight = [zeros() for _ in range(gains.shape[1] - 4)] if lqr else []    # LQR commands in flight, oldest first
-    ring = np.zeros((schedule.ring_size, B), dtype=dtype)
+    per_sim_delay = delay_steps is not None
+    if per_sim_delay:
+        delay_steps = np.broadcast_to(np.asarray(delay_steps, dtype=np.int64), (B,))
+        ring_size = per_sim_ring_size(schedule, delay_steps)
+        columns_b = np.arange(B)
+    else:
+        ring_size = schedule.ring_size
+    ring = np.zeros((ring_size + 1, B), dtype=dtype)   # the extra last row stays 0: no command yet
     torque, active = zeros(), -1
     alive = np.ones(B, dtype=bool)
     fall_time = np.full(B, np.nan, dtype=dtype)
@@ -97,8 +111,11 @@ def simulate_batch(
             if noise is not None:
                 n = noise[j][:, seed_index]
                 x_dot = x_dot + spec.velocity_std * n[0]
-                theta = theta + spec.pitch_std * n[1]
+                theta = theta + (spec.pitch_std * n[1] + spec.pitch_bias)
                 theta_dot = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
+            elif spec.pitch_rate_bias or spec.pitch_bias:   # deterministic, so they need no table
+                theta = theta + spec.pitch_bias
+                theta_dot = theta_dot + spec.pitch_rate_bias
             if lqr:
                 command, velocity_integral = lqr_update(
                     x_dot, theta, theta_dot, goal_per_tick[j], control_dt,
@@ -113,10 +130,13 @@ def simulate_batch(
                     torque_limit, spec.max_pitch_command,
                     spec.pitch_integral_limit, spec.velocity_integral_limit,
                 )
-            ring[j % schedule.ring_size] = command
-        if schedule.active_command[k] != active:
+            ring[j % ring_size] = command
+        if per_sim_delay:
+            since = k - delay_steps
+            torque = ring[np.where(since >= 0, (since // spc) % ring_size, ring_size), columns_b]
+        elif schedule.active_command[k] != active:
             active = schedule.active_command[k]
-            torque = ring[active % schedule.ring_size].copy()
+            torque = ring[active % ring_size].copy()
 
         # Cost terms at this sample, only for robots still up.
         theta = state[2]

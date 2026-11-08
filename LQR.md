@@ -71,7 +71,42 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 
 ### Results
 
-**Re-run on the current cost (2026-10-24).** The table and findings further down were produced with the earlier cost ($w_v = 1$, $w_u = 0.01$, step-shaped goal, $k_{v,p} \le 0.4$) and are kept as a record. `config.py` now has $w_v = 2.25$, $w_u = 9$ (Bryson's rule), a smooth goal, $k_{v,p} \le 0.9$, wider LQR search ranges, and the pitch-rate weight and the gains on the commands in flight held at off (`LQRConfig.w_pitch_rate_fixed`, `direct_commands_scale`), so the weight search has 3 parameters and the gain search has 3. Run `results/lqr_comparison/20261024-142418/` (GPU, same protocol: 300 unseen scenarios, no controller fell):
+**Current: datasheet robot (2026-11-08).** Run `results/lqr_comparison/20261108-133118/`, same protocol as the 2026-11-06 run below. The robot is now config.py's datasheet values (DATASHEET.md): the motors' reflected rotor inertia in the dynamics, a gearbox efficiency of 0.78, 0.34 N m of torque, a 0.01 rad pitch-estimate offset, and robust scoring with Coulomb friction 0.02–0.08 N m, viscous 0–0.0015 N m s/rad, rotor inertia ±50% and gear efficiency ±10%. No controller fell in validation, and no search ended on a bound.
+
+| Controller | Validation cost | vs ML PID (median per scenario) | Worst run | Effort term | Stable latency (linear) |
+|---|---:|---:|---:|---:|---|
+| PID, hand-tuned | 5.052 | 7.05x | 34.52 | 1.375 | 0-15.75 ms |
+| **PID, ML-tuned** | **0.5832** | | 1.134 | 0.418 | 0-40.50 ms |
+| LQR, cost-matched | 2.238 | 3.71x | 4.827 | 0.449 | 0-44.25 ms |
+| LQR, latency ignored | 1.664 | 2.80x | 3.357 | 0.431 | 0-36.50 ms |
+| LQR, ML-tuned weights | 0.7936 | 1.39x | 1.461 | 0.547 | 0-38.25 ms |
+| LQR, ML-tuned gains | 0.6897 | 1.18x | 1.349 | 0.486 | 0-40.25 ms |
+
+- **The ranking is unchanged:** the ML-tuned PID wins, the tuned LQR gains are 18% behind (1.18x, as before), the tuned weights 39% (1.44x before), and the cost-matched LQR 3.7x (3.70x before).
+- **Every cost is about 3.5 times higher, and effort is now the largest term** (0.42 of the tuned PID's 0.58). Holding the robot against the Coulomb friction robust scoring now draws (0.02–0.08 N m, against 0–0.02) costs torque all the time it moves: a steady 0.05 N m over 12 s alone is $9 	imes 0.05^2 	imes 12 = 0.27$. On the nominal, frictionless robot the same PID scores 0.255 (PHYSICS.md 8.2).
+- **The tuned PID got stiffer and leans on its integrator even more:** kp 1.57, ki 2.10, kd 0.285, kv_p 0.645 (from 0.66, 0.50, 0.112, 0.80). The larger friction is a larger load for the integrator to carry (PHYSICS.md 9.4), and the rotor inertia makes the robot slower, which allows more gain before the delay bites (PHYSICS.md 7.4).
+- **Tuned LQR parameters:** the integral weight settled at 15.2 per unit of torque weight (4.6 before), inside its range. The gain search scaled the cost-matched gains by 3.02 (velocity), 0.757 (pitch) and 1.59 (pitch rate). DE found that design; CMA-ES stalled at 0.902, as it did in the first run (Old table).
+- **Ignoring the latency in the design helps again** (1.66 against 2.24 for the delay-aware design), as on 2026-10-24.
+- **Latency sweeps** (60 scenarios per point): the tuned PID holds within 5% of its 10 ms cost up to 25 ms (0.61), reaches 0.78 at 30 ms and 2.26 at 40 ms with no falls (it fell 12 times at 40 ms before). The tuned LQR gains and weights fall once and 3 times at 40 ms. The cost-matched LQR is flat out to 30 ms (2.23) and survives 40 ms (2.84). The hand-tuned PID falls once at 20 ms and 15 times at 25 ms.
+
+**Earlier: friction and latency randomized (2026-11-06), robot before the datasheet update.** Run `results/lqr_comparison/20261106-154350/`, same protocol as below (GPU float32 searches, 300 unseen scenarios in float64). Robust scoring now also draws each scenario's viscous friction (0–0.001 N m s/rad), Coulomb friction (0–0.02 N m) and latency (5–20 ms in whole 2.5 ms steps). Every controller is still designed or tuned for the nominal robot's 10 ms. The weight search is torque-normalized, with only the integral weight searched (see the corner finding below). No controller fell in validation, and no search ended on a bound.
+
+| Controller | Validation cost | vs ML PID (median per scenario) | Worst run | Effort term | Stable latency (linear) |
+|---|---:|---:|---:|---:|---|
+| PID, hand-tuned | 15.34 | 98.5x | 38.36 | 7.384 | 0-11.25 ms |
+| **PID, ML-tuned** | **0.1687** | | 0.264 | 0.0608 | 0-35.75 ms |
+| LQR, cost-matched | 0.6268 | 3.70x | 1.025 | 0.0652 | 0-30.75 ms |
+| LQR, latency ignored | 0.9287 | 2.99x | 15.72 | 0.3481 | 0-21.0 ms |
+| LQR, ML-tuned weights | 0.2410 | 1.44x | 0.340 | 0.0940 | 0-31.75 ms |
+| LQR, ML-tuned gains | 0.1989 | 1.18x | 0.314 | 0.0737 | 0-34.25 ms |
+
+- **Integral action is what friction asks for.** The tuned PID's pitch integral gain went from 0.106 to 0.498 (kp 0.66, kd 0.112, kv_p 0.80). A friction torque is a load the integrator has to carry, which is PHYSICS.md 9.4's mechanism. Its cost rose 29%, from 0.130 to 0.169.
+- **The LQR gain search fell from 2.2% to 18% behind** (0.199 against 0.169). The search holds the integral gain at 0 (see "How the tuner searches an LQR"), so nothing in that design can carry a steady load. The weight search, whose designs do have integral action, is 44% behind, limited by the LQR's pitch gain (see the corner finding).
+- **The hand-tuned PID is now 5x worse than before** (15.3 against 3.1). Its linear loop is unstable above 11.25 ms, and 4 of the 7 latencies a scenario can draw (12.5–20 ms) are above that. It doesn't fall, but it oscillates (sweep: 2.5 at 10 ms, 11.9 at 12.5 ms, 157 with 8 falls at 25 ms).
+- **Modeling the latency matters again.** The latency-ignoring design now costs 0.93, against 0.63 for the delay-aware one (on 2026-10-24 it was slightly ahead). In the sweep it degrades past 15 ms (2.8 at 20 ms), while the delay-aware design holds 0.63 up to 25 ms.
+- **Latency sweeps** (60 scenarios per point, friction still randomized): all four tuned or designed controllers hold within 10% of their 10 ms cost up to 20 ms. At 30 ms the tuned PID is at 0.78, the tuned LQR gains at 1.34, the tuned weights at 0.99 and the cost-matched LQR at 2.70. At 40 ms only the cost-matched LQR survives every scenario (21.9, no falls); the tuned PID falls 12 times out of 60.
+
+**Earlier: re-run on the Bryson cost, fixed 10 ms latency, no friction (2026-10-24).** The table and findings further down were produced with the earlier cost ($w_v = 1$, $w_u = 0.01$, step-shaped goal, $k_{v,p} \le 0.4$) and are kept as a record. `config.py` now has $w_v = 2.25$, $w_u = 9$ (Bryson's rule), a smooth goal, $k_{v,p} \le 0.9$, wider LQR search ranges, and the pitch-rate weight and the gains on the commands in flight held at off (`LQRConfig.w_pitch_rate_fixed`, `direct_commands_scale`), so the weight search has 3 parameters and the gain search has 3. Run `results/lqr_comparison/20261024-142418/` (GPU, same protocol: 300 unseen scenarios, no controller fell):
 
 | Controller | Validation cost | vs ML PID (median per scenario) | Worst run | Effort term | Stable latency (linear) |
 |---|---:|---:|---:|---:|---|
@@ -88,7 +123,15 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 - **Tuning still widens the stable-latency range:** 39.75 ms for the tuned PID, 40.0 ms for the tuned LQR gains and 33.25 ms for the tuned weights, against 30.75 ms for the cost-matched LQR.
 - **Effort is a real term** (0.03 for the tuned PID and LQR gains, against 0.0002-0.0009 before).
 - **The gain search's corner was the command feedback doing nothing.** In the earlier runs both command-feedback scales sat at the floor of their log range (0.05, then 0.01 when it was widened). With those gains held at exactly zero, the cost is unchanged (0.1333 against 0.1334) and the other three scales settle inside their range (velocity 1.03, pitch 0.37, pitch rate 0.69). The same holds for the pitch-rate weight, held at 0: the weight search's cost is identical (0.1857). So the in-flight command feedback and the pitch-rate term were not helping the tuned designs here; no edge effect remains in that row.
-- **The weight search's corner persists** with those two parameters held off: $w_v$ at its floor (1e-4) and $w_u$ at its ceiling (100), with $w_i$ at 308. Almost no velocity weight and very heavy torque and integral weights is a degenerate design. The search's cost improved once, when the ranges were widened (0.2157 to 0.1857), and did not change when the pitch-rate weight was held off. I have not tested whether widening further, or a different parameterization, would help; read this row as a limit of the weight search, not as the best LQR.
+- **The weight search's corner, resolved (2026-11-06).** It came from the normalization, not the ranges. With the pitch weight fixed at 1, a design with *no* pitch weight can only be approached by sending every other weight to infinity. The search's corner ($w_v \to 0$, $w_u \to \infty$, $w_i/w_u \approx 3$) is exactly that design: per unit of torque weight it is $Q = \mathrm{diag}(10^{-6}, 0.01, 0, 3.08)$ (velocity, pitch, rate, integral) with $R = 1$. A scan of the robust score in that normalization (GPU, 300 scenarios per point) shows:
+  - **Pitch and velocity weights:** the score falls monotonically as they go to 0, and is flat to $10^{-5}$ below $10^{-4}$, so the limit is exactly 0.
+  - **Integral weight:** it then has an interior optimum. At fixed latency $q_i \approx 3.2$ (score 0.1837, against 0.1848 at the old corner); with friction and latency randomized, $q_i \approx 4.6$.
+  - **Negative pitch weight:** letting it go negative (an indefinite $Q$, so no longer a standard LQR) keeps improving the score (0.1780 at $-0.05$).
+
+  So the binding constraint is that $Q$ be positive semidefinite. Every such design keeps a pitch gain of about 1.27, while the tuned direct gains use 0.50. That is why no weight search, however wide, closes the gap to the direct gain search (0.186 against 0.133).
+
+  What changed: `lqr_weight_space` now fixes the torque weight at 1, the one weight that must stay positive. `LQRConfig` holds the pitch, velocity and pitch-rate weights at 0, so only $w_i$ is searched, and its optimum is interior. Setting `w_pitch_fixed`, `w_velocity_fixed` or `w_pitch_rate_fixed` to `None` searches them again.
+- **The weight search's corner (as recorded on 2026-10-24)** persisted with those two parameters held off: $w_v$ at its floor (1e-4) and $w_u$ at its ceiling (100), with $w_i$ at 308. Almost no velocity weight and very heavy torque and integral weights is a degenerate design. The search's cost improved once, when the ranges were widened (0.2157 to 0.1857), and did not change when the pitch-rate weight was held off. I have not tested whether widening further, or a different parameterization, would help; read this row as a limit of the weight search, not as the best LQR.
 - The PID (0.1305, 0.1304, 0.1304) and the LQR with tuned gains (0.1339, 0.1334, 0.1333) kept their positions and nearly identical costs across the three runs of this section, so that comparison is stable.
 
 Old table (earlier cost):
@@ -127,7 +170,8 @@ What the searches found:
 
 - **One scenario.** The scores come from a single goal profile of velocity steps. Smooth goal profiles (to-do item 2) and deliberately chosen weights (PHYSICS.md 10.5, to-do item 3) would make the cost measure balance quality more and physics limits less, and might separate the controllers further.
 - **Different scoring from earlier runs.** The ML-tuned PID here is tuned for pitch measured from upright, so its gains differ from those in `results/batch_tuning/`.
-- **Latency is fixed at 10 ms during tuning.** Randomizing it (PHYSICS.md 10.1) would reward the differences in finding 5.
+- **Latency was fixed at 10 ms during tuning** in these runs. *Done 2026-11-06:* latency and friction are now randomized (see the current results at the top of this section).
+- **Give the direct gain search integral action, safely.** With friction it is now 18% behind the PID, for lack of an integral term. Searching the integral gain again needs a guard against the slow runaway described above, for example requiring the nominal loop's spectral radius to stay below about 0.999, or running longer validation scenarios.
 - **The LQR knows nothing about noise.** A Kalman filter in front of it (LQG) is the natural next permutation. So is an LQR with the PID's lean cap, which would test finding 6.
 - **Shared code with the pivot model.** `pivot_sim.lqr_gain` uses the same delay-aware scheme and could reuse `balance_sim.discrete_model`. It was left unchanged here.
 

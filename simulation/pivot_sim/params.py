@@ -36,6 +36,7 @@ class PivotRobotParams:
     wheel_mass: float        # kg, both wheels combined
     wheel_radius: float      # m
     wheel_inertia: float     # kg m^2, both wheels about the axle
+    rotor_inertia: float     # kg m^2, wheel-motor rotors reflected through the gearbox (RobotParams.rotor_inertia)
     max_torque: float        # N m, total wheel motor torque limit (both motors)
     wheel_friction: float    # N m s/rad, viscous friction between wheels and lower body
     gravity: float           # m/s^2
@@ -49,7 +50,7 @@ class PivotRobotParams:
                 raise ValueError(f"{name} must be positive, got {getattr(self, name)}")
         # A massless upper body is allowed (it reduces the model to the base
         # robot, which the tests use); a negative one is not.
-        for name in ("upper_mass", "upper_com_offset", "wheel_friction"):
+        for name in ("upper_mass", "upper_com_offset", "wheel_friction", "rotor_inertia"):
             if getattr(self, name) < 0:
                 raise ValueError(f"{name} must be non-negative, got {getattr(self, name)}")
 
@@ -112,8 +113,11 @@ class PivotRobotParams:
             wheel_mass=self.wheel_mass,
             wheel_radius=self.wheel_radius,
             wheel_inertia=self.wheel_inertia,
+            rotor_inertia=self.rotor_inertia,
             max_torque=self.max_torque,
             wheel_friction=self.wheel_friction,
+            coulomb_friction=0.0,           # the pivot model has viscous friction only
+            coulomb_friction_speed=1.0,     # unused while coulomb_friction is 0
             gravity=self.gravity,
         )
 

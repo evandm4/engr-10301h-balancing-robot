@@ -44,7 +44,7 @@ sys.path.insert(0, str(HERE.parent))
 from pivot_config import PIVOT_CONFIG  # noqa: E402  (imports config.py, which sets up the paths)
 from pivot_sim.plotting import runs_figure  # noqa: E402
 from pivot_tuning import PivotEvaluator  # noqa: E402
-from tuning import SearchSpace, differential_evolution_search, gains_cells, gains_header, save_result  # noqa: E402
+from tuning import SearchSpace, differential_evolution_search, gains_cells, gains_header, provenance, save_result  # noqa: E402
 
 
 def main():
@@ -120,8 +120,9 @@ def main():
         cells = gains_cells(gains) if gains is not None else " " * len(gains_header(cfg.gain_names))
         print(f"{name:<22}{cells}{train.mean_cost:>10.4f}{val.mean_cost:>12.4f}{val_upright.mean_cost:>10.4f}"
               f"{val.n_fell:>5}/{val.n_runs}")
-    print(f"\ntrain/validation: pitch error from the commanded lean ({cfg.base.cost.pitch_reference!r}); the LQR"
-          " commands none, so its are from upright. upright: every controller's validation runs scored from upright.")
+    print(f"\ntrain/validation: config.py's cost, pitch error measured {cfg.base.cost.pitch_reference!r} (the LQR"
+          " commands no lean, so its is from upright either way). upright: every controller's validation runs"
+          " scored from upright.")
 
     folder = HERE.parent / "results" / "pivot_tuning" / time.strftime("%Y%m%d-%H%M%S")
     snapshot = cfg.snapshot()
@@ -129,6 +130,7 @@ def main():
         save_result(search, folder, extra={"pivot_config": snapshot})
     (folder / "comparison.json").write_text(json.dumps({
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "provenance": provenance(),
         "run_arguments": vars(args),
         "runs_per_score": {"train": n_train, "validation": n_val},
         "results": comparison,

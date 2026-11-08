@@ -57,8 +57,10 @@ class LQRWeights:
     (pitch_reference "upright"), which is the "cost-matched" design.
     Only the ratios matter: scaling every weight together gives the same gain.
 
-    velocity must be positive (otherwise nothing ties the robot to its goal).
-    velocity_integral = 0 leaves the integral out (no integral action).
+    torque must be positive; the state weights need only be non-negative.
+    velocity_integral = 0 leaves the integral out (no integral action). With
+    velocity and velocity_integral both 0 nothing ties the robot to its goal;
+    with every state weight 0 the design is the minimum-energy stabilizer.
     """
 
     velocity: float
@@ -68,10 +70,10 @@ class LQRWeights:
     velocity_integral: float = 0.0
 
     def __post_init__(self):
-        if self.velocity <= 0 or self.pitch <= 0 or self.torque <= 0:
-            raise ValueError("velocity, pitch and torque weights must be positive")
-        if self.pitch_rate < 0 or self.velocity_integral < 0:
-            raise ValueError("pitch_rate and velocity_integral weights must be non-negative")
+        if not self.torque > 0:
+            raise ValueError("the torque weight must be positive")
+        if min(self.velocity, self.pitch, self.pitch_rate, self.velocity_integral) < 0:
+            raise ValueError("the state weights must be non-negative")
 
 
 def delayed_commands(control_dt: float, latency: float) -> int:

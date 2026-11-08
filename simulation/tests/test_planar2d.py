@@ -94,3 +94,60 @@ def test_cost_ranks_falling_worse_than_balancing(dyn):
 def test_invalid_params_rejected():
     with pytest.raises(ValueError):
         ROBOT.with_changes(wheel_radius=0.0)
+
+
+# ---- motor rotor inertia (RobotParams.rotor_inertia; PHYSICS.md 10.3) ----------------
+
+def test_config_robot_has_reflected_rotor_inertia():
+    a = CONFIG.actuator
+    assert ROBOT.rotor_inertia == pytest.approx(a.n_motors * a.gear_ratio**2 * a.rotor_inertia)
+    assert ROBOT.rotor_inertia > 0
+
+
+def test_rotor_inertia_enters_the_mass_matrix_as_derived():
+    """derivatives() solves M q'' = f with PHYSICS.md 10.3's mass matrix: the rotors spin at
+    x'/r - theta' relative to the body, so J sits on a, d and (with -J/r) the coupling."""
+    p = ROBOT
+    dyn = Planar2D(p, fall_angle=10.0)
+    state = np.array([0.0, 0.7, 0.3, -1.1])
+    tau = 0.12
+    _, x_dot, theta, theta_dot = state
+    J, r = p.rotor_inertia, p.wheel_radius
+    ml = p.body_mass * p.body_com_height
+    M = np.array([
+        [p.body_mass + p.wheel_mass + p.wheel_inertia / r**2 + J / r**2, ml * np.cos(theta) - J / r],
+        [ml * np.cos(theta) - J / r, p.body_mass * p.body_com_height**2 + p.body_inertia + J],
+    ])
+    f = np.array([tau / r + ml * np.sin(theta) * theta_dot**2, -tau + ml * p.gravity * np.sin(theta)])
+    x_ddot, theta_ddot = np.linalg.solve(M, f)
+    d = dyn.derivatives(state, tau)
+    np.testing.assert_allclose(d[[1, 3]], [x_ddot, theta_ddot], rtol=1e-12)
+
+
+def test_rotor_inertia_is_not_the_same_as_wheel_inertia():
+    """Folding J into the wheel inertia gets a right but misses the coupling and the body term."""
+    folded = ROBOT.with_changes(wheel_inertia=ROBOT.wheel_inertia + ROBOT.rotor_inertia, rotor_inertia=0.0)
+    state = np.array([0.0, 0.0, 0.1, 0.0])
+    real = Planar2D(ROBOT, fall_angle=10.0).derivatives(state, 0.1)
+    approx = Planar2D(folded, fall_angle=10.0).derivatives(state, 0.1)
+    assert not np.allclose(real, approx, rtol=1e-3)
+
+
+def test_energy_is_conserved_with_rotor_inertia():
+    p = ROBOT.with_changes(rotor_inertia=5 * ROBOT.rotor_inertia)
+    dyn = Planar2D(p, fall_angle=10.0)
+    state = np.array([0.0, 0.3, 0.2, 0.5])
+    e0 = dyn.energy(state)
+    h = 1e-4
+    for _ in range(2000):   # RK4, no torque, no friction
+        k1 = dyn.derivatives(state, 0.0)
+        k2 = dyn.derivatives(state + 0.5 * h * k1, 0.0)
+        k3 = dyn.derivatives(state + 0.5 * h * k2, 0.0)
+        k4 = dyn.derivatives(state + h * k3, 0.0)
+        state = state + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+    assert dyn.energy(state) == pytest.approx(e0, abs=1e-9)
+
+
+def test_rotor_inertia_must_be_non_negative():
+    with pytest.raises(ValueError):
+        ROBOT.with_changes(rotor_inertia=-1e-6)

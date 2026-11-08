@@ -10,10 +10,10 @@ upper body, the servo, the pivot sensor, the pivot loop's gains, the extra
 cost terms, the LQR weights, and the extra search bounds. Everything shared
 with the base robot (wheels, wheel motors, IMU noise, latency, timing, the
 goal-velocity scenario) is read from config.py's CONFIG, so changing it there
-changes it here too. The exception is the base cost: it is pinned to the
-original weights below (see PIVOT_BASE_COST), because the servo and LQR torque
-weights here were chosen against them. Nothing in config.py or in the base
-simulation is changed by this file.
+changes it here too, including the cost (pitch from upright, Bryson-rule
+weights); the servo's effort weight is derived the same way, from a typical
+servo torque. Nothing in config.py or in the base simulation is changed by
+this file.
 
 Angles are in degrees below for readability; *_rad properties convert.
 """
@@ -22,7 +22,7 @@ import math
 from dataclasses import asdict, dataclass, field, replace
 from typing import Optional, Tuple
 
-from config import CONFIG, CostConfig, ProjectConfig  # also puts simulation/ and optimization/ on the path
+from config import CONFIG, ProjectConfig  # also puts simulation/ and optimization/ on the path
 
 from pivot_sim import (
     PIVOT_GAIN_NAMES,
@@ -116,32 +116,40 @@ class PivotControllerConfig:
 # ------------------------------------------------------------------ COST ---
 @dataclass(frozen=True)
 class PivotCostConfig:
-    """Added to config.py's cost (which is applied to the combined COM)."""
+    """Added to config.py's cost (which is applied to the combined COM).
 
-    servo_effort_weight: float = 0.01  # per unit of integrated servo torque^2
+    The servo effort weight follows config.py's Bryson rule (CostConfig):
+    (pitch_limit_rad / servo_torque_limit)^2, servo_torque_limit being a
+    typical servo torque, a quarter of stall (the wheels use 0.1 of 0.34 N m).
+    math.inf switches the term off."""
+
+    servo_torque_limit: float = 0.25   # N m; weight (0.3 / 0.25)^2 = 1.44 with config.py's pitch limit
     upper_tilt_weight: float = 0.0     # per unit of integrated upper-body pitch^2; > 0 asks for a level top
 
 
 # ------------------------------------------------------------------- LQR ---
 @dataclass(frozen=True)
 class LQRConfig:
-    """Weights for the LQR benchmark (see pivot_sim.LQRWeights). Close to the
-    project's cost (velocity error 1, wheel torque 0.01), with COM pitch
-    weighted 3 rather than 1: at 1 the LQR leans the robot up to about 48
-    degrees to chase the velocity steps. A little weight on the rates, the
-    pivot and the servo command keeps the design gentle enough for the
-    latency, servo frame rate and noise it doesn't model, and keeps the pivot
-    well inside its range (about 25 degrees at most on the tuning scenario)."""
+    """Weights for the LQR benchmark (see pivot_sim.LQRWeights). The project's
+    cost (config.py: COM pitch from upright 1, velocity error 2.25, wheel
+    torque 9; servo torque 1.44 from PivotCostConfig), plus an integral of
+    velocity error at half the velocity weight (the old design's ratio) and a
+    little weight on the rates and the pivot angle, which keep the design gentle
+    enough for the latency, servo frame rate and noise it doesn't model.
+    Until 2026-11-06 these were 0.5, 1, 3, 0.01, 0, 0.05, 0.002, 0.01, 0.05,
+    matched to the earlier cost (COM pitch at 3, because at 1 that LQR leaned
+    up to 48 degrees chasing step goals; with the smooth goal and the heavier
+    torque weight it leans under 8 degrees at 1)."""
 
-    velocity_integral: float = 0.5
-    velocity: float = 1.0
-    com_pitch: float = 3.0
+    velocity_integral: float = 1.125
+    velocity: float = 2.25
+    com_pitch: float = 1.0
     com_pitch_rate: float = 0.01
     upper_pitch: float = 0.0
     pivot: float = 0.05
     pivot_rate: float = 0.002
-    torque: float = 0.01
-    servo: float = 0.05
+    torque: float = 9.0
+    servo: float = 1.44
     integral_limit: float = 0.5        # m, cap on the velocity-error integral
 
     def build(self) -> LQRWeights:
@@ -165,21 +173,9 @@ class PivotSearchConfig:
 
 
 # --------------------------------------------------------- PUT IT TOGETHER -
-# The base cost this side project was built and tuned with: weights 1 (velocity)
-# and 0.01 (effort) against pitch 1, pitch from the commanded lean, fall penalty
-# 100. config.py's cost now uses Bryson-rule weights (a different scale and
-# ratio), which would leave servo_effort_weight and the LQR torque weight here
-# out of proportion and change every number in PIVOT.md. These limits give the
-# old weights exactly: (1 / 1)^2 = 1 and (1 / 10)^2 = 0.01. To move the pivot to
-# the base cost, drop this override and rescale servo_effort_weight and
-# LQRConfig's torque weight with it.
-PIVOT_BASE_COST = CostConfig(pitch_limit_rad=1.0, velocity_limit=1.0, torque_limit=10.0,
-                             fall_penalty=100.0, pitch_reference="commanded")
-
-
 @dataclass(frozen=True)
 class PivotProjectConfig:
-    base: ProjectConfig = replace(CONFIG, cost=PIVOT_BASE_COST)
+    base: ProjectConfig = CONFIG
     body: PivotBodyConfig = field(default_factory=PivotBodyConfig)
     servo: ServoConfig = field(default_factory=ServoConfig)
     sensor: PivotSensorConfig = field(default_factory=PivotSensorConfig)
@@ -197,6 +193,7 @@ class PivotProjectConfig:
             pivot_height=b.pivot_height,
             upper_mass=b.upper_mass, upper_com_offset=b.upper_com_offset, upper_inertia=b.upper_inertia,
             wheel_mass=r.wheel_mass, wheel_radius=r.wheel_radius, wheel_inertia=r.wheel_inertia,
+            rotor_inertia=self.base.actuator.reflected_rotor_inertia,
             max_torque=r.max_torque, wheel_friction=r.wheel_friction, gravity=r.gravity,
         )
 
@@ -277,7 +274,12 @@ class PivotProjectConfig:
     def score(self, result) -> float:
         c, pc = self.base.cost, self.cost
         return pivot_cost(result, c.effort_weight, c.fall_penalty, c.velocity_weight, c.pitch_reference,
-                          pc.servo_effort_weight, pc.upper_tilt_weight)
+                          self.servo_effort_weight, pc.upper_tilt_weight)
+
+    @property
+    def servo_effort_weight(self) -> float:
+        """Weight on the integrated servo torque^2: Bryson's rule, as config.py's effort weight."""
+        return self.base.cost.pitch_limit_rad**2 / self.cost.servo_torque_limit**2
 
     def metrics(self, result):
         return pivot_metrics(result, self.servo.stall_torque)

@@ -87,7 +87,7 @@ flowchart LR
 5. The **evaluator** makes one run per scenario, where a scenario is every start tilt paired with every noise seed.
    - **Reference:** each run is its own `simulate()` call.
    - **Batched:** it builds one big batch of candidates × scenarios (× twins) and passes it in chunks to `simulate_batch` (NumPy) or `TorchSimulator.run` (GPU).
-6. **One simulation** covers 6 s at a 2.5 ms physics step (2,400 steps) with a 5 ms controller (1,200 ticks). Each physics step does this, in order:
+6. **One simulation** covers 12 s at a 2.5 ms physics step (4,800 steps) with a 5 ms controller (2,400 ticks). Each physics step does this, in order:
    1. *On a controller tick only:*
       - The **sensor** adds noise and gyro bias to the true state (`SensorNoise.measure`).
       - The **controller** (`CascadedPIDController.update`) runs its two loops:
@@ -131,7 +131,7 @@ flowchart LR
 From the project folder, with `C:\venvs\balancebot` active:
 
 ```
-python -m pytest                                                     # every test (268: 24 the pivot side project, 65 the LQR), ~1.5 min
+python -m pytest                                                     # every test (310: 24 the pivot side project, 70 the LQR), ~1.5 min
 python simulation/examples/run_velocity_demo.py                      # one run, plotted
 python simulation/animate.py                                         # animate hand-tuned vs the latest tuning result
 python simulation/animate.py --gains 1.03 0.2 0.1 0.33 --speed 0.5   # any gains, slow motion

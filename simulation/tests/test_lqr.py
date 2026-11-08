@@ -36,7 +36,8 @@ COST_MATCHED = CONFIG.cost_matched_lqr_weights()
 # The cost weights LQR.md's 2026-10-14 results were produced with (before the Bryson-rule weights).
 OLD_COST_WEIGHTS = LQRWeights(velocity=1.0, pitch=1.0, pitch_rate=0.0, torque=0.01)
 # CONFIG holds the pitch-rate weight and the commands' gains off; this searches them too, as before 2026-10-24.
-SEARCHED = replace(CONFIG, lqr=replace(CONFIG.lqr, w_pitch_rate_fixed=None, direct_commands_scale=None))
+SEARCHED = replace(CONFIG, lqr=replace(CONFIG.lqr, w_pitch_fixed=None, w_velocity_fixed=None, w_pitch_rate_fixed=None,
+                                        direct_commands_scale=None))
 WITH_INTEGRAL = LQRWeights(velocity=1.0, pitch=1.0, pitch_rate=0.01, torque=0.05, velocity_integral=0.5)
 COST_RTOL = 1e-12
 
@@ -87,10 +88,10 @@ def test_linearize_matches_derivatives(friction):
 
 def test_linearize_matches_physics_md():
     A, B = linearize(P)
-    assert A[1, 2] == pytest.approx(-14.49, abs=0.01)
-    assert A[3, 2] == pytest.approx(172.04, abs=0.01)
-    assert B[1, 0] == pytest.approx(92.98, abs=0.01)
-    assert B[3, 0] == pytest.approx(-746.77, abs=0.01)
+    assert A[1, 2] == pytest.approx(-4.07, abs=0.01)
+    assert A[3, 2] == pytest.approx(71.19, abs=0.01)
+    assert B[1, 0] == pytest.approx(37.63, abs=0.01)
+    assert B[3, 0] == pytest.approx(-238.85, abs=0.01)
 
 
 # ---- the delay-aware design ---------------------------------------------------------
@@ -161,17 +162,18 @@ def test_only_ratios_of_weights_matter():
 
 def test_weights_are_validated():
     with pytest.raises(ValueError):
-        LQRWeights(velocity=0.0, pitch=1.0, pitch_rate=0.0, torque=0.01)
+        LQRWeights(velocity=1.0, pitch=1.0, pitch_rate=0.0, torque=0.0)     # torque must be positive
     with pytest.raises(ValueError):
         LQRWeights(velocity=1.0, pitch=1.0, pitch_rate=-1.0, torque=0.01)
+    LQRWeights(velocity=0.0, pitch=0.0, pitch_rate=0.0, torque=1.0, velocity_integral=1.0)   # zero state weights are allowed
 
 
 # ---- loop stability ---------------------------------------------------------------
 
 def test_delay_margins_match_physics_md():
-    """PHYSICS.md 7.4: the hand-tuned cascade goes unstable at 11.5 ms, the 2026-09-30 tuned one at 31.0 ms."""
-    tuned = (0.7301658711001224, 0.2299853606594764, 0.05724669986164053, 0.25232718798097314)
-    for gains, unstable_from in ((CONFIG.controller.hand_tuned_gains, 0.0115), (tuned, 0.0310)):
+    """PHYSICS.md 7.4: the hand-tuned cascade goes unstable at 16.0 ms, the 2026-11-08 tuned one at 40.75 ms."""
+    tuned = (1.5665012042015811, 2.1008133218371503, 0.2849281098561087, 0.6448938913835949)
+    for gains, unstable_from in ((CONFIG.controller.hand_tuned_gains, 0.0160), (tuned, 0.04075)):
         low, high = stable_latency_range(P, LinearController.cascaded_pid(gains, T), T)
         assert low == 0.0
         assert high + 0.00025 == pytest.approx(unstable_from)
@@ -409,14 +411,39 @@ def test_config_builds_the_lqr_controller():
 
 
 def test_search_spaces_drop_the_parameters_held_off():
-    assert CONFIG.build_lqr_space().names == ["w_velocity", "w_torque", "w_integral"]
+    assert CONFIG.build_lqr_space().names == ["w_integral"]
     assert CONFIG.build_direct_lqr_space().names == ["s_velocity", "s_pitch", "s_pitch_rate"]
-    assert SEARCHED.build_lqr_space().names == ["w_velocity", "w_pitch_rate", "w_torque", "w_integral"]
+    assert SEARCHED.build_lqr_space().names == ["w_pitch", "w_velocity", "w_pitch_rate", "w_integral"]
     assert SEARCHED.build_direct_lqr_space().dim == 5
-    # A fixed weight reaches the design, in the right place.
-    w = lqr_weights([0.5, 2.0, 30.0], CONFIG.lqr.fixed_weights)
-    assert (w.velocity, w.pitch_rate, w.torque, w.velocity_integral) == (0.5, 0.0, 2.0, 30.0)
+    # Fixed weights reach the design, in the right places; the torque weight is always 1.
+    w = lqr_weights([30.0], CONFIG.lqr.fixed_weights)
+    assert (w.pitch, w.velocity, w.pitch_rate, w.torque, w.velocity_integral) == (0.0, 0.0, 0.0, 1.0, 30.0)
+    w = lqr_weights([0.1, 0.5, 0.0, 2.0], SEARCHED.lqr.fixed_weights)
+    assert (w.pitch, w.velocity, w.pitch_rate, w.torque, w.velocity_integral) == (0.1, 0.5, 0.0, 1.0, 2.0)
     with pytest.raises(ValueError):
         lqr_weights([1.0, 2.0], CONFIG.lqr.fixed_weights)       # wrong number of searched weights
     with pytest.raises(ValueError):
-        lqr_weights([1.0] * 3, {"w_nonsense": 0.0})
+        lqr_weights([1.0] * 4, {"w_nonsense": 0.0})
+
+
+def test_torque_normalized_weights_give_the_same_gain_as_any_scaling():
+    """Only ratios matter: the cost-matched design, written per unit of torque weight, is the same gain."""
+    from balance_sim import LQRWeights
+
+    w = CONFIG.cost_matched_lqr_weights()
+    per_torque = LQRWeights(velocity=w.velocity / w.torque, pitch=w.pitch / w.torque, pitch_rate=0.0, torque=1.0)
+    np.testing.assert_allclose(lqr_gain(P, per_torque, T, 0.010), CONFIG.build_lqr_gain(), rtol=1e-8)
+
+
+def test_zero_state_weights_converge_to_the_limit_design():
+    """Pitch and velocity weights of exactly 0 are the limit of small ones (what the search runs into)."""
+    from balance_sim import LQRWeights
+
+    limit = lqr_gain(P, LQRWeights(velocity=0.0, pitch=0.0, pitch_rate=0.0, torque=1.0, velocity_integral=4.0), T, 0.010)
+    near = lqr_gain(P, LQRWeights(velocity=1e-9, pitch=1e-9, pitch_rate=0.0, torque=1.0, velocity_integral=4.0), T, 0.010)
+    np.testing.assert_allclose(near, limit, rtol=1e-6)
+    assert spectral_radius(P, LinearController.lqr(limit), T, 0.010) < 1.0
+    with pytest.raises(ValueError):
+        LQRWeights(velocity=1.0, pitch=1.0, pitch_rate=0.0, torque=0.0)
+    with pytest.raises(ValueError):
+        LQRWeights(velocity=1.0, pitch=-1.0, pitch_rate=0.0, torque=1.0)

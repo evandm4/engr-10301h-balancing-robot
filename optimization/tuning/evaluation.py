@@ -112,6 +112,7 @@ class Evaluator:
         dyn = self.dynamics()
         sensor = SensorNoise(
             pitch_std=c.sensor.pitch_std,
+            pitch_bias=c.sensor.pitch_bias,
             pitch_rate_std=c.sensor.pitch_rate_std,
             pitch_rate_bias=c.sensor.pitch_rate_bias,
             position_std=c.sensor.position_std,

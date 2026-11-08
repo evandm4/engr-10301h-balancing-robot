@@ -50,7 +50,7 @@ from batch_tuning import (
     differential_evolution_search,
     random_search,
 )
-from tuning import Evaluator, gains_cells, gains_header, save_example_runs, save_result, tuning_summary_figure
+from tuning import Evaluator, gains_cells, gains_header, provenance, save_example_runs, save_result, tuning_summary_figure
 
 
 def example_runs(gains_by_label):
@@ -103,7 +103,7 @@ def plot_robustness(check: BatchEvaluator, validation, names):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--de-iters", type=int, default=30, help="differential evolution generations")
-    parser.add_argument("--de-pop", type=int, default=24, help="DE population multiplier (x 5 gains)")
+    parser.add_argument("--de-pop", type=int, default=24, help="DE population multiplier (x 4 gains)")
     parser.add_argument("--cma-iters", type=int, default=30, help="CMA-ES generations")
     parser.add_argument("--cma-pop", type=int, default=120, help="CMA-ES population")
     parser.add_argument("--backend", choices=["numpy", "torch"], default="numpy")
@@ -112,7 +112,8 @@ def main():
     parser.add_argument("--plain", action="store_true", help="score like run_tuning.py (no robustness)")
     parser.add_argument("--seeds", type=int, default=None,
                         help="training noise seeds in robust mode (default: config.py)")
-    parser.add_argument("--no-randomize", action="store_true", help="robust mode without randomized robots")
+    parser.add_argument("--no-randomize", action="store_true",
+                        help="robust mode with the nominal robot and latency (no randomized parameters, friction or latency)")
     parser.add_argument("--sensitivity-weight", type=float, default=None,
                         help="weight of the chaos penalty (default: config.py; 0 turns it off)")
     parser.add_argument("--no-plot", action="store_true", help="skip the plots")
@@ -125,7 +126,7 @@ def main():
         if args.seeds is not None:
             robustness = replace(robustness, train_seeds=tuple(range(1, args.seeds + 1)))
         if args.no_randomize:
-            robustness = replace(robustness, randomize=())
+            robustness = replace(robustness, randomize=(), randomize_range=(), latency_range=None)
         if args.sensitivity_weight is not None:
             robustness = replace(robustness, sensitivity_weight=args.sensitivity_weight)
 
@@ -136,7 +137,8 @@ def main():
     sims_per_eval = evaluator.simulations_per_evaluation()
     if robustness:
         print(f"Robust scoring: {len(robustness.train_seeds)} seeds x {len(eval_config.start_pitches)} tilts, "
-              f"{'randomized robots' if robustness.randomize else 'nominal robot'}, "
+              f"{'randomized robots' if robustness.randomize or robustness.randomize_range else 'nominal robot'}, "
+              f"{'latency %g-%g ms' % tuple(1000 * x for x in robustness.latency_range) if robustness.latency_range else 'fixed latency'}, "
               f"chaos penalty weight {robustness.sensitivity_weight:g} "
               f"-> {sims_per_eval} simulations per evaluation")
 
@@ -215,6 +217,7 @@ def main():
                                       "backend": args.backend, "dtype": np.dtype(evaluator.dtype).name})
     (folder / "comparison.json").write_text(json.dumps({
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "provenance": provenance(),
         "run_arguments": vars(args),
         "simulations_per_evaluation": sims_per_eval,
         "results": comparison,

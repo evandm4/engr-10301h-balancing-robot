@@ -141,9 +141,12 @@ def test_float64_matches_numpy_for_well_behaved_gains(device, reference):
                          record=True)
     got = TorchSimulator(evaluator.spec, evaluator.robot, len(G), noise, evaluator.schedule, device=device,
                          dtype=torch.float64, record=True).run(G, pitch, seed_index)
-    assert not ref.fell.any() and not got.fell.any()
-    np.testing.assert_allclose(got.cost, ref.cost, rtol=1e-9)
-    np.testing.assert_allclose(got.states, ref.states, rtol=0, atol=1e-9)
+    # With the rotor inertia modelled a few of these perturbations fall; compare the ones that stay up.
+    up = ~ref.fell
+    assert up.sum() >= 0.75 * len(G)
+    assert not got.fell[up].any()
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
+    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
 
 
 @needs_cuda
@@ -179,8 +182,10 @@ def test_float32_close_to_float64_for_well_behaved_gains(device, short_eval):
     ref = simulate_batch(short_eval.spec, short_eval.robot, G, pitch, noise, seed_index, short_eval.schedule)
     got = TorchSimulator(short_eval.spec, short_eval.robot, len(G), noise, short_eval.schedule, device=device,
                          dtype=torch.float32).run(G, pitch, seed_index)
-    assert not got.fell.any()
-    np.testing.assert_allclose(got.cost, ref.cost, rtol=1e-3)
+    up = ~ref.fell          # a few near-hand-tuned perturbations fall on the 2026-11-08 robot
+    assert up.sum() >= 0.75 * len(G)
+    assert not got.fell[up].any()
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-3)
 
 
 @pytest.mark.parametrize("device", DEVICES)
