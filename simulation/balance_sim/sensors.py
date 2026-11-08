@@ -8,7 +8,7 @@ import numpy as np
 
 @dataclass
 class SensorNoise:
-    """Gaussian measurement noise (plus optional gyro bias) on the first four
+    """Gaussian measurement noise (plus optional pitch and gyro biases) on the first four
     state entries. Standard deviations are per sample; a new sample is drawn
     each time the controller runs.
 
@@ -21,6 +21,7 @@ class SensorNoise:
     """
 
     pitch_std: float = 0.0          # rad, pitch angle estimate
+    pitch_bias: float = 0.0         # rad, constant pitch-estimate offset (IMU mounting, balance point)
     pitch_rate_std: float = 0.0     # rad/s, gyro
     pitch_rate_bias: float = 0.0    # rad/s, constant gyro offset
     position_std: float = 0.0       # m, encoder-derived position
@@ -39,6 +40,6 @@ class SensorNoise:
         noise = self._rng.standard_normal(4)
         measured[0] += self.position_std * noise[0]
         measured[1] += self.velocity_std * noise[1]
-        measured[2] += self.pitch_std * noise[2]
+        measured[2] += self.pitch_std * noise[2] + self.pitch_bias
         measured[3] += self.pitch_rate_std * noise[3] + self.pitch_rate_bias
         return measured

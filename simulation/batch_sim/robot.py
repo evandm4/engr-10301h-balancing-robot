@@ -18,6 +18,7 @@ class BatchRobot:
     wheel_mass: object
     wheel_radius: object
     wheel_inertia: object
+    rotor_inertia: object
     max_torque: object
     wheel_friction: object
     coulomb_friction: object
@@ -32,6 +33,7 @@ class BatchRobot:
     supply_voltage: object = None
     current_limit: object = None
     n_motors: object = None
+    gear_efficiency: object = None
 
     @classmethod
     def from_params(cls, params, motor=None, **overrides) -> "BatchRobot":
@@ -43,13 +45,13 @@ class BatchRobot:
         """
         values = {name: getattr(params, name) for name in (
             "body_mass", "body_com_height", "body_inertia", "wheel_mass", "wheel_radius",
-            "wheel_inertia", "max_torque", "wheel_friction", "coulomb_friction",
+            "wheel_inertia", "rotor_inertia", "max_torque", "wheel_friction", "coulomb_friction",
             "coulomb_friction_speed", "gravity")}
         if motor is not None:
             values["dc_motor"] = True
             values.update({name: getattr(motor, name) for name in (
                 "gear_ratio", "torque_constant", "resistance", "supply_voltage",
-                "current_limit", "n_motors")})
+                "current_limit", "n_motors", "gear_efficiency")})
         values.update(overrides)
         return cls(**values)
 
@@ -80,8 +82,10 @@ class BatchRobot:
     def critical_pitch_gain(self):
         """Same formula as Planar2D.critical_pitch_gain, per simulation."""
         ml = self.body_mass * self.body_com_height
-        a = self.body_mass + self.wheel_mass + self.wheel_inertia / self.wheel_radius**2
-        return a * ml * self.gravity / (a + ml / self.wheel_radius)
+        a = (self.body_mass + self.wheel_mass + self.wheel_inertia / self.wheel_radius**2
+             + self.rotor_inertia / self.wheel_radius**2)
+        b = ml - self.rotor_inertia / self.wheel_radius
+        return a * ml * self.gravity / (a + b / self.wheel_radius)
 
 
 def per_sim(value, size: int, dtype=np.float64) -> np.ndarray:

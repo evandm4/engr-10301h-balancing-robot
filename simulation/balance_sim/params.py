@@ -22,6 +22,9 @@ class RobotParams:
     wheel_mass: float       # kg, both wheels combined
     wheel_radius: float     # m
     wheel_inertia: float    # kg m^2, both wheels about the axle
+    rotor_inertia: float    # kg m^2, all motor rotors reflected through the gearbox, n N^2 J_r.
+                            # They spin relative to the body, so this is not part of
+                            # wheel_inertia (PHYSICS.md 10.3); 0 leaves them out
     max_torque: float       # N m, total motor torque limit (both motors)
     wheel_friction: float   # N m s/rad, viscous friction between wheels and body
     coulomb_friction: float  # N m, Coulomb (dry) friction torque between wheels and body
@@ -43,6 +46,8 @@ class RobotParams:
         for name in positive:
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive, got {getattr(self, name)}")
+        if self.rotor_inertia < 0:
+            raise ValueError("rotor_inertia must be non-negative")
         if self.wheel_friction < 0:
             raise ValueError("wheel_friction must be non-negative")
         if self.coulomb_friction < 0:

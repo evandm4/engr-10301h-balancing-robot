@@ -2,7 +2,16 @@
 
 This document derives every equation in the simulator from first principles. For each one it shows where the equation lives in the code, checks it numerically, and lists what the model leaves out and what to do about it. It covers `simulation/balance_sim/`, the reference simulator. `simulation/batch_sim/` runs the same equations in the same order (Section 11), so everything here applies to it too.
 
-All numbers use the robot defined in `config.py`. Two sets of gains appear throughout:
+> **2026-11-08: the numbers in this document are for the earlier robot.** `config.py` now uses realistic
+> constants from [DATASHEET.md](DATASHEET.md), and the model gained the motors' rotor inertia (10.3), a gearbox
+> efficiency (4.3) and a pitch-estimate offset (5.1). Every number below was computed for the robot before that
+> change: the parameter table in Section 1, no rotor inertia, a lossless gearbox, the guessed motor
+> ($k_t = 0.005$, 3 Ω, 7.4 V, 20:1) and no pitch offset. `physics_checks.py` builds that robot from `config.py`
+> so it still reproduces this document exactly. The tuned gains below were tuned for it too: on the current robot
+> their validation cost is about 55 (1 of 30 runs falls) instead of 0.140. This document gets regenerated once
+> the gains are retuned for the current robot.
+
+All numbers use the robot defined in `config.py` (before 2026-11-08; see the note above). Two sets of gains appear throughout:
 
 - **Tuned:** the 2026-11-06 CMA-ES result in `results/batch_tuning/20261106-154750/`: $k_p = 0.660$, $k_i = 0.498$, $k_d = 0.1115$, $k_v = 0.796$. It was tuned for the current Bryson-rule cost with friction and 5–20 ms latency randomized.
 - **Hand-tuned:** `ControllerConfig.hand_tuned_gains`: $k_p = 4.0$, $k_i = 0.5$, $k_d = 0.15$, $k_v = 0.1$.
@@ -69,17 +78,18 @@ The robot is a planar wheeled inverted pendulum: one rigid body pivoting on the 
    ===========================================================  +x (forward) →
 ```
 
-| Symbol | Meaning | `config.py` field | Value |
-|---|---|---|---|
-| $M$ | body mass (everything above the wheels, motors included) | `body_mass` | 0.80 kg |
-| $l$ | height of the body's center of mass above the axle | `body_com_height` | 0.10 m |
-| $I_b$ | body pitch inertia about its own center of mass | `body_inertia` | 0.0033 kg m² |
-| $m_w$ | mass of both wheels | `wheel_mass` | 0.10 kg |
-| $r$ | wheel radius | `wheel_radius` | 0.035 m |
-| $I_w$ | inertia of both wheels about the axle | `wheel_inertia` | 6.1e-5 kg m² |
-| $b$ | viscous friction between wheels and body | `wheel_friction` | 0 |
-| $g$ | gravity | `gravity` | 9.81 m/s² |
-| $\tau_{\max}$ | torque limit, both motors together | `max_torque` | 0.40 N m |
+| Symbol | Meaning | `config.py` field | Value used here | Since 2026-11-08 |
+|---|---|---|---|---|
+| $M$ | body mass (everything above the wheels, motors included) | `body_mass` | 0.80 kg | 0.80 kg |
+| $l$ | height of the body's center of mass above the axle | `body_com_height` | 0.10 m | 0.10 m |
+| $I_b$ | body pitch inertia about its own center of mass | `body_inertia` | 0.0033 kg m² | 0.0065 kg m² |
+| $m_w$ | mass of both wheels | `wheel_mass` | 0.10 kg | 0.034 kg |
+| $r$ | wheel radius | `wheel_radius` | 0.035 m | 0.035 m |
+| $I_w$ | inertia of both wheels about the axle | `wheel_inertia` | 6.1e-5 kg m² | 2.2e-5 kg m² |
+| $J$ | motor rotors reflected to the axle, $nN^2J_r$ (10.3) | `rotor_inertia` | 0 | 4.2e-4 kg m² |
+| $b$ | viscous friction between wheels and body | `wheel_friction` | 0 | 0 (randomized 0–0.0015) |
+| $g$ | gravity | `gravity` | 9.81 m/s² | 9.81 m/s² |
+| $\tau_{\max}$ | torque limit, both motors together | `max_torque` | 0.40 N m | 0.34 N m |
 
 The values are self-consistent. $I_w = \tfrac12 m_w r^2$ exactly, which is two solid disks. A uniform 0.8 kg block 0.20 m tall and 0.05 m deep, with its center of mass 0.10 m above the axle, has $I_b = 0.0028$ kg m², close to the 0.0033 used.
 
@@ -917,8 +927,8 @@ Mounting the IMU above the axle adds $l_{\text{imu}}\ddot\theta$ and $l_{\text{i
 | Rigid body, planar motion, flat level ground | chassis stiff; driving straight | yaw, slopes (add $Mg\sin\alpha$ terms) and bumps are absent |
 | Both wheels share torque equally | identical motors and floor contact | any mismatch turns the robot |
 | Quasi-static motor current ($L$ ignored) | $L/R \ll 5$ ms | current lags the command; extra phase lag in the loop |
-| Lossless, stiff gearbox, no backlash | efficiency near 1, little play | backlash is a dead zone around zero torque, exactly where balancing operates |
-| Rotor inertia ignored | $nN^2J_r$ small next to $I_w$ | see 10.3: it enters the mass matrix in three places |
+| Stiff gearbox, no backlash (efficiency modelled since 2026-11-08) | little play | backlash is a dead zone around zero torque, exactly where balancing operates |
+| Rotor inertia ignored (modelled since 2026-11-08; the numbers here are without it) | $nN^2J_r$ small next to $I_w$ | it is not: about 4.2e-4 kg m² against $I_w$ = 2.2e-5 (DATASHEET.md 5.3) |
 | Coulomb friction smoothed, $\tau_c\tanh(\omega/\omega_\epsilon)$ with $\omega_\epsilon = 1$ rad/s; no rolling resistance | the wheels rarely sit near zero speed for long | real stiction is a dead zone, like backlash; the smoothing understates it near $\omega = 0$ |
 | Sensing and actuation aligned to physics steps | latency and control period are multiples of $h$ | see 7.2 |
 
@@ -944,7 +954,7 @@ Grouped by how strong the evidence is that each one matters.
 
 ### 10.3 Physical fidelity
 
-- **Reflected rotor inertia.** The `DCMotorActuator` docstring suggests folding this into `wheel_inertia`, but that is only partly right. Each rotor spins at about $N\omega = N(\dot x/r - \dot\theta)$ relative to the body. So it adds $\tfrac12 J\,(\dot x/r - \dot\theta)^2$ to $T$, where $J = nN^2J_r$. The mass matrix becomes
+- **Reflected rotor inertia.** *Implemented 2026-11-08* (`RobotParams.rotor_inertia`, both engines and the pivot model; tested against this mass matrix and for energy conservation). The estimate is $J \approx 4.2\times10^{-4}$ kg m², about 20 times the wheels' own inertia (DATASHEET.md 5.3). The derivation: folding it into `wheel_inertia` is only partly right. Each rotor spins at about $N\omega = N(\dot x/r - \dot\theta)$ relative to the body. So it adds $\tfrac12 J\,(\dot x/r - \dot\theta)^2$ to $T$, where $J = nN^2J_r$. The mass matrix becomes
 
   ```math
   \mathbf M(\theta) = \begin{pmatrix} a + J/r^2 & Ml\cos\theta - J/r \\ Ml\cos\theta - J/r & d + J \end{pmatrix}.
@@ -952,7 +962,7 @@ Grouped by how strong the evidence is that each one matters.
 
   Folding $J$ into $I_w$ gets the first entry right but misses the $-J/r$ coupling and the $+J$ on the body. The matrix stays positive definite, because $T$ is still a sum of squares. Only `planar2d.py:112-114` (and `batch_sim/physics.py:56-58`) would change.
 - **Winding inductance.** If $L/R$ is not much less than 5 ms, add the current as a state: $L\,di/dt = V - Ri - k_eN\omega$.
-- **Gearbox efficiency and backlash.** Multiply the output torque by an efficiency $\eta$. Model backlash as a dead band in $\varphi - \theta$.
+- **Gearbox efficiency and backlash.** *Efficiency implemented 2026-11-08* (`MotorParams.gear_efficiency`, 0.78 from the Pololu stall data): the output torque per amp is $nN\eta k_t$, back-EMF still uses $k_t$, so the loss shows as less torque at the current limit. Backlash is still to do: a dead band in $\varphi - \theta$.
 - **Battery sag.** Use $V_s(t) = V_{oc} - R_{\text{batt}}\,i_{\text{total}}$ instead of a constant per run (`CONDITIONS.md` already lists this).
 - **Noise as a density.** Specify sensor noise as a density (rad/s/√Hz, as datasheets do) and convert it with $\sigma = \text{ND}\sqrt{f_s/2}$. Today the per-sample $\sigma$ silently changes the physical noise level if the control rate changes.
 - **Scope.** A 3D model with yaw (differential drive), slopes, and pushes on the body, as already planned in `ARCHITECTURE.md` and `CONDITIONS.md`.

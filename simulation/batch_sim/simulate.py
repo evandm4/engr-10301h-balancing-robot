@@ -111,10 +111,11 @@ def simulate_batch(
             if noise is not None:
                 n = noise[j][:, seed_index]
                 x_dot = x_dot + spec.velocity_std * n[0]
-                theta = theta + spec.pitch_std * n[1]
+                theta = theta + (spec.pitch_std * n[1] + spec.pitch_bias)
                 theta_dot = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
-            elif spec.pitch_rate_bias:
-                theta_dot = theta_dot + spec.pitch_rate_bias   # deterministic, so it needs no table
+            elif spec.pitch_rate_bias or spec.pitch_bias:   # deterministic, so they need no table
+                theta = theta + spec.pitch_bias
+                theta_dot = theta_dot + spec.pitch_rate_bias
             if lqr:
                 command, velocity_integral = lqr_update(
                     x_dot, theta, theta_dot, goal_per_tick[j], control_dt,

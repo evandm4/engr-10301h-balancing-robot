@@ -46,9 +46,10 @@ from batch_sim import BatchRobot
 # gravity constant and the (integer) motor count.
 RANDOMIZABLE = tuple(f.name for f in fields(BatchRobot) if f.name not in ("dc_motor", "n_motors", "gravity"))
 ROBOT_PARAM_FIELDS = ("body_mass", "body_com_height", "body_inertia", "wheel_mass", "wheel_radius",
-                      "wheel_inertia", "max_torque", "wheel_friction", "coulomb_friction",
+                      "wheel_inertia", "rotor_inertia", "max_torque", "wheel_friction", "coulomb_friction",
                       "coulomb_friction_speed", "gravity")
-MOTOR_PARAM_FIELDS = ("gear_ratio", "torque_constant", "resistance", "supply_voltage", "current_limit", "n_motors")
+MOTOR_PARAM_FIELDS = ("gear_ratio", "torque_constant", "resistance", "supply_voltage", "current_limit", "n_motors",
+                      "gear_efficiency")
 
 
 @dataclass(frozen=True)

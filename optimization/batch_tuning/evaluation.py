@@ -43,6 +43,7 @@ def spec_from_eval_config(config: EvalConfig, controller: str = "cascaded") -> S
         pitch_integral_limit=config.pitch_integral_limit,
         velocity_integral_limit=config.velocity_integral_limit,
         pitch_std=s.pitch_std,
+        pitch_bias=s.pitch_bias,
         pitch_rate_std=s.pitch_rate_std,
         pitch_rate_bias=s.pitch_rate_bias,
         position_std=s.position_std,

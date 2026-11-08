@@ -9,6 +9,7 @@ See also:
 - `simulation/CONDITIONS.md` — the running list of real-world effects the simulation includes.
 - `BATCHED.md` — the batched (NumPy/GPU) engine: design, verification, speed.
 - `PHYSICS.md` — derivation of every equation in the simulator, checked numerically by `simulation/examples/physics_checks.py`, with limitations and next steps.
+- `DATASHEET.md` — realistic values for every physical constant, from a reference build of real parts (motors, wheels, driver, battery, IMU, servo), compared against `config.py`; derived numbers from `simulation/examples/datasheet_numbers.py`.
 - `archive/CHANGES_FROM_ORIGINAL.md` — what was corrected from the first version of the code.
 
 ## Status legend
@@ -175,3 +176,4 @@ flowchart TD
   - Re-runs: `results/lqr_comparison/20261106-154350` (tuned PID 0.169, tuned LQR gains 0.199, tuned weights 0.241), `results/batch_tuning/20261106-154750` (same PID gains), `results/pivot_tuning/20261106-154343`.
   - Tests: 297.
 - 2026-11-06 (later): `physics_checks.py`'s `TUNED` is now the 2026-11-06 set (`TUNED_0930` keeps the old one for 8.2 and 9.4), and PHYSICS.md quotes it throughout. The search's Kp floor comes from the most demanding randomized robot (`ProjectConfig.kp_floor_robot`; 0.300 instead of 0.253, still far below the tuned 0.66, so the recorded results stand). The batched engines apply the gyro bias without a noise table, as `SensorNoise` does with every std at 0. Tests: 301.
+- 2026-11-08: Realistic physical constants (DATASHEET.md: a reference build of real parts, compared constant by constant). Both engines and the pivot model now include the motor rotors' reflected inertia in the mass matrix (`RobotParams.rotor_inertia`, PHYSICS.md 10.3), a gearbox efficiency in the DC motor model (`MotorParams.gear_efficiency`) and a constant pitch-estimate offset (`SensorNoise.pitch_bias`). config.py takes the Pololu 25D HP 6V 20.4:1 motor's constants (k_t 0.0053, 1.25 ohm with the driver, 7.6 V, efficiency 0.78), the real wheels (0.034 kg, 2.2e-5 kg m^2), body inertia 0.0065, max torque 0.34 N m, and friction ranges from the free-run current. With all of these off the code reproduces the previous results exactly (physics_checks.py output unchanged). The 2026-11-06 tuned gains are not tuned for this robot (validation cost 0.14 before, about 55 with 1 of 30 falls now); every results/ run predates it. PHYSICS.md's numbers and physics_checks.py stay on the earlier robot until regenerated after retuning.

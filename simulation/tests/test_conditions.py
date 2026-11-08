@@ -105,8 +105,11 @@ def test_back_emf_reduces_torque_as_speed_rises():
     act = DCMotorActuator(m)
     slow = act.torque(10.0, 0.0)
     half = act.torque(10.0, 0.5 * m.no_load_speed)
+    fast = act.torque(10.0, 0.9 * m.no_load_speed)
     at_limit = act.torque(10.0, m.no_load_speed)
-    assert slow > half > at_limit
+    # A low-resistance winding stays on its current limit up to a high speed, so half
+    # speed may still give the full torque; near no-load speed the supply voltage binds.
+    assert slow >= half > fast > at_limit
     assert at_limit == pytest.approx(0.0, abs=1e-9)
 
 
@@ -153,3 +156,22 @@ def test_robot_still_balances_under_combined_moderate_conditions(motor_dyn):
     result = run(motor_dyn, sensor=CONFIG.build_sensor(), latency=CONFIG.timing.latency_s)
     assert not result.fell
     assert compute_metrics(result).max_abs_pitch < 0.2
+
+
+def test_gear_efficiency_lowers_torque_at_the_current_limit_only():
+    m = MOTOR
+    lossless = replace(m, gear_efficiency=1.0)
+    assert m.stall_torque_limit == pytest.approx(m.gear_efficiency * lossless.stall_torque_limit)
+    act = DCMotorActuator(m)
+    assert act.torque(10.0, 0.0) == pytest.approx(m.stall_torque_limit)
+    # Below the limits the firmware's torque-per-amp includes the losses, so the command is delivered.
+    assert act.torque(0.1, 5.0) == pytest.approx(0.1)
+    # Back-EMF still uses the full k_t: no-load speed is unchanged.
+    assert m.no_load_speed == lossless.no_load_speed
+    with pytest.raises(ValueError):
+        replace(m, gear_efficiency=1.2)
+
+
+def test_pitch_bias_offsets_the_measured_pitch():
+    measured = SensorNoise(pitch_bias=0.02, pitch_rate_bias=0.01).measure(np.zeros(4))
+    np.testing.assert_allclose(measured, [0.0, 0.0, 0.02, 0.01])

@@ -10,11 +10,17 @@ roll without slipping.
             + b1 cos(theta1) x' theta1' + b2 cos(theta2) x' theta2'
             + 1/2 d1 theta1'^2 + 1/2 d2 theta2'^2
             + c cos(theta2 - theta1) theta1' theta2'
+            + 1/2 J (x'/r - theta1')^2
     Potential energy:
         V = g (b1 cos(theta1) + b2 cos(theta2))
 
     a  = m_w + I_w/r^2 + m1 + m2       b1 = m1 l1 + m2 h      b2 = m2 l2
     d1 = m1 l1^2 + I1 + m2 h^2         d2 = m2 l2^2 + I2      c  = m2 h l2
+
+J is the wheel-motor rotors reflected through the gearbox (n N^2 J_r). They
+spin relative to the lower body, so J adds J/r^2 to a, J to d1, and -J/r to
+the x-theta1 entry of the mass matrix below (PHYSICS.md 10.3). With J = 0
+the equations are as written here.
 
 The wheel motors apply tau_w between the wheels and the lower body; the servo
 applies tau_s between the lower and upper bodies. Generalized forces:
@@ -74,10 +80,13 @@ class PivotRobot:
         self.actuator = actuator if actuator is not None else IdealActuator(params.max_torque)
         # Constant coefficients of the equations of motion.
         p = params
-        self._a = p.lower_mass + p.upper_mass + p.wheel_mass + p.wheel_inertia / p.wheel_radius**2
+        self._a = (p.lower_mass + p.upper_mass + p.wheel_mass + p.wheel_inertia / p.wheel_radius**2
+                   + p.rotor_inertia / p.wheel_radius**2)
         self._b1, self._b2 = p.b1, p.b2
+        self._jr = p.rotor_inertia / p.wheel_radius      # rotor coupling, x vs theta1
         self._c = p.upper_mass * p.pivot_height * p.upper_com_offset
-        self._d1 = p.lower_mass * p.lower_com_height**2 + p.lower_inertia + p.upper_mass * p.pivot_height**2
+        self._d1 = (p.lower_mass * p.lower_com_height**2 + p.lower_inertia + p.upper_mass * p.pivot_height**2
+                    + p.rotor_inertia)
         self._d2 = p.upper_mass * p.upper_com_offset**2 + p.upper_inertia
 
     def applied_torques(self, state: Sequence[float], command: Tuple[float, float]) -> Tuple[float, float]:
@@ -106,7 +115,7 @@ class PivotRobot:
         sp, cp = math.sin(phi), math.cos(phi)
         a, b1, b2, c, d1, d2 = self._a, self._b1, self._b2, self._c, self._d1, self._d2
 
-        m01, m02, m12 = b1 * c1, b2 * c2, c * cp
+        m01, m02, m12 = b1 * c1 - self._jr, b2 * c2, c * cp
         f0 = tau_w / p.wheel_radius + b1 * s1 * theta1_dot**2 + b2 * s2 * theta2_dot**2
         f1 = -tau_w - tau_s + c * sp * theta2_dot**2 + p.gravity * b1 * s1
         f2 = tau_s - c * sp * theta1_dot**2 + p.gravity * b2 * s2
@@ -143,7 +152,7 @@ class PivotRobot:
         theta2, theta2_dot = theta1 + phi, theta1_dot + phi_dot
         a, b1, b2, c, d1, d2 = self._a, self._b1, self._b2, self._c, self._d1, self._d2
         kinetic = (0.5 * a * x_dot**2
-                   + b1 * math.cos(theta1) * x_dot * theta1_dot
+                   + (b1 * math.cos(theta1) - self._jr) * x_dot * theta1_dot
                    + b2 * math.cos(theta2) * x_dot * theta2_dot
                    + 0.5 * d1 * theta1_dot**2 + 0.5 * d2 * theta2_dot**2
                    + c * math.cos(phi) * theta1_dot * theta2_dot)

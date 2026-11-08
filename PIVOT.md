@@ -48,6 +48,8 @@ T = 1/2 a x'^2 + b1 cos(θ1) x' θ1' + b2 cos(θ2) x' θ2'
 V = g (b1 cos θ1 + b2 cos θ2)
 
 a  = m_w + I_w/r^2 + m1 + m2     b1 = m1 l1 + m2 h     b2 = m2 l2
+(since 2026-11-08 the wheel-motor rotors add J = n N^2 J_r: J/r^2 to a, J to d1 and -J/r to
+the x-theta1 coupling, as in PHYSICS.md 10.3; pivot_sim/dynamics.py)
 d1 = m1 l1^2 + I1 + m2 h^2       d2 = m2 l2^2 + I2     c  = m2 h l2
 ```
 

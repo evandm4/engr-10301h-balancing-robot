@@ -45,6 +45,7 @@ class SimSpec:
     controller: str = "cascaded"
     # Sensor noise (standard deviations per control tick), as in SensorNoise.
     pitch_std: float = 0.0
+    pitch_bias: float = 0.0
     pitch_rate_std: float = 0.0
     pitch_rate_bias: float = 0.0
     position_std: float = 0.0

@@ -29,6 +29,9 @@ CONFIGS = {
     "default": SHORT,
     "ideal_actuator": replace(SHORT, motor=None),
     "no_noise_no_latency": replace(SHORT, sensor=SensorNoise(), latency=0.0),
+    "biases_without_noise": replace(SHORT, sensor=SensorNoise(pitch_bias=0.02, pitch_rate_bias=0.01)),
+    "no_rotor_lossless_gearbox": replace(SHORT, params=SHORT.params.with_changes(rotor_inertia=0.0),
+                                         motor=replace(SHORT.motor, gear_efficiency=1.0)),
     "latency_between_steps": replace(SHORT, latency=0.0037),
     "control_every_step": replace(SHORT, control_dt=0.0025),
     # CONFIG scores pitch from upright, so the default case covers that branch; this covers the other.
@@ -142,5 +145,9 @@ def test_float32_stays_close_to_float64():
     gains = np.array(HAND_TUNED) * np.random.default_rng(4).uniform(0.8, 1.2, (16, SPACE.dim))
     r64 = BatchEvaluator(SHORT, SPACE, dtype=np.float64).evaluate_population(gains)
     r32 = BatchEvaluator(SHORT, SPACE, dtype=np.float32).evaluate_population(gains)
-    assert r64.n_fell.sum() == 0 and r32.n_fell.sum() == 0
-    np.testing.assert_allclose(r32.costs, r64.costs, rtol=1e-3)
+    # With the rotor inertia modelled, a few of these perturbations fall in float64 too; those
+    # are the edge cases the docstring excludes. Check the rest.
+    stable = r64.n_fell == 0
+    assert stable.sum() >= 12
+    assert (r32.n_fell[stable] == 0).all()
+    np.testing.assert_allclose(r32.costs[stable], r64.costs[stable], rtol=1e-3)

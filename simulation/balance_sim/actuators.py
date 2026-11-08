@@ -51,18 +51,21 @@ class MotorParams:
     supply_voltage: float    # V
     current_limit: float     # A, per motor (driver or thermal limit)
     n_motors: int
+    gear_efficiency: float   # output torque / (gear_ratio x motor torque), in (0, 1]; back-EMF is unaffected
 
     def __post_init__(self):
         for name in ("gear_ratio", "torque_constant", "resistance",
-                     "supply_voltage", "current_limit", "n_motors"):
+                     "supply_voltage", "current_limit", "n_motors", "gear_efficiency"):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive")
+        if self.gear_efficiency > 1:
+            raise ValueError(f"gear_efficiency must be at most 1, got {self.gear_efficiency}")
 
     @property
     def stall_torque_limit(self) -> float:
         """Total output torque at zero speed, after the current limit (N m)."""
         i = min(self.current_limit, self.supply_voltage / self.resistance)
-        return self.n_motors * self.gear_ratio * self.torque_constant * i
+        return self.n_motors * self.gear_ratio * self.gear_efficiency * self.torque_constant * i
 
     @property
     def no_load_speed(self) -> float:
@@ -85,9 +88,15 @@ class DCMotorActuator(Actuator):
     physics can limit it further, so the effective limit is whichever is lower.
     Leaving it as None means only the motor physics limits torque.
 
-    Not modeled yet: winding inductance, gearbox efficiency and backlash,
-    rotor inertia reflected to the wheel (fold it into wheel_inertia for now),
-    and driver PWM effects.
+    Gearbox losses: the output gets gear_efficiency of the ideal torque
+    (n N k_t i), while the back-EMF still uses the full k_t. The firmware is
+    taken to know the measured output torque per amp (n N eta k_t), so below
+    the limits the command is still delivered exactly; the loss shows up as
+    less torque at the current limit. (Real gear losses are partly Coulomb,
+    which RobotParams.coulomb_friction covers, and differ when back-driven.)
+
+    Not modeled yet: winding inductance, backlash and driver PWM effects.
+    Rotor inertia is part of the dynamics (RobotParams.rotor_inertia).
     """
 
     def __init__(self, motor: MotorParams, max_torque: Optional[float] = None):
@@ -101,7 +110,7 @@ class DCMotorActuator(Actuator):
         if self.max_torque is not None:
             command = _clip(command, -self.max_torque, self.max_torque)
         rotor_speed = m.gear_ratio * relative_wheel_speed
-        per_motor_shaft_torque = command / (m.n_motors * m.gear_ratio)
+        per_motor_shaft_torque = command / (m.n_motors * m.gear_ratio * m.gear_efficiency)
         i_wanted = per_motor_shaft_torque / m.torque_constant
 
         v_wanted = m.resistance * i_wanted + m.torque_constant * rotor_speed
@@ -109,4 +118,4 @@ class DCMotorActuator(Actuator):
 
         i = (v - m.torque_constant * rotor_speed) / m.resistance
         i = float(_clip(i, -m.current_limit, m.current_limit))
-        return m.n_motors * m.gear_ratio * m.torque_constant * i
+        return m.n_motors * m.gear_ratio * m.gear_efficiency * m.torque_constant * i

@@ -120,7 +120,7 @@ class PivotCostConfig:
 
     The servo effort weight follows config.py's Bryson rule (CostConfig):
     (pitch_limit_rad / servo_torque_limit)^2, servo_torque_limit being a
-    typical servo torque, a quarter of stall like the wheels' 0.1 of 0.4 N m.
+    typical servo torque, a quarter of stall (the wheels use 0.1 of 0.34 N m).
     math.inf switches the term off."""
 
     servo_torque_limit: float = 0.25   # N m; weight (0.3 / 0.25)^2 = 1.44 with config.py's pitch limit
@@ -193,6 +193,7 @@ class PivotProjectConfig:
             pivot_height=b.pivot_height,
             upper_mass=b.upper_mass, upper_com_offset=b.upper_com_offset, upper_inertia=b.upper_inertia,
             wheel_mass=r.wheel_mass, wheel_radius=r.wheel_radius, wheel_inertia=r.wheel_inertia,
+            rotor_inertia=self.base.actuator.reflected_rotor_inertia,
             max_torque=r.max_torque, wheel_friction=r.wheel_friction, gravity=r.gravity,
         )
 

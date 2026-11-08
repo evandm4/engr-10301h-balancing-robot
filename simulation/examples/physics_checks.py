@@ -25,7 +25,22 @@ from balance_sim import CascadedPIDController, Planar2D, PIDController, pitch_er
 from balance_sim.actuators import Actuator
 from balance_sim.simulator import _rk4_step
 from batch_sim import BatchRobot, actuator_torque, derivatives
-from config import CONFIG
+from dataclasses import replace
+
+from config import CONFIG as CURRENT_CONFIG
+
+# PHYSICS.md's numbers were derived for the robot as configured before the 2026-11-08
+# datasheet update (DATASHEET.md): no rotor inertia, a lossless gearbox, the guessed motor
+# (k_t 0.005, 3 ohm, 7.4 V, 20:1), 0.40 N m, heavier wheels, a lighter body inertia and no
+# pitch-estimate offset. This script reproduces that document exactly, so it runs on that
+# robot until PHYSICS.md is regenerated for the current one (after retuning).
+CONFIG = replace(
+    CURRENT_CONFIG,
+    robot=replace(CURRENT_CONFIG.robot, body_inertia=0.0033, wheel_mass=0.10, wheel_inertia=6.1e-5, max_torque=0.40),
+    actuator=replace(CURRENT_CONFIG.actuator, gear_ratio=20.0, torque_constant=0.005, resistance=3.0,
+                     supply_voltage=7.4, gear_efficiency=1.0, rotor_inertia=0.0),
+    sensor=replace(CURRENT_CONFIG.sensor, pitch_bias=0.0),
+)
 
 TUNED = (0.659938589993706, 0.4980220464276531, 0.11153595895763543, 0.7956961244475451)  # CMA-ES, 2026-11-06
 TUNED_0930 = (0.7301658711001224, 0.2299853606594764, 0.05724669986164053, 0.25232718798097314)  # CMA-ES, 2026-09-30
