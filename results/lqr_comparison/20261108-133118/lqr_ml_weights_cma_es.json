@@ -1,0 +1,23 @@
+{
+  "method": "lqr_ml_weights_cma_es",
+  "gains": {
+    "w_integral": 15.20023064078344
+  },
+  "best_training_cost": 0.8133416219552357,
+  "n_evals": 4800,
+  "elapsed_s": 72.08,
+  "provenance": {
+    "git_commit": "8d30b3a87b839627c2b77c696ac0ab9eb1ef8bb0",
+    "git_dirty": true,
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "cma": "4.5.0",
+    "torch": "2.11.0+cu128",
+    "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU"
+  },
+  "controller": "LQR, ML-tuned weights",
+  "backend": "torch",
+  "dtype": "float32"
+}

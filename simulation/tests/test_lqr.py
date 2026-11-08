@@ -86,19 +86,12 @@ def test_linearize_matches_derivatives(friction):
                                rtol=1e-8)
 
 
-# PHYSICS.md's numbers were computed for the robot before the 2026-11-08 datasheet update
-# (DATASHEET.md): no rotor inertia, a lighter body inertia, heavier wheels and 0.40 N m. Until
-# PHYSICS.md is regenerated, these tests check the code against it on that robot.
-PHYSICS_MD_ROBOT = P.with_changes(body_inertia=0.0033, wheel_mass=0.10, wheel_inertia=6.1e-5,
-                                  rotor_inertia=0.0, max_torque=0.40)
-
-
 def test_linearize_matches_physics_md():
-    A, B = linearize(PHYSICS_MD_ROBOT)
-    assert A[1, 2] == pytest.approx(-14.49, abs=0.01)
-    assert A[3, 2] == pytest.approx(172.04, abs=0.01)
-    assert B[1, 0] == pytest.approx(92.98, abs=0.01)
-    assert B[3, 0] == pytest.approx(-746.77, abs=0.01)
+    A, B = linearize(P)
+    assert A[1, 2] == pytest.approx(-4.07, abs=0.01)
+    assert A[3, 2] == pytest.approx(71.19, abs=0.01)
+    assert B[1, 0] == pytest.approx(37.63, abs=0.01)
+    assert B[3, 0] == pytest.approx(-238.85, abs=0.01)
 
 
 # ---- the delay-aware design ---------------------------------------------------------
@@ -178,10 +171,10 @@ def test_weights_are_validated():
 # ---- loop stability ---------------------------------------------------------------
 
 def test_delay_margins_match_physics_md():
-    """PHYSICS.md 7.4: the hand-tuned cascade goes unstable at 11.5 ms, the 2026-09-30 tuned one at 31.0 ms."""
-    tuned = (0.7301658711001224, 0.2299853606594764, 0.05724669986164053, 0.25232718798097314)
-    for gains, unstable_from in ((CONFIG.controller.hand_tuned_gains, 0.0115), (tuned, 0.0310)):
-        low, high = stable_latency_range(PHYSICS_MD_ROBOT, LinearController.cascaded_pid(gains, T), T)
+    """PHYSICS.md 7.4: the hand-tuned cascade goes unstable at 16.0 ms, the 2026-11-08 tuned one at 40.75 ms."""
+    tuned = (1.5665012042015811, 2.1008133218371503, 0.2849281098561087, 0.6448938913835949)
+    for gains, unstable_from in ((CONFIG.controller.hand_tuned_gains, 0.0160), (tuned, 0.04075)):
+        low, high = stable_latency_range(P, LinearController.cascaded_pid(gains, T), T)
         assert low == 0.0
         assert high + 0.00025 == pytest.approx(unstable_from)
 

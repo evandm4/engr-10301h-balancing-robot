@@ -15,3 +15,10 @@
 - results/lqr_comparison/20261106-154350 (LQR.md), results/batch_tuning/20261106-154750 (PHYSICS.md 8.2, 9.4),
   results/pivot_tuning/20261106-154343 (PIVOT.md).
 - PHYSICS.md now quotes the 2026-11-06 tuned gains throughout (physics_checks.py TUNED; TUNED_0930 kept for 8.2 and 9.4).
+
+## Runs done 2026-11-08 (datasheet robot: rotor inertia, gear efficiency, pitch offset; DATASHEET.md)
+
+- results/batch_tuning/20261108-132528 (PHYSICS.md throughout), results/lqr_comparison/20261108-133118 (LQR.md),
+  results/pivot_tuning/20261108-132603 (PIVOT.md).
+- physics_checks.py TUNED is the 2026-11-08 set; TUNED_1106 (tuned for the earlier robot) is kept for comparison.
+- Open: rotor inertia, friction, backlash and gyro noise are estimates; DATASHEET.md section 8 lists how to measure each.

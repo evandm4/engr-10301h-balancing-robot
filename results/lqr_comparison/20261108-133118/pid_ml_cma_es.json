@@ -1,0 +1,26 @@
+{
+  "method": "pid_ml_cma_es",
+  "gains": {
+    "kp": 1.56654152488979,
+    "ki": 2.1012408080967377,
+    "kd": 0.2849216874220426,
+    "kv_p": 0.6447700317713217
+  },
+  "best_training_cost": 0.6022330651680629,
+  "n_evals": 4800,
+  "elapsed_s": 156.14,
+  "provenance": {
+    "git_commit": "8d30b3a87b839627c2b77c696ac0ab9eb1ef8bb0",
+    "git_dirty": true,
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "cma": "4.5.0",
+    "torch": "2.11.0+cu128",
+    "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU"
+  },
+  "controller": "PID, ML-tuned",
+  "backend": "torch",
+  "dtype": "float32"
+}

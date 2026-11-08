@@ -71,7 +71,25 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 
 ### Results
 
-**Current: friction and latency randomized (2026-11-06).** Run `results/lqr_comparison/20261106-154350/`, same protocol as below (GPU float32 searches, 300 unseen scenarios in float64). Robust scoring now also draws each scenario's viscous friction (0–0.001 N m s/rad), Coulomb friction (0–0.02 N m) and latency (5–20 ms in whole 2.5 ms steps). Every controller is still designed or tuned for the nominal robot's 10 ms. The weight search is torque-normalized, with only the integral weight searched (see the corner finding below). No controller fell in validation, and no search ended on a bound.
+**Current: datasheet robot (2026-11-08).** Run `results/lqr_comparison/20261108-133118/`, same protocol as the 2026-11-06 run below. The robot is now config.py's datasheet values (DATASHEET.md): the motors' reflected rotor inertia in the dynamics, a gearbox efficiency of 0.78, 0.34 N m of torque, a 0.01 rad pitch-estimate offset, and robust scoring with Coulomb friction 0.02–0.08 N m, viscous 0–0.0015 N m s/rad, rotor inertia ±50% and gear efficiency ±10%. No controller fell in validation, and no search ended on a bound.
+
+| Controller | Validation cost | vs ML PID (median per scenario) | Worst run | Effort term | Stable latency (linear) |
+|---|---:|---:|---:|---:|---|
+| PID, hand-tuned | 5.052 | 7.05x | 34.52 | 1.375 | 0-15.75 ms |
+| **PID, ML-tuned** | **0.5832** | | 1.134 | 0.418 | 0-40.50 ms |
+| LQR, cost-matched | 2.238 | 3.71x | 4.827 | 0.449 | 0-44.25 ms |
+| LQR, latency ignored | 1.664 | 2.80x | 3.357 | 0.431 | 0-36.50 ms |
+| LQR, ML-tuned weights | 0.7936 | 1.39x | 1.461 | 0.547 | 0-38.25 ms |
+| LQR, ML-tuned gains | 0.6897 | 1.18x | 1.349 | 0.486 | 0-40.25 ms |
+
+- **The ranking is unchanged:** the ML-tuned PID wins, the tuned LQR gains are 18% behind (1.18x, as before), the tuned weights 39% (1.44x before), and the cost-matched LQR 3.7x (3.70x before).
+- **Every cost is about 3.5 times higher, and effort is now the largest term** (0.42 of the tuned PID's 0.58). Holding the robot against the Coulomb friction robust scoring now draws (0.02–0.08 N m, against 0–0.02) costs torque all the time it moves: a steady 0.05 N m over 12 s alone is $9 	imes 0.05^2 	imes 12 = 0.27$. On the nominal, frictionless robot the same PID scores 0.255 (PHYSICS.md 8.2).
+- **The tuned PID got stiffer and leans on its integrator even more:** kp 1.57, ki 2.10, kd 0.285, kv_p 0.645 (from 0.66, 0.50, 0.112, 0.80). The larger friction is a larger load for the integrator to carry (PHYSICS.md 9.4), and the rotor inertia makes the robot slower, which allows more gain before the delay bites (PHYSICS.md 7.4).
+- **Tuned LQR parameters:** the integral weight settled at 15.2 per unit of torque weight (4.6 before), inside its range. The gain search scaled the cost-matched gains by 3.02 (velocity), 0.757 (pitch) and 1.59 (pitch rate). DE found that design; CMA-ES stalled at 0.902, as it did in the first run (Old table).
+- **Ignoring the latency in the design helps again** (1.66 against 2.24 for the delay-aware design), as on 2026-10-24.
+- **Latency sweeps** (60 scenarios per point): the tuned PID holds within 5% of its 10 ms cost up to 25 ms (0.61), reaches 0.78 at 30 ms and 2.26 at 40 ms with no falls (it fell 12 times at 40 ms before). The tuned LQR gains and weights fall once and 3 times at 40 ms. The cost-matched LQR is flat out to 30 ms (2.23) and survives 40 ms (2.84). The hand-tuned PID falls once at 20 ms and 15 times at 25 ms.
+
+**Earlier: friction and latency randomized (2026-11-06), robot before the datasheet update.** Run `results/lqr_comparison/20261106-154350/`, same protocol as below (GPU float32 searches, 300 unseen scenarios in float64). Robust scoring now also draws each scenario's viscous friction (0–0.001 N m s/rad), Coulomb friction (0–0.02 N m) and latency (5–20 ms in whole 2.5 ms steps). Every controller is still designed or tuned for the nominal robot's 10 ms. The weight search is torque-normalized, with only the integral weight searched (see the corner finding below). No controller fell in validation, and no search ended on a bound.
 
 | Controller | Validation cost | vs ML PID (median per scenario) | Worst run | Effort term | Stable latency (linear) |
 |---|---:|---:|---:|---:|---|

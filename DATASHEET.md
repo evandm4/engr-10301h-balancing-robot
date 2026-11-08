@@ -304,9 +304,9 @@ The split is unknown, so the realistic ranges are τ_c ≈ 0.03–0.07 N m and b
 gearmotors are usually Coulomb-dominated at low speed. PHYSICS.md 9.4 has the measurement that pins this down.
 Gearbox losses under load (the 78% efficiency) come on top of this no-load drag.
 
-**Consequence for the tuned gains:** the viscous range sits under the current gains' runaway threshold
-b < r k_p k_v = 0.018 (PHYSICS.md 9.4). But a real Coulomb load of 0.05 N m is about 2.5× the largest value the
-robustness test draws today.
+**Consequence for the tuned gains:** the viscous range sits well under the runaway threshold b < r k_p k_v
+(PHYSICS.md 9.4): 0.018 for the gains tuned before this update, 0.035 for the gains retuned on 2026-11-08. A real
+Coulomb load of 0.05 N m was about 2.5× the largest value the robustness test drew before; it now draws 0.02–0.08.
 
 ### 5.3 Reflected rotor inertia
 
@@ -366,10 +366,13 @@ or encoder velocity would add to this; a first-order filter at f_c adds about 1/
 ## 7. Findings and the config changes made
 
 In order of how much they change the robot the sim sees. **All applied on 2026-11-08** (the "Applied" line under
-each). Each one changes every score, so every run in `results/` predates the current robot and needs re-running
-(CostConfig's note on comparability applies). On the current robot the 2026-11-06 tuned PID gains score about 55
-on validation with 1 fall in 30 (0.140 before); the hand-tuned gains are unchanged at about 2.1. Turning the rotor
-inertia off alone brings the tuned gains back to about 4: it is the largest single change.
+each). Each one changes every score (CostConfig's note on comparability applies). On the current robot the
+2026-11-06 tuned PID gains score about 55 on validation with 1 fall in 30 (0.140 before): their linear loop is
+unstable at every latency. The hand-tuned gains are unchanged at about 2.1. Turning the rotor inertia off alone
+brings the 2026-11-06 gains back to about 4, so it is the largest single change. **Retuned the same day**
+(`results/batch_tuning/20261108-132528/`): kp 1.57, ki 2.10, kd 0.285, kv_p 0.645, validation cost 0.255, no falls
+in 300 unseen randomized robots, stable to 40.5 ms of latency. PHYSICS.md, LQR.md and PIVOT.md now quote the
+re-runs.
 
 1. **Rotor inertia is missing and is the largest inertia on the wheel side.** It is 2.7–6.7e-4 kg m² against the
    modelled 6.1e-5 (5.3). Implement the mass-matrix change in PHYSICS.md 10.3, with
@@ -377,10 +380,12 @@ inertia off alone brings the tuned gains back to about 4: it is the largest sing
    *Applied:* `RobotParams.rotor_inertia` in both engines and the pivot model; `ActuatorConfig.rotor_inertia`
    = 5e-7 per motor, reflected as 2 × 20.4² × 5e-7 = 4.2e-4 kg m²; randomized ±50%.
 2. **Winding resistance is 1.0 Ω, not 3.0** (about 1.25 Ω including the driver). In current mode this only moves
-   the voltage limit (more torque at speed). In **voltage mode**, the back-EMF drag
-   c_m = nN²k²/R rises from 0.0067 to **0.019 N m s/rad**, which is above the tuned gains' runaway threshold of
-   0.018 (PHYSICS.md 9.3–9.4). With this motor, closed-loop current control (the DRV8874's current sense) or exact
-   back-EMF compensation is required, not optional.
+   the voltage limit (more torque at speed). In **voltage mode**, the back-EMF drag c_m = ηnN²k²/R rises from
+   0.0067 to **0.0146 N m s/rad** (0.019 before the gearbox efficiency is counted). With the gains retuned for
+   this robot, a voltage-mode driver whose duty is capped at the torque limit makes every run fall: 0.34 N m is
+   only 2.5 V of the 7.6 V supply here, and at 0.7 m/s back-EMF eats most of it. Letting the duty reach the full
+   supply keeps the robot up at about 15 times the cost (PHYSICS.md 9.3). Closed-loop current control (the
+   DRV8874's current sense) or exact back-EMF compensation is the way to get the simulated behaviour.
    *Applied:* `resistance` 1.25 Ω, with `torque_constant` 0.0053 and `gear_ratio` 20.4.
 3. **Friction ranges are too narrow.** Suggested `randomize_range`: `coulomb_friction` 0.02–0.08 N m,
    `wheel_friction` 0–0.0015 N m s/rad (5.2). *Applied.*

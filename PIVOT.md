@@ -87,7 +87,7 @@ With the defaults that's a holding stiffness of 11.5 N m/rad (full torque at 5°
 
 The pivot angle is assumed measurable (a servo with a feedback tap, or a smart servo), with 0.5° and 0.05 rad/s of noise. A plain hobby servo reports nothing. The IMU and encoder noise is the base robot's, drawn from the same stream, so the same seed gives the same noise on those channels as a base-robot run.
 
-Not modeled: deadband, gear backlash, the servo's internal loop rate, reflected rotor inertia (fold it into `upper_inertia`), hard stops beyond the range, supply sag.
+Not modeled: deadband, gear backlash, the servo's internal loop rate, the servo's own reflected rotor inertia (fold it into `upper_inertia`; the wheel motors' rotors are modeled), hard stops beyond the range, supply sag.
 
 ## Controlling two actuators
 
@@ -123,7 +123,26 @@ Pitch error is measured from upright (config.py's `pitch_reference`), for every 
 
 ## Results so far
 
-**Current cost (2026-11-06).** From `python optimization/run_pivot_tuning.py --workers 8 --compare-held` (default budget, about 860 evaluations per search, 5 minutes on 8 cores; `results/pivot_tuning/20261106-154343/`). Validation is 30 runs on unseen noise seeds, DC motors, 10 ms latency, 50 Hz servo; no controller fell. The pivot tuner is the reference CPU tuner: nominal robot, no friction or latency randomization.
+**Current: datasheet robot (2026-11-08).** Same command and budget as below (`results/pivot_tuning/20261108-132603/`, 882 and 840 evaluations, about 2.5 minutes each on 8 cores). The wheels and wheel motors are now config.py's datasheet values (DATASHEET.md), and the dynamics include the wheel-motor rotors' reflected inertia (Equations of motion, above). The body split, servo and pivot gains are unchanged. Validation as below: 30 runs, no controller fell.
+
+| controller | kp | ki | kd | kv_p | k_level | k_phi_p | k_phi_d | validation |
+|---|---|---|---|---|---|---|---|---|
+| hand-tuned, pivot held | 4.000 | 0.500 | 0.150 | 0.100 | 0 | 0 | 0 | 2.053 |
+| hand-tuned, upper body level | 4.000 | 0.500 | 0.150 | 0.100 | 1 | 0 | 0 | 2.157 |
+| LQR | | | | | | | | 0.473 |
+| LQR, pivot held | | | | | | | | 0.466 |
+| DE, pivot active (7 gains) | 0.954 | 0.654 | 0.222 | 0.764 | 0.444 | 0.124 | 0.066 | 0.210 |
+| DE, pivot held (4 gains) | 0.793 | 0.170 | 0.178 | 0.761 | 0 | 0 | 0 | 0.182 |
+
+Every finding of the 2026-11-06 run below still holds, with these numbers:
+
+1. **The model is still close to the base robot:** hand-tuned with the pivot held scores 2.05, against 2.08 for the base robot on the same 30 runs.
+2. **The pivot still doesn't pay.** The LQR is 1.3% better with it held (0.466 against 0.473), and the 4-gain search beats the 7-gain one by 13% (0.182 against 0.210).
+3. **Keeping the upper body level costs 5.1%** (2.157 against 2.053) and halves the upper body's mean RMS tilt, from 1.6° to 0.8°.
+4. **The tuned PID still beats the untuned LQR by a wide margin** (0.182 against 0.466).
+5. **The tuned costs are about 30% higher than on the earlier robot** (0.142 to 0.182 held, 0.157 to 0.210 active; the LQR's 15%, the hand-tuned 7%), and the tuned wheel gains are stiffer (kd 0.13 to 0.18, kp 0.58 to 0.79): the rotors' inertia makes the wheels slower to accelerate, as for the base robot (PHYSICS.md 3.2). The pivot tuner still scores the nominal robot without friction, so its gains are not comparable with the base robot's robust-tuned ones.
+
+**Earlier: cost of 2026-11-06, robot before the datasheet update.** From `python optimization/run_pivot_tuning.py --workers 8 --compare-held` (default budget, about 860 evaluations per search, 5 minutes on 8 cores; `results/pivot_tuning/20261106-154343/`). Validation is 30 runs on unseen noise seeds, DC motors, 10 ms latency, 50 Hz servo; no controller fell. The pivot tuner is the reference CPU tuner: nominal robot, no friction or latency randomization.
 
 | controller | kp | ki | kd | kv_p | k_level | k_phi_p | k_phi_d | validation |
 |---|---|---|---|---|---|---|---|---|
