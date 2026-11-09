@@ -364,19 +364,36 @@ def test_gain_scaling_keeps_the_loop_stable(cfg):
     if off:
         reference[4:] *= cfg.lqr.direct_commands_scale          # the design with the commands' gains held
     np.testing.assert_allclose(scaling.reference, reference)
-    np.testing.assert_allclose(scaling(space.decode(np.full(space.dim, 0.5))[None, :])[0], reference)
+    assert space.names[-1] == "k_integral" and scaling.integral
     # Within a factor of about 1.8 of the reference: some of these stabilize the loop, some don't.
     points = decode_units(space, 0.5 + 0.1 * np.random.default_rng(0).uniform(-1, 1, (40, space.dim)))
     gains = scaling(points)
-    radii = [spectral_radius(P, LinearController.lqr(g), T, CONFIG.timing.latency_s) for g in gains]
-    assert max(radii) < 1.0
-    np.testing.assert_array_equal(gains[:, 3], 0.0)             # the integral gain is never searched
+    radii = np.array([spectral_radius(P, LinearController.lqr(g), T, CONFIG.timing.latency_s) for g in gains])
+    with_integral = gains[:, 3] != 0.0
+    assert with_integral.any()
+    assert radii.max() < 1.0
+    assert radii[with_integral].max() < cfg.lqr.direct_max_spectral_radius      # the margin holds with integral action
+    assert np.all(np.sign(gains[with_integral, 3]) == np.sign(reference[0]))   # the velocity gain's sign
     if off:                                                     # held gains stay held, even when pulled back
         np.testing.assert_array_equal(gains[:, 4:], np.broadcast_to(reference[4:], gains[:, 4:].shape))
-    # The unstable ones were pulled back toward the reference, so not every result is a pure scaling.
+    # The unstable ones were pulled back, so not every result is a pure scaling.
     searched = [0, 1, 2] if off else [0, 1, 2, 4, 5]
-    pure = [np.allclose(g[searched] / reference[searched], u) for g, u in zip(gains, points)]
+    pure = [np.allclose(g[searched] / reference[searched], u[:len(searched)]) and
+            np.isclose(abs(g[3]), u[-1]) for g, u in zip(gains, points)]
     assert 0 < sum(pure) < len(pure)
+
+
+def test_gain_scaling_rejects_a_slow_integral_mode():
+    """A tiny integral gain leaves a mode just inside the unit circle (a slow runaway in
+    practice); the margin rejects it and falls back to the reference, with no integral."""
+    scaling = CONFIG.build_direct_lqr_designer()
+    tiny = np.ones(len(scaling.scaled) + 1)
+    tiny[-1] = 1e-6
+    gain = scaling(tiny[None, :])[0]
+    np.testing.assert_allclose(gain, scaling.reference)
+    no_integral = replace(CONFIG, lqr=replace(CONFIG.lqr, direct_integral_bounds=None))
+    assert no_integral.build_direct_lqr_space().names == ["s_velocity", "s_pitch", "s_pitch_rate"]
+    assert not no_integral.build_direct_lqr_designer().integral
 
 
 def test_held_off_commands_give_a_stable_design_at_the_configured_latency():
@@ -412,9 +429,9 @@ def test_config_builds_the_lqr_controller():
 
 def test_search_spaces_drop_the_parameters_held_off():
     assert CONFIG.build_lqr_space().names == ["w_integral"]
-    assert CONFIG.build_direct_lqr_space().names == ["s_velocity", "s_pitch", "s_pitch_rate"]
+    assert CONFIG.build_direct_lqr_space().names == ["s_velocity", "s_pitch", "s_pitch_rate", "k_integral"]
     assert SEARCHED.build_lqr_space().names == ["w_pitch", "w_velocity", "w_pitch_rate", "w_integral"]
-    assert SEARCHED.build_direct_lqr_space().dim == 5
+    assert SEARCHED.build_direct_lqr_space().dim == 6
     # Fixed weights reach the design, in the right places; the torque weight is always 1.
     w = lqr_weights([30.0], CONFIG.lqr.fixed_weights)
     assert (w.pitch, w.velocity, w.pitch_rate, w.torque, w.velocity_integral) == (0.0, 0.0, 0.0, 1.0, 30.0)
