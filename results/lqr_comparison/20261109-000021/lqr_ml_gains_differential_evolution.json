@@ -1,0 +1,26 @@
+{
+  "method": "lqr_ml_gains_differential_evolution",
+  "gains": {
+    "s_velocity": 28.24914466145951,
+    "s_pitch": 0.029159194110589575,
+    "s_pitch_rate": 10.074365174868339,
+    "k_integral": 0.26808010088109063
+  },
+  "best_training_cost": 1.7776813630263009,
+  "n_evals": 4920,
+  "elapsed_s": 119.2,
+  "provenance": {
+    "git_commit": "c3defe64d9268711f90c15da48a34e64d2a5d509",
+    "git_dirty": true,
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "cma": "4.5.0",
+    "torch": "2.11.0+cu128",
+    "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU"
+  },
+  "controller": "LQR, ML-tuned gains",
+  "backend": "torch",
+  "dtype": "float32"
+}
