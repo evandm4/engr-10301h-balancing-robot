@@ -9,7 +9,7 @@ from .controllers import CascadedPIDController, Controller, PIDController, push_
 from .lqr import LQRController, LQRWeights, delayed_commands, discrete_model, lqr_gain
 from .stability import LinearController, loop_matrix, spectral_radius, stable_latency_range
 from .pid_design import model_based_pid_gains
-from .policy import (OBSERVATIONS, PolicyController, PolicySpec, load_policy, pack, pid_equivalent_weights,
+from .policy import (OBSERVATIONS, RESIDUAL_INPUTS, PolicyController, PolicySpec, load_policy, pack, pid_equivalent_weights,
                      save_policy, unpack)
 from .simulator import SimResult, simulate, steps_per_control
 from .metrics import PITCH_REFERENCES, Metrics, compute_metrics, cost, pitch_error_signal
@@ -42,6 +42,7 @@ __all__ = [
     "stable_latency_range",
     "model_based_pid_gains",
     "OBSERVATIONS",
+    "RESIDUAL_INPUTS",
     "PolicySpec",
     "PolicyController",
     "pack",

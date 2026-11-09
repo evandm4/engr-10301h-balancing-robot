@@ -23,7 +23,7 @@ import numpy as np
 
 from .controller import cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
 from .physics import rk4_step
-from .policy import PolicyMemory, policy_update, unpack_batch
+from .policy import PolicyMemory, ResidualBase, policy_update, unpack_batch
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule, per_sim_ring_size
 
@@ -86,6 +86,7 @@ def simulate_batch(
         B = n_candidates * scenarios_per_candidate
         weights = unpack_batch(spec.policy, params)
         memory = PolicyMemory.zeros(B, dtype)
+        base = ResidualBase.build(spec.policy, spec, B, dtype) if spec.policy.residual else None
         columns = ()
     else:
         if scenarios_per_candidate is not None:
@@ -138,7 +139,7 @@ def simulate_batch(
             if policy:
                 command, _, memory = policy_update(
                     spec.policy, weights, n_candidates, x_dot, theta, theta_dot, goal_per_tick[j],
-                    control_dt, memory, torque_limit,
+                    control_dt, memory, torque_limit, base=base,
                 )
             elif lqr:
                 command, velocity_integral = lqr_update(

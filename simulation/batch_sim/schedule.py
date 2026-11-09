@@ -68,6 +68,9 @@ class SimSpec:
             raise ValueError(f"controller must be one of {CONTROLLERS}, got {self.controller!r}")
         if (self.controller == "policy") != (self.policy is not None):
             raise ValueError("a PolicySpec must be given exactly when controller is 'policy'")
+        if self.policy is not None and getattr(self.policy, "residual", False) and \
+                self.pitch_reference != "upright":
+            raise ValueError("residual policies are scored with pitch_reference 'upright' only")
 
 
 @dataclass(frozen=True)

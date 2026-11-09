@@ -9,6 +9,7 @@
   * the output clip, saturation freezing the integrators, save/load;
   * the seed tiers;
   * the policy search;
+  * the residual policy (B1): zero output is the reference PID bit for bit;
   * the GPU against NumPy (skipped without torch).
 """
 
@@ -21,7 +22,7 @@ import pytest
 
 from balance_sim import (Controller, PolicyController, PolicySpec, SensorNoise, load_policy, pack,
                          pid_equivalent_weights, save_policy, step_profile, unpack)
-from balance_sim.policy import OBSERVATIONS
+from balance_sim.policy import OBSERVATIONS, RESIDUAL_INPUTS
 from batch_sim import BatchRobot, SimSpec, build_schedule, noise_table, simulate_batch
 from batch_tuning import BatchEvaluator, RobustnessConfig, cma_es_policy_search, spec_from_eval_config
 from config import CONFIG
@@ -42,7 +43,7 @@ CONFIGS = {
     "no_noise_no_latency": replace(SHORT, sensor=SensorNoise(), latency=0.0),
     "latency_between_steps": replace(SHORT, latency=0.0037),
 }
-LINEAR, MLP, WARM = (CONFIG.build_policy_spec(k) for k in ("linear", "mlp", "warm"))
+LINEAR, MLP, WARM, RESIDUAL = (CONFIG.build_policy_spec(k) for k in ("linear", "mlp", "warm", "residual"))
 MAX_TORQUE = BASE.params.max_torque
 
 
@@ -63,6 +64,21 @@ def _near_pid(spec, n, spread, seed=0):
     params = rng.normal(0.0, spread, (n, spec.n_params))
     if spec.linear_path:
         params[:, :spec.n_inputs] = _pid_linear_path(spec)
+    return params
+
+
+def _controller(config, spec, params):
+    """The reference PolicyController with config's goal and the PID limits the batch uses."""
+    sim = spec_from_eval_config(config, "policy", spec)
+    return PolicyController(spec, params, config.params.max_torque, goal=_goal(config),
+                            max_pitch_command=sim.max_pitch_command, pitch_integral_limit=sim.pitch_integral_limit,
+                            velocity_integral_limit=sim.velocity_integral_limit)
+
+
+def _zero_residual(n=1, spread=0.3, seed=0):
+    """Residual parameters with random hidden layers but a zero output layer: exactly the PID."""
+    params = np.random.default_rng(seed).normal(0.0, spread, (n, RESIDUAL.n_params))
+    params[:, -17:] = 0.0                     # output layer: 16 weights and the bias
     return params
 
 
@@ -89,6 +105,9 @@ def test_parameter_counts_match_the_plan():
     assert MLP.n_params == 481
     assert WARM.n_params == 11 + 481
     assert CONFIG.build_policy_spec("mlp", hidden=(32, 32)).n_params == 1473
+    assert RESIDUAL.n_params == 513 and RESIDUAL.input_names[-2:] == RESIDUAL_INPUTS
+    assert RESIDUAL.residual_gains == tuple(GAINS)
+    np.testing.assert_allclose(RESIDUAL.output_scale, 0.25 * MAX_TORQUE)
 
 
 def test_pack_unpack_round_trip():
@@ -111,7 +130,7 @@ def test_spec_and_simspec_validation():
 # ---- batched against the reference -------------------------------------------------------------
 
 @pytest.mark.parametrize("name", list(CONFIGS))
-@pytest.mark.parametrize("kind", ["linear", "mlp", "warm"])
+@pytest.mark.parametrize("kind", ["linear", "mlp", "warm", "residual"])
 def test_batched_trajectories_match_reference_exactly(name, kind):
     config, spec = CONFIGS[name], CONFIG.build_policy_spec(kind)
     rng = np.random.default_rng(3)
@@ -123,8 +142,7 @@ def test_batched_trajectories_match_reference_exactly(name, kind):
     S = len(scen)
     for p in range(len(params)):
         for s, (pitch, seed) in enumerate(scen):
-            run = ref.run_controller(PolicyController(spec, params[p], config.params.max_torque, goal=_goal(config)),
-                                     pitch, seed)
+            run = ref.run_controller(_controller(config, spec, params[p]), pitch, seed)
             row = p * S + s
             np.testing.assert_array_equal(result.states[:len(run.states), row], run.states)
             assert bool(result.fell[row]) == run.fell
@@ -206,6 +224,49 @@ def test_gate_b_policy_integrators_stay_within_one_percent_of_the_real_pid():
     # against the same controller as in the paper.
     train = BatchEvaluator(CONFIG.build_eval_config(), SPACE, robustness=robust).evaluate_population([GAINS])
     np.testing.assert_allclose(train.objective[0], REFERENCE_PID["train_objective"], rtol=1e-9)
+
+
+# ---- the residual policy (B1) ------------------------------------------------------------------
+
+@pytest.mark.parametrize("name", list(CONFIGS))
+def test_zero_residual_is_the_reference_pid_bit_for_bit(name):
+    """Training starts exactly at the reference PID: same trajectories, one robot and batched."""
+    config = CONFIGS[name]
+    params = _zero_residual(2)
+    ref = Evaluator(config, SPACE)
+    pid_runs = {sc: ref.run(GAINS, *sc) for sc in ref.scenarios()}
+    for sc, pid in pid_runs.items():
+        res = ref.run_controller(_controller(config, RESIDUAL, params[0]), *sc)
+        np.testing.assert_array_equal(res.states, pid.states)
+        np.testing.assert_array_equal(res.torques, pid.torques)
+    batched, scen = _batched(config, RESIDUAL, params, record=True)
+    pid_sim = spec_from_eval_config(config)
+    _, pitch, col, seeds = _flat_scenarios(config, 2)
+    schedule = build_schedule(pid_sim)
+    pid_batch = simulate_batch(pid_sim, BatchRobot.from_params(config.params, config.motor),
+                               np.tile(GAINS, (len(pitch), 1)), pitch, noise=noise_table(seeds, schedule.n_ticks),
+                               seed_index=col, schedule=schedule, record=True)
+    np.testing.assert_array_equal(batched.states, pid_batch.states)
+    np.testing.assert_array_equal(batched.cost, pid_batch.cost)
+
+
+def test_zero_residual_scores_exactly_the_pid_under_robust_scoring():
+    robust = replace(CONFIG.build_robustness(), train_seeds=(1, 2, 3))
+    pid = BatchEvaluator(SHORT, SPACE, robustness=robust).evaluate_population([GAINS])
+    res = BatchEvaluator(SHORT, SPACE, robustness=robust, controller="policy",
+                         policy=RESIDUAL).evaluate_policies(_zero_residual(1))
+    np.testing.assert_array_equal(res.costs, pid.costs)
+    assert res.objective[0] == pid.objective[0]
+
+
+def test_residual_is_bounded_by_its_authority():
+    params = np.zeros(RESIDUAL.n_params)
+    params[-1] = 50.0                                   # output bias: tanh saturates at +1
+    c = _controller(SHORT, RESIDUAL, params)
+    c.update(np.array([0.0, 0.0, 0.0, 0.0]), 0.005)
+    np.testing.assert_allclose(c.last_residual, RESIDUAL.output_scale)
+    with pytest.raises(ValueError):
+        replace(spec_from_eval_config(SHORT, "policy", RESIDUAL), pitch_reference="commanded")
 
 
 # ---- output, saturation, files -----------------------------------------------------------------
@@ -295,3 +356,14 @@ def test_torch_matches_numpy_including_chunking_and_padding():
         np.testing.assert_allclose(b.costs, a.costs, rtol=1e-9)
         np.testing.assert_array_equal(b.n_fell, a.n_fell)
     assert torch.get_float32_matmul_precision() == "highest"
+
+
+def test_torch_residual_matches_numpy():
+    torch = pytest.importorskip("torch")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    robust = replace(CONFIG.build_robustness(), train_seeds=(1, 2))
+    params = np.vstack([_zero_residual(1), np.random.default_rng(4).normal(0, 0.3, (2, RESIDUAL.n_params))])
+    a = BatchEvaluator(SHORT, SPACE, robustness=robust, controller="policy", policy=RESIDUAL).evaluate_policies(params)
+    b = BatchEvaluator(SHORT, SPACE, robustness=robust, controller="policy", policy=RESIDUAL, backend="torch",
+                       device=device).evaluate_policies(params)
+    np.testing.assert_allclose(b.costs, a.costs, rtol=1e-9)

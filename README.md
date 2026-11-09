@@ -3,11 +3,13 @@
 One config, one simulator (with a batched version of it), one tuner (with a batched version of it), one results folder.
 
 ```
-config.py                  every adjustable number (robot, motor, sensor, timing, cost, scenario, search bounds, LQR, robustness)
+config.py                  every adjustable number (robot, motor, sensor, timing, cost, scenario, search bounds, LQR, robustness,
+                           learned policies)
 simulation/
   balance_sim/             reference simulator: one robot at a time, readable, the source of truth;
                            controllers: cascaded PID and LQR (lqr.py), plus loop stability (stability.py)
-                           and a PID designed from the linear model alone (pid_design.py)
+                           and a PID designed from the linear model alone (pid_design.py);
+                           learned policies: linear, MLP, residual on the PID (policy.py)
   batch_sim/               the same simulator stepping many robots at once (NumPy on the CPU, or PyTorch on the GPU)
   examples/                demo runs with plots; physics_checks.py reproduces every number in PHYSICS.md
   animate.py               watch runs: animated side view + live plots, simulated or replayed from CSV
@@ -19,14 +21,21 @@ optimization/
   run_tuning.py            tune with the reference code
   run_batch_tuning.py      tune with the batched code (robust scoring, NumPy or GPU)
   run_lqr_comparison.py    hand-tuned, model-based and ML-tuned PID vs four LQR variants, on one score (LQR.md)
+  run_neuroevolution.py    train a learned policy with CMA-ES: linear, MLP, MLP from linear, residual on the PID
+  compare_controllers.py   score saved controllers on one evaluation tier, with run-level statistics and a latency sweep
   benchmark.py             speed of the reference code
   benchmark_batch.py       speed of the batched code
+  benchmark_policies.py    seconds per CMA-ES generation for each learned policy
   tests/                   tuner and config tests
 results/
   tuning/                  run_tuning.py output
   batch_tuning/            run_batch_tuning.py output
   lqr_comparison/          run_lqr_comparison.py output
-  benchmarks/              both benchmarks
+  neuroevolution/          run_neuroevolution.py output, one folder per method and run seed
+  comparison/              compare_controllers.py output
+  benchmarks/              the benchmarks
+scripts/                   cluster wrappers (SLURM) that only call the normal entry points
+docs/                      plans; ml-baselines-plan.md is the learned-controller plan
 archive/                   the superseded original code and its results (unused)
 ```
 
@@ -112,7 +121,7 @@ flowchart LR
 From the project folder, with `C:\venvs\balancebot` active:
 
 ```
-python -m pytest                                                     # every test (325: 24 the pivot side project, 70 the LQR), ~1.5 min
+python -m pytest                                                     # every test (394: 24 the pivot side project, 70 the LQR, 65 learned policies), ~2 min
 python simulation/examples/run_velocity_demo.py                      # one run, plotted
 python simulation/animate.py                                         # animate hand-tuned vs the latest tuning result
 python simulation/animate.py --gains 1.03 0.2 0.1 0.33 --speed 0.5   # any gains, slow motion
@@ -122,6 +131,10 @@ python optimization/run_batch_tuning.py --backend torch --float32    # batched r
 python optimization/run_lqr_comparison.py --backend torch --float32  # PID vs LQR, tuned and compared, on the GPU, ~15 min
 python optimization/benchmark.py                                     # reference speed baseline
 python optimization/benchmark_batch.py --backend torch --float32     # batched speed
+python optimization/run_neuroevolution.py --method linear            # learned linear policy, quick profile (GPU if present)
+python optimization/run_neuroevolution.py --method mlp --profile full --run-seed 3   # one of the 10 final runs
+python optimization/compare_controllers.py --tier dev --policies "L=results/neuroevolution/linear/*/final.npz"
+python optimization/benchmark_policies.py                            # time one generation of each learned policy
 ```
 
 Change the robot, the scenario, the cost or the robustness test in `config.py`, not in the scripts. It's the only place those values are written: the classes it builds (`RobotParams`, `MotorParams`, `EvalConfig`, `SimSpec`, the search space) have no defaults for them, and the tests build from `CONFIG` too.

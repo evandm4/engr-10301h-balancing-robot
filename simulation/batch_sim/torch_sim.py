@@ -29,7 +29,7 @@ import numpy as np
 
 from .controller import LQR_STATE_GAINS, cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
 from .physics import rk4_step
-from .policy import PolicyMemory, policy_update, unpack_batch
+from .policy import PolicyMemory, ResidualBase, policy_update, unpack_batch
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule, per_sim_ring_size
 from .simulate import BatchResult
@@ -67,6 +67,12 @@ class TorchSimulator:
         """
         import torch
 
+        # No TF32 anywhere: it would round float32 products to 10-bit mantissas and make GPU
+        # scores depend on the GPU generation. Matmul TF32 is already off by default; cuDNN's
+        # is on by default (nothing here uses cuDNN today, but later recurrent policies would).
+        torch.backends.cudnn.allow_tf32 = False
+        if torch.backends.cuda.matmul.allow_tf32 or torch.get_float32_matmul_precision() != "highest":
+            raise RuntimeError("TF32 matmuls are enabled; the simulators need full float32 precision")
         self.torch = torch
         self.xp = torch_ops()
         self.spec = spec
@@ -130,6 +136,11 @@ class TorchSimulator:
         self.int_v, self.int_theta = zeros(), zeros()
         self.commands = torch.zeros(4 if self.policy else 0, B, dtype=dtype, device=device)
         self.saturated = zeros(torch.bool)
+        self.base = None
+        if self.policy and spec.policy.residual:
+            g = ResidualBase.build(spec.policy, spec, B)
+            self.base = ResidualBase(tuple(tensor(c) for c in g.gains), g.max_pitch_command,
+                                     g.pitch_integral_limit, g.velocity_integral_limit)
         self.alive = zeros(torch.bool)
         self.fall_time = zeros()
         self.pitch_error, self.effort, self.velocity_error = zeros(), zeros(), zeros()
@@ -153,17 +164,22 @@ class TorchSimulator:
             theta = theta + spec.pitch_bias
             theta_dot = theta_dot + spec.pitch_rate_bias
         if self.policy:
-            memory = PolicyMemory(self.int_v, self.int_theta, list(self.commands), self.saturated)
+            memory = PolicyMemory(self.int_v, self.int_theta, list(self.commands), self.saturated,
+                                  self.pitch_integral, self.velocity_integral)
             command, _, memory = policy_update(
                 spec.policy, self.weights, self.P, x_dot, theta, theta_dot, self.goal_per_tick[self.tick],
-                spec.control_dt, memory, self.robot.max_torque, xp,
+                spec.control_dt, memory, self.robot.max_torque, xp, base=self.base,
             )
+            if self.base is not None:
+                self.pitch_integral.copy_(memory.pitch_integral)
+                velocity_integral = memory.velocity_integral
             self.int_v.copy_(memory.int_v)
             self.int_theta.copy_(memory.int_theta)
             self.saturated.copy_(memory.saturated)
             self.commands.copy_(self.torch.roll(self.commands, 1, 0))   # every command ages by a tick
             self.commands[0].copy_(command)
-            velocity_integral = self.velocity_integral
+            if self.base is None:
+                velocity_integral = self.velocity_integral
         elif self.lqr:
             command, velocity_integral = lqr_update(
                 x_dot, theta, theta_dot, self.goal_per_tick[self.tick], spec.control_dt,

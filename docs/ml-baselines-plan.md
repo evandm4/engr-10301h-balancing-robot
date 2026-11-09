@@ -1,17 +1,45 @@
 # Implementation plan: learned-controller baselines against the ML-tuned cascaded PID
 
-Status: REVISION 4, after three adversarial reviews. Phase 0 is being built.
+Status: REVISION 4, after three adversarial reviews. Phase 0 is built; L is next.
 
-Phase 0 progress (2026-11-09):
-- Done, with tests (`simulation/tests/test_policy.py`, 26 tests): the policy controller
-  (`balance_sim/policy.py`, `batch_sim/policy.py`) for L, A and A-warm; the policy path in the NumPy
-  and GPU simulators and in `BatchEvaluator.evaluate_policies`; `cma_es_policy_search`; the seed tiers
-  in `config.py` and `RobustnessConfig`; `LearningConfig` with measured observation scales. Gate (a)
-  passes at rtol 1e-9; gate (b) measures +0.68% (training) and -0.66% (60 s dev). NumPy matches the
-  reference bit for bit; the GPU matches NumPy to about 1e-15 in float64.
-- Not yet: the residual policy (B1); the generalized `LinearController` and L's linearization; the
-  comparison harness (statistics, latency sweep); the run script with checkpoints, dev scoring, run
-  profiles and resume; the throughput benchmark; cuDNN TF32 off; README and ARCHITECTURE updates.
+Phase 0 progress (2026-11-09): built and tested; only the throughput numbers below remain to be
+folded into budgets.
+- Policies: `balance_sim/policy.py` (reference) and `batch_sim/policy.py` (batched) for L, A, A-warm
+  and B1 (residual: `residual_gains` in the spec; zero output is the reference PID bit for bit, one
+  robot, batched and under robust scoring). NumPy matches the reference bit for bit; the GPU matches
+  NumPy to about 2e-15 in float64 (full 20 s runs, with the baddbmm forward pass). Gate (a) passes at rtol 1e-9; gate (b) measures +0.68% (training)
+  and -0.66% (60 s dev).
+- Residual input scales measured on 15 dev scenarios: PID setpoint peaks at 0.44 rad (scale 0.3), the
+  PID's pitch integral at 0.07 rad s (scale 0.05).
+- `stability.LinearController` takes several leaky integrators (merged when they share a leak, so
+  unused or redundant ones add no mode); `LinearController.linear_policy` is L's exact linearization.
+  The recorded PID and LQR margins reproduce exactly. L-PID: spectral radius 0.9947 (PID 0.9951),
+  stable from 0 to 37.25 ms (PID: the same).
+- `PolicySearch` (resumable CMA-ES; ES state and NumPy's RNG saved), `run_neuroevolution.py` (quick
+  and full profiles, log-spaced checkpoints plus the PID's 58.3 M budget, float64 dev scores at 60 s
+  and 20 s, stagnation stop, float32-vs-float64 check, resume, `scripts/slurm_neuroevolution.sh`).
+  A resumed run matches an uninterrupted one exactly.
+- `compare_controllers.py`: tiers with frozen ones behind `--final`, per-scenario costs and fall
+  times, crossed bootstrap, order-statistic interval, Clopper-Pearson, McNemar, the latency sweep
+  with the 4-fall rule. `run_lqr_comparison.py` is unchanged (it does not call the shared code yet).
+- TF32: cuDNN's turned off and matmul's checked in `TorchSimulator`.
+- Benchmark (`benchmark_policies.py`, RTX 5070 Ti laptop on AC, float32, full-length runs). With the
+  first GPU forward pass (elementwise, about 600 small kernels per tick for A;
+  `results/benchmarks/policies_20261109-130318.json`): A-sized MLP at population 1,332, 32 s per
+  generation; B1 39 s. Switched the GPU path to batched matrix products (`baddbmm`, as 3.1 allows;
+  NumPy keeps the fixed-order loop and its bit-identity with the reference; GPU float64 still matches
+  NumPy at rtol 1e-9). Now (`results/benchmarks/policies_20261109-131647.json`):
+
+  | Policy | Population | s per generation | hours for the full cap |
+  |---|---|---|---|
+  | L | 256 | 3.4 (the GPU's per-batch floor) | 0.9 (1.5 G robot-seconds) |
+  | A-sized (A-warm, 492 params) | 1,332 | 16.4 | 3.4 (6 G) |
+  | B1 | 1,332 | 21.0 | 4.4 (6 G) |
+
+  max_batch 400k is no better (17.7 and 19.7 s), so the default stays at 200k. 10 runs each of A,
+  A-warm and B1 to the full cap: about 110 GPU-hours, less where dev stagnation stops runs early.
+  The 4.2 estimate (11 to 15 s) holds within about 10%.
+
 Dates: drafted 2026-11-08, revised 2026-11-09 (three times). Branch: `claude/ml-alternatives-cma-es-pid-773b0d`.
 
 **Current implementation scope (decided 2026-11-09): everything up to PPO.** That is Phase 0 on

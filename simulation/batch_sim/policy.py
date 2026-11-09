@@ -21,6 +21,8 @@ import numpy as np
 
 from balance_sim.policy import N_HISTORY, PolicySpec, unpack
 
+from .controller import cascaded_update
+
 
 @dataclass
 class PolicyMemory:
@@ -28,11 +30,34 @@ class PolicyMemory:
     int_theta: object            # (B,) leaky integral of theta_meas
     history: List[object]        # N_HISTORY arrays (B,): last commands, newest first
     saturated: object            # (B,) bool: last tick's pre-clip output beyond the torque limit
+    # The base PID's integrators, for a residual policy (unused otherwise).
+    pitch_integral: object = 0.0
+    velocity_integral: object = 0.0
 
     @classmethod
     def zeros(cls, B: int, dtype=np.float64) -> "PolicyMemory":
         z = lambda: np.zeros(B, dtype=dtype)
-        return cls(z(), z(), [z() for _ in range(N_HISTORY)], np.zeros(B, dtype=bool))
+        return cls(z(), z(), [z() for _ in range(N_HISTORY)], np.zeros(B, dtype=bool), z(), z())
+
+
+@dataclass(frozen=True)
+class ResidualBase:
+    """What a residual policy's base PID needs each tick.
+
+    gains: 5 arrays (B,) [kp, ki, kd, kv_p, kv_i], the same for every simulation (cascaded_update
+    takes per-simulation gains); then the ControllerConfig limits, as in SimSpec.
+    """
+
+    gains: Tuple[object, ...]
+    max_pitch_command: float
+    pitch_integral_limit: float
+    velocity_integral_limit: float
+
+    @classmethod
+    def build(cls, spec: PolicySpec, sim_spec, B: int, dtype=np.float64) -> "ResidualBase":
+        g = list(spec.residual_gains) + [0.0] * (5 - len(spec.residual_gains))
+        return cls(tuple(np.full(B, v, dtype=dtype) for v in g), sim_spec.max_pitch_command,
+                   sim_spec.pitch_integral_limit, sim_spec.velocity_integral_limit)
 
 
 def unpack_batch(spec: PolicySpec, params, xp=np):
@@ -64,7 +89,14 @@ def forward(spec: PolicySpec, weights, x: List[object], xp=np):
     """z for every simulation. x: the policy's inputs, each (P, S), already scaled.
 
     weights: unpack_batch's result for the same P candidates. Returns (P, S).
+
+    NumPy: elementwise multiply-adds in the reference's fixed order (bit-identical to it).
+    PyTorch: batched matrix products (_forward_matmul). The elementwise loop would launch one
+    small kernel per weight per tick (about 600 for A); the products round differently, so the GPU
+    path is checked against NumPy by tolerance, as the plan allows (3.1).
     """
+    if xp is not np:
+        return _forward_matmul(weights, x)
     linear, layers = weights
     z = None
     if linear is not None:
@@ -87,13 +119,39 @@ def forward(spec: PolicySpec, weights, x: List[object], xp=np):
     return z
 
 
+def _forward_matmul(weights, x):
+    """forward() on PyTorch: a few batched matrix products per tick instead of one kernel per weight.
+
+    h (P, S, in) -> baddbmm(b, h, W^T) = (P, S, out), one product per candidate's network.
+    TorchSimulator refuses to run with TF32, so float32 products keep full precision.
+    """
+    import torch
+
+    linear, layers = weights
+    h0 = torch.stack(x, dim=-1)                            # (P, S, n_in)
+    z = None
+    if linear is not None:
+        z = torch.bmm(h0, linear.unsqueeze(-1))[..., 0]    # (P, S)
+    if layers:
+        h = h0
+        for k, (W, b) in enumerate(layers):
+            h = torch.baddbmm(b.unsqueeze(1), h, W.transpose(1, 2))
+            if k < len(layers) - 1:
+                h = torch.tanh(h)
+        out = h[..., 0]
+        z = out if z is None else z + out
+    return z
+
+
 def policy_update(spec: PolicySpec, weights, n_candidates: int,
                   measured_velocity, measured_pitch, measured_pitch_rate, goal_velocity, dt,
-                  memory: PolicyMemory, torque_limit, xp=np) -> Tuple[object, object, PolicyMemory]:
+                  memory: PolicyMemory, torque_limit, xp=np,
+                  base: Optional[ResidualBase] = None) -> Tuple[object, object, PolicyMemory]:
     """One controller tick for the whole batch.
 
     Returns (torque (B,), pre-clip output (B,), new memory). goal_velocity may be a scalar
     (the same goal for every robot this tick). torque_limit may be a number or (B,).
+    base: required for a residual spec (its PID), ignored otherwise.
     """
     B = measured_velocity.shape[0]
     P, S = n_candidates, B // n_candidates
@@ -110,10 +168,21 @@ def policy_update(spec: PolicySpec, weights, n_candidates: int,
     int_theta = integrate(memory.int_theta, measured_pitch, limit_theta)
     raw = [measured_velocity, measured_pitch, measured_pitch_rate, goal, error_v, int_v, int_theta] + \
         list(memory.history)
+    pitch_integral, velocity_integral = memory.pitch_integral, memory.velocity_integral
+    if spec.residual:
+        if base is None:
+            raise ValueError("a residual policy needs its base PID (ResidualBase)")
+        pid, setpoint, pitch_integral, velocity_integral = cascaded_update(
+            measured_velocity, measured_pitch, measured_pitch_rate, goal_velocity, dt,
+            *base.gains, memory.pitch_integral, memory.velocity_integral,
+            torque_limit, base.max_pitch_command, base.pitch_integral_limit, base.velocity_integral_limit, xp,
+        )
+        raw = raw + [setpoint, pitch_integral]
     inv = spec.inverse_scales
-    x = [(raw[i] * inv[i]).reshape(P, S) for i in spec.inputs]
-    pre = (spec.output_scale * forward(spec, weights, x, xp)).reshape(B)
+    x = [(raw[i] * inv[i]).reshape(P, S) for i in spec.input_indices]
+    z = forward(spec, weights, x, xp).reshape(B)
+    pre = pid + spec.output_scale * _tanh(z, xp) if spec.residual else spec.output_scale * z
     torque = xp.clip(pre, -torque_limit, torque_limit)
     saturated = xp.abs(pre) > torque_limit
     history = [torque] + list(memory.history[:-1])
-    return torque, pre, PolicyMemory(int_v, int_theta, history, saturated)
+    return torque, pre, PolicyMemory(int_v, int_theta, history, saturated, pitch_integral, velocity_integral)

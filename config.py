@@ -529,6 +529,26 @@ class RobustnessSettings:
 
 # -------------------------------------------------------------- LEARNING ---
 @dataclass(frozen=True)
+class RunProfile:
+    """How hard optimization/run_neuroevolution.py works (docs/ml-baselines-plan.md 9).
+
+    "quick" is for development and tests: few training seeds, dev checks on the smoke tier
+    at 20 s only, a short generation cap. "full" is for the 10 final runs per method: all 50
+    training seeds, dev checks on the development tier at 60 s (selection) and 20 s (the
+    overfitting gap), the full budgets, and a stop once the dev score has stagnated.
+    Training runs in float32 on the GPU; dev scores are float64.
+    """
+
+    name: str
+    n_train_seeds: int
+    dev_tier: str                    # "smoke" or "dev" (RobustnessSettings)
+    dev_60s: bool                    # also score the 60 s development scenario (else 20 s only)
+    max_generations: int
+    stagnation_checkpoints: int      # stop after this many checkpoints without a better dev score; 0 = never
+    float32: bool = True
+
+
+@dataclass(frozen=True)
 class LearningConfig:
     """Learned controllers (balance_sim.policy; docs/ml-baselines-plan.md): what a policy
     sees, how big it is, and how it is searched.
@@ -561,6 +581,42 @@ class LearningConfig:
     full_cma_max_params: int = 600
     linear_popsize: int = 256          # small populations sit on the GPU's per-batch floor
     mlp_popsize: int = 1332            # 2 chunks of 666 at the default max_batch
+    # Residual policy (B1): torque = clip(PID + authority * max_torque * tanh(z)), on top of the
+    # reference PID (the gains every ratio in the paper is measured against). Its two extra
+    # inputs are the PID's pitch setpoint and pitch integral. Their scales: measured 2026-11-09
+    # on 15 dev scenarios of 60 s, the setpoint peaks at 0.44 rad (the lean cap) and the
+    # PID's pitch integral at 0.07 rad s (99th percentiles 0.18 and 0.03).
+    residual_authority: float = 0.25   # 0.5 as an ablation
+    residual_setpoint_scale: float = 0.3      # rad
+    residual_int_theta_scale: float = 0.05    # rad s
+    reference_pid_file: str = "results/lqr_comparison/20261108-225341/comparison.json"
+    reference_pid_entry: str = "PID, ML-tuned"
+    # Search: initial step size per method; A-warm's linear path starts with this fraction of
+    # sigma0 (its MLP with all of it), so the first generation stays near L-best. A's and B1's
+    # hidden layers start Xavier-normal; A's output layer N(0, init_output_std); B1's and
+    # A-warm's output layers at zero (B1 starts exactly at the PID, A-warm exactly at L).
+    sigma0: Tuple[Tuple[str, float], ...] = (("linear", 2.0), ("mlp", 0.5), ("warm", 0.5), ("residual", 0.5))
+    warm_linear_std: float = 0.1
+    init_output_std: float = 0.01
+    # Budgets (robot-seconds, plan 2.6) for the full profile, and the log-spaced checkpoints
+    # at which policies are saved and dev-scored. pid_reference_evaluations is the reference
+    # PID's search (CMA-ES 4,800 + DE 4,920 candidates), scored as a checkpoint too.
+    budget_robot_seconds: Tuple[Tuple[str, float], ...] = (("linear", 1.5e9), ("mlp", 6e9), ("warm", 6e9),
+                                                          ("residual", 6e9))
+    checkpoints_robot_seconds: Tuple[float, ...] = (1e6, 3e6, 1e7, 3e7, 1e8, 3e8, 1e9, 3e9, 6e9)
+    pid_reference_evaluations: int = 9720
+    profiles: Tuple[RunProfile, ...] = (
+        RunProfile("quick", n_train_seeds=10, dev_tier="smoke", dev_60s=False, max_generations=30,
+                   stagnation_checkpoints=0),
+        RunProfile("full", n_train_seeds=50, dev_tier="dev", dev_60s=True, max_generations=100_000,
+                   stagnation_checkpoints=3),
+    )
+
+    def profile(self, name: str) -> RunProfile:
+        for p in self.profiles:
+            if p.name == name:
+                return p
+        raise ValueError(f"no run profile {name!r}; choose from {[p.name for p in self.profiles]}")
 
     @property
     def scales(self) -> Tuple[float, ...]:
@@ -749,12 +805,22 @@ class ProjectConfig:
             sensitivity_nudge=r.sensitivity_nudge_rad,
         )
 
-    def build_policy_spec(self, kind: str = "mlp", hidden: Optional[Tuple[int, ...]] = None):
+    def reference_pid_gains(self) -> Tuple[float, ...]:
+        """The reference PID's [kp, ki, kd, kv_p], read from LearningConfig.reference_pid_file."""
+        import json
+
+        with open(_ROOT / self.learning.reference_pid_file) as f:
+            return tuple(float(g) for g in json.load(f)["results"][self.learning.reference_pid_entry]["gains"])
+
+    def build_policy_spec(self, kind: str = "mlp", hidden: Optional[Tuple[int, ...]] = None,
+                          base_gains: Optional[Tuple[float, ...]] = None, authority: Optional[float] = None):
         """A balance_sim.PolicySpec for one of the plan's policies (LearningConfig settings).
 
         kind: "linear" (L: linear path only, without goal_minus_v, which v_meas and goal
-        already determine; 10 weights), "mlp" (A: MLP on all 11 inputs), or "warm"
-        (A-warm: the linear path on all 11 inputs plus the MLP).
+        already determine; 10 weights), "mlp" (A: MLP on all 11 inputs), "warm"
+        (A-warm: the linear path on all 11 inputs plus the MLP), or "residual" (B1: the MLP
+        on all 11 inputs plus the PID's setpoint and pitch integral, added to the PID with
+        base_gains, by default the reference PID's, with authority x max_torque).
         """
         from balance_sim import OBSERVATIONS, PolicySpec
 
@@ -765,12 +831,30 @@ class ProjectConfig:
             "linear": (tuple(i for i in everything if OBSERVATIONS[i] != "goal_minus_v"), (), True),
             "mlp": (everything, hidden, False),
             "warm": (everything, hidden, True),
+            "residual": (everything, hidden, False),
         }
         if kind not in shapes:
             raise ValueError(f"kind must be one of {sorted(shapes)}, got {kind!r}")
         inputs, hidden, linear = shapes[kind]
+        extra = {}
+        output_scale = l.output_scale
+        if kind == "residual":
+            authority = l.residual_authority if authority is None else authority
+            extra = dict(residual_gains=tuple(self.reference_pid_gains() if base_gains is None else base_gains),
+                         residual_scales=(l.residual_setpoint_scale, l.residual_int_theta_scale))
+            output_scale = authority * self.robot.max_torque
         return PolicySpec(inputs=inputs, hidden=hidden, linear_path=linear, scales=l.scales,
-                          output_scale=l.output_scale, t_leak=l.t_leak_s, integral_limits=tuple(l.integral_limits))
+                          output_scale=output_scale, t_leak=l.t_leak_s, integral_limits=tuple(l.integral_limits),
+                          **extra)
+
+    def build_policy_controller(self, spec, params):
+        """A balance_sim.PolicyController with this project's torque limit, goal and PID limits."""
+        from balance_sim import PolicyController
+
+        c = self.controller
+        return PolicyController(spec, params, self.robot.max_torque, goal=self.build_goal(),
+                                max_pitch_command=c.max_lean_rad, pitch_integral_limit=c.pitch_integral_limit,
+                                velocity_integral_limit=c.velocity_integral_limit)
 
     def kp_floor_robot(self) -> RobotParams:
         """The robot whose critical pitch gain sets the search's Kp floor: of every
