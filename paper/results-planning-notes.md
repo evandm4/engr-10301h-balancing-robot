@@ -54,3 +54,4 @@ Validation on 300 unseen robots and noise seeds, 60 s runs, sorted by median cos
 - [ ] Decide whether the hand-tuned PID appears in Results at all, or only in the repo
 - [ ] Optional re-run: LQR weight search with all weights free, and an LQR gain search with a guarded integral term
 - [ ] Decide whether to re-run the pivot side project on the new scenario or leave it out of the paper
+- [ ] Why the linear policy L beats the PID: constrained re-training without its command history, and with velocity only as goal minus v (docs/ml-baselines-plan.md 12.1)

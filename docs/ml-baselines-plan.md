@@ -1,9 +1,19 @@
 # Implementation plan: learned-controller baselines against the ML-tuned cascaded PID
 
-Status: REVISION 4, after three adversarial reviews. Phase 0 is built; L is next.
+Status: REVISION 4, after three adversarial reviews. Phase 0 is built and its gate passed; L's first
+full run is done (below). Next: L's other 9 run seeds, then A and A-warm.
 
-Phase 0 progress (2026-11-09): built and tested; only the throughput numbers below remain to be
-folded into budgets.
+First L run (2026-11-09, full profile, run seed 0; a development run, copied to
+`results/neuroevolution/linear/20261109-133801-seed0`, dev comparison in `results/comparison/20261109-dev-L-seed0`): converged by generation about 110 and stopped itself at 468 (CMA-ES
+tolflatfitness) after 0.72 G robot-seconds, 26 min. Training objective 1.372 against the PID's 1.572.
+On dev (60 s): median per-scenario ratio 0.870 against the ML-tuned PID, no falls, better on 149 of
+150 scenarios; ahead under all 9 cost weightings (0.80-0.90); the smoothest torque of any controller;
+linear delay margin 28 ms against the PID's 37.25. At the PID's own 58.3 M budget it was still far
+behind (dev 50.7), so the win is at full budget, not matched budget. Why it wins: section 12.1. The
+run was made with uncommitted output-path and power-logging changes (snapshot `git_dirty: true`;
+training code identical to commit dc66b36). The power log shows no throttling over 26 min unattended.
+
+Phase 0 progress (2026-11-09): built, tested, gate passed.
 - Policies: `balance_sim/policy.py` (reference) and `batch_sim/policy.py` (batched) for L, A, A-warm
   and B1 (residual: `residual_gains` in the spec; zero output is the reference PID bit for bit, one
   robot, batched and under robust scoring). NumPy matches the reference bit for bit; the GPU matches
@@ -610,3 +620,45 @@ Remaining:
    third review measured almost no difference (0.68% vs 0.72% on training).
 2. Should the residual's (B1) PID part keep the real PID's integrator, or switch to L's semantics
    for consistency with L-PID? The plan keeps the real PID so B1 starts exactly at the reference.
+
+## 12. Side tests to come back to
+
+### 12.1 Why L beats the PID: constrained re-training (noted 2026-11-09, not started)
+
+The first full L run (`results/neuroevolution/linear/20261109-133801-seed0`) beats the
+ML-tuned PID on dev (median ratio 0.870, no falls, 149 of 150 scenarios better), but with a smaller
+linear delay margin (28 ms against 37.25 ms). Its weights point to two structural differences:
+
+- **Two degrees of freedom.** The PID only sees `goal - v`, so its goal and velocity weights are
+  equal and opposite (+-1.01 N m per m/s). L weights the goal at -1.36 and measured velocity at only
+  0.07: feedforward on the goal, with drift corrected mostly by a velocity integrator about 4x the
+  PID's.
+- **A dynamic compensator.** +0.475 on its last command turns L into a filter on its own output
+  (lag / low-pass); with less pitch-rate damping (4.0 against 10.7) its torque changes half as much
+  per tick (0.014 against 0.032 N m).
+
+Knock-outs (one feature set back the PID's way, nothing re-tuned; dev, 60 s;
+`results/comparison/20261109-dev-L-seed0/l_knockouts.py`) show the features are co-adapted, so they can't
+attribute the gain:
+
+| Variant | vs PID | Falls | Stable latency up to |
+|---|---|---|---|
+| L as trained | 0.870 | 0 | 28 ms |
+| No command history | 1.024 | 2 | 36.75 ms |
+| Velocity only as `goal - v` | 1031 | 150 | unstable |
+| PID's integrator weights | 1004 | 150 | 23 ms |
+| PID's pitch-rate weight | 7.25 | 8 | 11 ms |
+| All PID-equivalent | 1.002 | 0 | 37.25 ms |
+
+The test: re-run the L search with one feature removed so the other weights re-adapt.
+
+- **L without command history** (6 weights: drop cmd_1-4): is the output filter the gain?
+- **L with velocity only as `goal - v`** (9 weights: replace v_meas and goal with goal_minus_v):
+  is the feedforward structure the gain?
+- Optional third: both removed (5 weights), which is "the PID with free integrator weights and
+  leaky integrators".
+
+Each about 25 min on the laptop GPU (full profile, one run seed). Needs an `--inputs` option in
+`run_neuroevolution.py` (a PolicySpec with a chosen input subset; `build_policy_spec` already
+builds L from a subset). Compare with `compare_controllers.py --tier dev`; never on validation.
+The outcome is a paper paragraph: the PID's handicap is structural, and which structure.

@@ -122,7 +122,7 @@ flowchart LR
 From the project folder, with `C:\venvs\balancebot` active:
 
 ```
-python -m pytest                                                     # every test (394: 24 the pivot side project, 70 the LQR, 65 learned policies), ~2 min
+python -m pytest                                                     # every test (397: 24 the pivot side project, 70 the LQR, 68 learned policies), ~2 min
 python simulation/examples/run_velocity_demo.py                      # one run, plotted
 python simulation/animate.py                                         # animate hand-tuned vs the latest tuning result
 python simulation/animate.py --gains 1.03 0.2 0.1 0.33 --speed 0.5   # any gains, slow motion
