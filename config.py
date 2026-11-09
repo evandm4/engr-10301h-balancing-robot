@@ -478,6 +478,16 @@ class RobustnessSettings:
     # they are no longer held out. 2000-2099 were fixed after the scenario, the search
     # bounds and the model-based design were frozen, and are used for nothing else.
     validation_seeds: Tuple[int, ...] = tuple(range(2000, 2100))
+    # The other evaluation tiers (docs/ml-baselines-plan.md 2.5). Smoke is the first 10 dev
+    # seeds, on purpose: both are for development. Development seeds take every
+    # hyperparameter, architecture and run-selection decision; validation and fall-rate are
+    # frozen, used once on final controllers. Seeds are never reused across tiers, and the
+    # retired sets are never used again.
+    smoke_seeds: Tuple[int, ...] = tuple(range(5000, 5010))
+    dev_seeds: Tuple[int, ...] = tuple(range(5000, 5050))
+    fall_rate_seeds: Tuple[int, ...] = tuple(range(6000, 7000))
+    retired_seeds: Tuple[int, ...] = tuple(range(100, 110)) + tuple(range(1000, 1100))
+    fresh_seed_start: int = 1_000_000  # fresh-scenario ablations draw from here up
     # (parameter, relative spread): each scenario's robot has that parameter
     # scaled by a random factor in [1 - spread, 1 + spread]. Build and datasheet
     # tolerances (DATASHEET.md 2); replace with measured spreads. Names are
@@ -517,6 +527,48 @@ class RobustnessSettings:
         return math.radians(self.sensitivity_nudge_deg)
 
 
+# -------------------------------------------------------------- LEARNING ---
+@dataclass(frozen=True)
+class LearningConfig:
+    """Learned controllers (balance_sim.policy; docs/ml-baselines-plan.md): what a policy
+    sees, how big it is, and how it is searched.
+
+    The policy sees balance_sim.policy.OBSERVATIONS: the measured state, the goal, two
+    leaky integrals, and its last 4 commands. Each is divided by a scale below so all
+    inputs are of order 1. The scales are fixed (not running statistics), so every
+    method and the float64 validation see the same numbers. Where a Bryson limit from
+    CostConfig fits it is used; the rest are the ranges the reference PID's
+    closed loop produces (measured 2026-11-09 with the PID-equivalent linear policy, 30
+    runs of the 60 s scenario: |theta_dot| peaks at 3.6 rad/s recovering from the 0.30 rad
+    start, int_v stays under 0.29 m and int_theta under 0.19 rad s).
+    """
+
+    speed_scale: float = 1.0           # m/s, for v_meas and goal (the goal reaches 1.3)
+    velocity_error_scale: float = 0.2  # m/s, CostConfig.velocity_limit
+    pitch_scale: float = 0.3           # rad, CostConfig.pitch_limit_rad
+    pitch_rate_scale: float = 3.6      # rad/s, peak recovery rate from the 0.30 rad start
+    int_v_scale: float = 0.3           # m
+    int_theta_scale: float = 0.2       # rad s
+    command_scale: float = 0.1         # N m, CostConfig.torque_limit
+    output_scale: float = 0.1          # N m per unit of network output
+    # Integrators: leaky, frozen while the previous command was saturated (plan 3.1). T_leak
+    # is fixed in advance, never chosen on any policy's results.
+    t_leak_s: float = 10.0
+    integral_limits: Tuple[float, float] = (1.0, 1.0)   # (m, rad s) safety clips, ~4x the normal range
+    hidden: Tuple[int, ...] = (16, 16)
+    # CMA-ES over policy weights: full covariance up to this many parameters, diagonal
+    # (sep-CMA) above it. 600 keeps both A (481) and B1 (513) on full CMA.
+    full_cma_max_params: int = 600
+    linear_popsize: int = 256          # small populations sit on the GPU's per-batch floor
+    mlp_popsize: int = 1332            # 2 chunks of 666 at the default max_batch
+
+    @property
+    def scales(self) -> Tuple[float, ...]:
+        """One per balance_sim.policy.OBSERVATIONS entry, in that order."""
+        return (self.speed_scale, self.pitch_scale, self.pitch_rate_scale, self.speed_scale,
+                self.velocity_error_scale, self.int_v_scale, self.int_theta_scale) + (self.command_scale,) * 4
+
+
 # --------------------------------------------------------- PUT IT TOGETHER -
 @dataclass(frozen=True)
 class ProjectConfig:
@@ -530,6 +582,7 @@ class ProjectConfig:
     search: SearchConfig = field(default_factory=SearchConfig)
     lqr: LQRConfig = field(default_factory=LQRConfig)
     robustness: RobustnessSettings = field(default_factory=RobustnessSettings)
+    learning: LearningConfig = field(default_factory=LearningConfig)
 
     # ---- builders: turn this configuration into the objects other code uses ----
 
@@ -684,6 +737,10 @@ class ProjectConfig:
         return RobustnessConfig(
             train_seeds=tuple(range(1, r.n_train_seeds + 1)),
             validation_seeds=tuple(r.validation_seeds),
+            smoke_seeds=tuple(r.smoke_seeds),
+            dev_seeds=tuple(r.dev_seeds),
+            fall_rate_seeds=tuple(r.fall_rate_seeds),
+            retired_seeds=tuple(r.retired_seeds),
             randomize=tuple(r.randomize),
             randomize_range=tuple(r.randomize_range),
             latency_range=r.latency_range_s,
@@ -691,6 +748,29 @@ class ProjectConfig:
             sensitivity_weight=r.sensitivity_weight,
             sensitivity_nudge=r.sensitivity_nudge_rad,
         )
+
+    def build_policy_spec(self, kind: str = "mlp", hidden: Optional[Tuple[int, ...]] = None):
+        """A balance_sim.PolicySpec for one of the plan's policies (LearningConfig settings).
+
+        kind: "linear" (L: linear path only, without goal_minus_v, which v_meas and goal
+        already determine; 10 weights), "mlp" (A: MLP on all 11 inputs), or "warm"
+        (A-warm: the linear path on all 11 inputs plus the MLP).
+        """
+        from balance_sim import OBSERVATIONS, PolicySpec
+
+        l = self.learning
+        everything = tuple(range(len(OBSERVATIONS)))
+        hidden = l.hidden if hidden is None else tuple(hidden)
+        shapes = {
+            "linear": (tuple(i for i in everything if OBSERVATIONS[i] != "goal_minus_v"), (), True),
+            "mlp": (everything, hidden, False),
+            "warm": (everything, hidden, True),
+        }
+        if kind not in shapes:
+            raise ValueError(f"kind must be one of {sorted(shapes)}, got {kind!r}")
+        inputs, hidden, linear = shapes[kind]
+        return PolicySpec(inputs=inputs, hidden=hidden, linear_path=linear, scales=l.scales,
+                          output_scale=l.output_scale, t_leak=l.t_leak_s, integral_limits=tuple(l.integral_limits))
 
     def kp_floor_robot(self) -> RobotParams:
         """The robot whose critical pitch gain sets the search's Kp floor: of every

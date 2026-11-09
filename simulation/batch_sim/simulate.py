@@ -23,6 +23,7 @@ import numpy as np
 
 from .controller import cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
 from .physics import rk4_step
+from .policy import PolicyMemory, policy_update, unpack_batch
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule, per_sim_ring_size
 
@@ -50,6 +51,7 @@ def simulate_batch(
     record: bool = False,
     dtype=np.float64,
     delay_steps: Optional[np.ndarray] = None,
+    scenarios_per_candidate: Optional[int] = None,
 ) -> BatchResult:
     """Simulate B robots, each with its own gains and starting tilt.
 
@@ -68,12 +70,29 @@ def simulate_batch(
                 of spec.latency. A command issued at step k reaches the motor at step
                 k + delay_steps, which is what the CPU simulator does with
                 latency = delay_steps * dt (see per_sim_ring_size).
+
+    spec.controller "policy": gains is (P, n_params), one parameter vector per network, and
+    scenarios_per_candidate S says how many simulations each runs: B = P x S, candidate-major
+    (simulations p*S .. p*S + S - 1 run network p). The (B,) inputs follow that order.
     """
     schedule = build_schedule(spec) if schedule is None else schedule
     lqr = spec.controller == "lqr"
-    gains = (lqr_gain_columns(gains) if lqr else five_gain_columns(gains)).astype(dtype)
-    B = gains.shape[0]
-    columns = tuple(gains.T)
+    policy = spec.controller == "policy"
+    if policy:
+        params = np.atleast_2d(np.asarray(gains, dtype=dtype))
+        if scenarios_per_candidate is None or scenarios_per_candidate < 1:
+            raise ValueError("a policy batch needs scenarios_per_candidate")
+        n_candidates = params.shape[0]
+        B = n_candidates * scenarios_per_candidate
+        weights = unpack_batch(spec.policy, params)
+        memory = PolicyMemory.zeros(B, dtype)
+        columns = ()
+    else:
+        if scenarios_per_candidate is not None:
+            raise ValueError("scenarios_per_candidate is only for policy batches")
+        gains = (lqr_gain_columns(gains) if lqr else five_gain_columns(gains)).astype(dtype)
+        B = gains.shape[0]
+        columns = tuple(gains.T)
     robot = robot.astype(dtype)
     torque_limit = robot.max_torque
     dt, control_dt, spc = spec.dt, spec.control_dt, schedule.steps_per_control
@@ -116,7 +135,12 @@ def simulate_batch(
             elif spec.pitch_rate_bias or spec.pitch_bias:   # deterministic, so they need no table
                 theta = theta + spec.pitch_bias
                 theta_dot = theta_dot + spec.pitch_rate_bias
-            if lqr:
+            if policy:
+                command, _, memory = policy_update(
+                    spec.policy, weights, n_candidates, x_dot, theta, theta_dot, goal_per_tick[j],
+                    control_dt, memory, torque_limit,
+                )
+            elif lqr:
                 command, velocity_integral = lqr_update(
                     x_dot, theta, theta_dot, goal_per_tick[j], control_dt,
                     columns, velocity_integral, in_flight,

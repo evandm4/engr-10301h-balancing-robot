@@ -3,6 +3,7 @@
     random_search                 same samples as the CPU version, scored in big batches
     differential_evolution_search scipy DE with vectorized=True, updating="deferred"
     cma_es_search                 CMA-ES (the `cma` package), one batch per generation
+    cma_es_policy_search          CMA-ES over a learned policy's weights (unbounded; own result type)
 
 All return the CPU code's TuningResult, so its reporting (save_result,
 best_cost_at, ...) works unchanged. Bayesian optimization isn't here: it picks
@@ -10,6 +11,7 @@ one point at a time, so batching doesn't help it.
 """
 
 import time
+from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -82,6 +84,64 @@ def differential_evolution_search(evaluator: BatchEvaluator, max_iter: int = 20,
         callback=on_generation,
     )
     return _result("differential_evolution", evaluator, result.x, result.fun, n_evals, start, history)
+
+
+@dataclass
+class PolicySearchResult:
+    """What cma_es_policy_search found. Parameters are flat policy vectors (balance_sim.policy)."""
+
+    best_params: np.ndarray      # best candidate ever scored (the start point counts)
+    best_cost: float             # its training objective
+    mean_params: np.ndarray      # CMA's distribution mean at the end (often generalizes better)
+    n_evals: int                 # candidates scored, the start point included
+    robot_seconds: float         # simulated time charged: candidates x simulations each x run length
+    elapsed_s: float
+    history: List[Tuple[int, float]]   # (n_evals, best objective so far), once per generation
+    method: str
+
+
+def cma_es_policy_search(evaluator: BatchEvaluator, x0, sigma0: float, popsize: int, max_iter: int,
+                         seed: int = 0, stds: Optional[Sequence[float]] = None,
+                         full_cma_max_params: int = 600,
+                         max_robot_seconds: Optional[float] = None) -> PolicySearchResult:
+    """CMA-ES over a policy's weights: unbounded, no unit cube (see BatchEvaluator.evaluate_policies).
+
+    x0: start point (n_params,). It is scored before the first generation and kept as the
+    best candidate unless something beats it, so a warm start can't end worse than it began.
+    stds: optional per-parameter initial standard deviations, as multiples of sigma0
+    (cma's CMA_stds), for example small on a warm-started linear path and larger on the MLP.
+    Full covariance up to full_cma_max_params parameters, diagonal (sep-CMA) above.
+    Stops after max_iter generations or once max_robot_seconds have been simulated.
+    """
+    import cma
+
+    x0 = np.asarray(x0, dtype=float)
+    n = x0.size
+    options = {"maxiter": max_iter, "seed": seed + 1, "popsize": popsize, "verbose": -9,
+               "tolx": 0, "tolfun": 0, "tolfunhist": 0, "tolstagnation": max_iter + 1,
+               "CMA_diagonal": n > full_cma_max_params}
+    if stds is not None:
+        options["CMA_stds"] = list(stds)
+    es = cma.CMAEvolutionStrategy(list(x0), sigma0, options)
+    per_eval = evaluator.simulations_per_evaluation() * evaluator.config.duration
+
+    start = time.time()
+    best_params, best_cost = x0.copy(), float(evaluator.evaluate_policies(x0[None, :]).objective[0])
+    n_evals, history = 1, [(1, best_cost)]
+    while not es.stop():
+        if max_robot_seconds is not None and (n_evals + popsize) * per_eval > max_robot_seconds:
+            break
+        candidates = np.array(es.ask())
+        costs = evaluator.evaluate_policies(candidates).objective
+        es.tell(list(candidates), costs.tolist())
+        n_evals += len(candidates)
+        i = int(np.argmin(costs))
+        if costs[i] < best_cost:
+            best_params, best_cost = candidates[i].copy(), float(costs[i])
+        history.append((n_evals, best_cost))
+    return PolicySearchResult(best_params, best_cost, np.array(es.result.xfavorite), n_evals,
+                              n_evals * per_eval, time.time() - start, history,
+                              "sep_cma_es" if options["CMA_diagonal"] else "cma_es")
 
 
 def cma_es_search(evaluator: BatchEvaluator, max_iter: int = 50, popsize: Optional[int] = None,
