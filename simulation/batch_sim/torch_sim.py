@@ -29,6 +29,7 @@ import numpy as np
 
 from .controller import LQR_STATE_GAINS, cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
 from .physics import rk4_step
+from .policy import PolicyMemory, ResidualBase, policy_update, unpack_batch
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule, per_sim_ring_size
 from .simulate import BatchResult
@@ -51,6 +52,7 @@ class TorchSimulator:
         record: bool = False,
         n_gains: Optional[int] = None,
         max_delay_steps: Optional[int] = None,
+        scenarios_per_candidate: Optional[int] = None,
     ):
         """noise: (n_ticks, 4, n_seeds) table from schedule.noise_table, or None for no random noise
         (the spec's gyro bias still applies, as in simulate_batch).
@@ -60,9 +62,17 @@ class TorchSimulator:
         LQR (spec.controller "lqr"): required, 4 + the commands in flight its gains feed back.
         max_delay_steps: give every simulation its own latency (run's delay_steps, in physics
         steps, up to this many) instead of spec.latency; None uses spec.latency for all.
+        scenarios_per_candidate: policy simulators only (spec.controller "policy"): each network
+        runs this many simulations, so batch_size must be a multiple of it (see simulate_batch).
         """
         import torch
 
+        # No TF32 anywhere: it would round float32 products to 10-bit mantissas and make GPU
+        # scores depend on the GPU generation. Matmul TF32 is already off by default; cuDNN's
+        # is on by default (nothing here uses cuDNN today, but later recurrent policies would).
+        torch.backends.cudnn.allow_tf32 = False
+        if torch.backends.cuda.matmul.allow_tf32 or torch.get_float32_matmul_precision() != "highest":
+            raise RuntimeError("TF32 matmuls are enabled; the simulators need full float32 precision")
         self.torch = torch
         self.xp = torch_ops()
         self.spec = spec
@@ -74,9 +84,17 @@ class TorchSimulator:
         self.record = record
         self.robot = robot.to_torch(device, dtype)
         self.lqr = spec.controller == "lqr"
+        self.policy = spec.controller == "policy"
         if self.lqr and (n_gains is None or n_gains < LQR_STATE_GAINS):
             raise ValueError(f"an LQR simulator needs n_gains >= {LQR_STATE_GAINS}, got {n_gains}")
-        self.n_gains = n_gains if self.lqr else 5
+        if self.policy:
+            if not scenarios_per_candidate or batch_size % scenarios_per_candidate:
+                raise ValueError("a policy simulator needs batch_size to be a multiple of scenarios_per_candidate")
+            self.S = scenarios_per_candidate
+            self.P = batch_size // scenarios_per_candidate
+        elif scenarios_per_candidate is not None:
+            raise ValueError("scenarios_per_candidate is only for policy simulators")
+        self.n_gains = spec.policy.n_params if self.policy else n_gains if self.lqr else 5
         tensor = lambda a, dt=dtype: torch.as_tensor(np.asarray(a), dtype=dt, device=device)
 
         # ---- lookup tables, indexed on the GPU by the step / tick counters ----
@@ -96,7 +114,13 @@ class TorchSimulator:
 
         # ---- per-simulation inputs, copied in before each run ----
         zeros = lambda dt=dtype: torch.zeros(B, dtype=dt, device=device)
-        self.gains = torch.zeros(self.n_gains, B, dtype=dtype, device=device)
+        if self.policy:
+            # One parameter row per network; the weights are views into it, so updating the
+            # buffer before a run updates what the captured graph reads.
+            self.gains = torch.zeros(self.P, self.n_gains, dtype=dtype, device=device)
+            self.weights = unpack_batch(spec.policy, self.gains, xp=torch)
+        else:
+            self.gains = torch.zeros(self.n_gains, B, dtype=dtype, device=device)
         self.start_pitch = zeros()
         self.seed_index = zeros(torch.long)
         self.max_delay_steps = max_delay_steps
@@ -108,9 +132,21 @@ class TorchSimulator:
         n_in_flight = self.n_gains - LQR_STATE_GAINS if self.lqr else 0
         self.in_flight = torch.zeros(n_in_flight, B, dtype=dtype, device=device)   # LQR commands in flight, oldest first
         self.ring = torch.zeros(R + 1, B, dtype=dtype, device=device)
+        # Policy memory: integrators, command history (newest first) and last tick's saturation.
+        self.int_v, self.int_theta = zeros(), zeros()
+        self.commands = torch.zeros(4 if self.policy else 0, B, dtype=dtype, device=device)
+        self.saturated = zeros(torch.bool)
+        self.base = None
+        if self.policy and spec.policy.residual:
+            g = ResidualBase.build(spec.policy, spec, B)
+            self.base = ResidualBase(tuple(tensor(c) for c in g.gains), g.max_pitch_command,
+                                     g.pitch_integral_limit, g.velocity_integral_limit)
         self.alive = zeros(torch.bool)
         self.fall_time = zeros()
         self.pitch_error, self.effort, self.velocity_error = zeros(), zeros(), zeros()
+        # Reporting only (BatchResult): torque roughness, saturation and peak pitch while up.
+        self.last_command, self.torque_variation, self.torque_rate_sq = zeros(), zeros(), zeros()
+        self.saturated_ticks, self.alive_ticks, self.peak_pitch = zeros(), zeros(), zeros()
         self.step = torch.zeros(1, dtype=torch.long, device=device)
         self.tick = torch.zeros(1, dtype=torch.long, device=device)
         self.history = (torch.zeros(s.n_steps + 1, B, 4, dtype=dtype, device=device) if record else None)
@@ -130,7 +166,24 @@ class TorchSimulator:
         elif spec.pitch_rate_bias or spec.pitch_bias:   # deterministic, so they need no table
             theta = theta + spec.pitch_bias
             theta_dot = theta_dot + spec.pitch_rate_bias
-        if self.lqr:
+        if self.policy:
+            memory = PolicyMemory(self.int_v, self.int_theta, list(self.commands), self.saturated,
+                                  self.pitch_integral, self.velocity_integral)
+            command, _, memory = policy_update(
+                spec.policy, self.weights, self.P, x_dot, theta, theta_dot, self.goal_per_tick[self.tick],
+                spec.control_dt, memory, self.robot.max_torque, xp, base=self.base,
+            )
+            if self.base is not None:
+                self.pitch_integral.copy_(memory.pitch_integral)
+                velocity_integral = memory.velocity_integral
+            self.int_v.copy_(memory.int_v)
+            self.int_theta.copy_(memory.int_theta)
+            self.saturated.copy_(memory.saturated)
+            self.commands.copy_(self.torch.roll(self.commands, 1, 0))   # every command ages by a tick
+            self.commands[0].copy_(command)
+            if self.base is None:
+                velocity_integral = self.velocity_integral
+        elif self.lqr:
             command, velocity_integral = lqr_update(
                 x_dot, theta, theta_dot, self.goal_per_tick[self.tick], spec.control_dt,
                 self.gains, self.velocity_integral, self.in_flight,
@@ -150,6 +203,13 @@ class TorchSimulator:
             self.pitch_integral.copy_(pitch_integral)
         self.velocity_integral.copy_(velocity_integral)
         self.ring.index_copy_(0, self.write_slot_per_tick[self.tick], command.unsqueeze(0))
+        torch, alive = self.torch, self.alive
+        change = command - self.last_command
+        self.torque_variation.add_(torch.where(alive, torch.abs(change), 0.0))
+        self.torque_rate_sq.add_(torch.where(alive, change * change, 0.0))
+        self.saturated_ticks.add_(torch.where(alive & (torch.abs(command) >= self.robot.max_torque), 1.0, 0.0))
+        self.alive_ticks.add_(torch.where(alive, 1.0, 0.0))
+        self.last_command.copy_(command)
         self.tick.add_(1)
 
     def _physics_step(self):
@@ -167,6 +227,7 @@ class TorchSimulator:
         # Cost terms at this sample, only for robots still up.
         x, x_dot, theta, theta_dot = self.state
         pitch_err = theta if spec.pitch_reference == "upright" else theta - self.setpoint
+        self.peak_pitch.copy_(torch.maximum(self.peak_pitch, torch.where(alive, torch.abs(theta), 0.0)))
         self.pitch_error.add_(torch.where(alive, pitch_err**2 * dt, 0.0))
         self.effort.add_(torch.where(alive, torque**2 * dt, 0.0))
         self.velocity_error.add_(torch.where(alive, (x_dot - self.goal_per_step[self.step]) ** 2 * dt, 0.0))
@@ -190,7 +251,10 @@ class TorchSimulator:
 
     def _reset(self):
         for buffer in (*self.state, self.pitch_integral, self.velocity_integral, self.setpoint, self.in_flight,
-                       self.ring, self.pitch_error, self.effort, self.velocity_error, self.step, self.tick):
+                       self.ring, self.pitch_error, self.effort, self.velocity_error, self.step, self.tick,
+                       self.int_v, self.int_theta, self.commands, self.saturated, self.last_command,
+                       self.torque_variation, self.torque_rate_sq, self.saturated_ticks, self.alive_ticks,
+                       self.peak_pitch):
             buffer.zero_()
         self.state[2].copy_(self.start_pitch)
         self.alive.fill_(True)
@@ -230,7 +294,11 @@ class TorchSimulator:
         allowed, for a simulator built with max_delay_steps).
         """
         torch, s = self.torch, self.schedule
-        if self.lqr:
+        if self.policy:
+            gains = np.atleast_2d(np.asarray(gains, dtype=float))
+            if gains.shape != (self.P, self.n_gains):
+                raise ValueError(f"policy parameters must have shape ({self.P}, {self.n_gains}), got {gains.shape}")
+        elif self.lqr:
             gains = lqr_gain_columns(gains)
             if gains.shape != (self.B, self.n_gains):
                 raise ValueError(f"LQR gains must have shape ({self.B}, {self.n_gains}), got {gains.shape}")
@@ -254,7 +322,7 @@ class TorchSimulator:
                 raise ValueError(f"robot must give per-simulation values for exactly {per_sim}, got {given}")
             for name in per_sim:
                 getattr(self.robot, name).copy_(torch.as_tensor(np.asarray(getattr(robot, name)), dtype=self.dtype))
-        self.gains.copy_(torch.as_tensor(gains.T, dtype=self.dtype))
+        self.gains.copy_(torch.as_tensor(gains if self.policy else gains.T, dtype=self.dtype))
         self.start_pitch.copy_(torch.as_tensor(np.broadcast_to(start_pitch, (self.B,)).copy(), dtype=self.dtype))
         if seed_index is not None:
             self.seed_index.copy_(torch.as_tensor(np.asarray(seed_index), dtype=torch.long))
@@ -293,4 +361,9 @@ class TorchSimulator:
             fall_time=out(self.fall_time),
             final_state=out(self.torch.stack(self.state, dim=-1)),
             states=out(self.history) if self.record else None,
+            torque_variation=out(self.torque_variation),
+            torque_rate_sq=out(self.torque_rate_sq),
+            saturated_ticks=out(self.saturated_ticks),
+            alive_ticks=out(self.alive_ticks),
+            peak_pitch=out(self.peak_pitch),
         )

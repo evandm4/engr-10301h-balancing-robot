@@ -1,0 +1,92 @@
+{
+  "rows": [
+    {
+      "method": "linear",
+      "n_params": 10,
+      "population": 256,
+      "max_batch": 200000,
+      "chunks": 1,
+      "seconds_per_generation": 3.452262200007681,
+      "microseconds_per_simulation": 44.95133072926668,
+      "robot_seconds_per_generation": 1536000.0,
+      "budget_robot_seconds": 1500000000.0,
+      "hours_for_budget": 0.9364860568597224,
+      "falls": 0
+    },
+    {
+      "method": "linear",
+      "n_params": 10,
+      "population": 256,
+      "max_batch": 400000,
+      "chunks": 1,
+      "seconds_per_generation": 3.455320200009737,
+      "microseconds_per_simulation": 44.991148437626784,
+      "robot_seconds_per_generation": 1536000.0,
+      "budget_robot_seconds": 1500000000.0,
+      "hours_for_budget": 0.9373155924505581,
+      "falls": 0
+    },
+    {
+      "method": "mlp (as warm)",
+      "n_params": 492,
+      "population": 1332,
+      "max_batch": 200000,
+      "chunks": 2,
+      "seconds_per_generation": 16.380540599988308,
+      "microseconds_per_simulation": 40.99234384381458,
+      "robot_seconds_per_generation": 7992000.0,
+      "budget_robot_seconds": 6000000000.0,
+      "hours_for_budget": 3.416028653651215,
+      "falls": 0
+    },
+    {
+      "method": "mlp (as warm)",
+      "n_params": 492,
+      "population": 1332,
+      "max_batch": 400000,
+      "chunks": 1,
+      "seconds_per_generation": 17.65096519998042,
+      "microseconds_per_simulation": 44.17158458453558,
+      "robot_seconds_per_generation": 7992000.0,
+      "budget_robot_seconds": 6000000000.0,
+      "hours_for_budget": 3.680965382044632,
+      "falls": 0
+    },
+    {
+      "method": "residual",
+      "n_params": 513,
+      "population": 1332,
+      "max_batch": 200000,
+      "chunks": 2,
+      "seconds_per_generation": 20.98064309998881,
+      "microseconds_per_simulation": 52.50411186183386,
+      "robot_seconds_per_generation": 7992000.0,
+      "budget_robot_seconds": 6000000000.0,
+      "hours_for_budget": 4.375342655152822,
+      "falls": 0
+    },
+    {
+      "method": "residual",
+      "n_params": 513,
+      "population": 1332,
+      "max_batch": 400000,
+      "chunks": 1,
+      "seconds_per_generation": 19.742848199995933,
+      "microseconds_per_simulation": 49.40652702701686,
+      "robot_seconds_per_generation": 7992000.0,
+      "budget_robot_seconds": 6000000000.0,
+      "hours_for_budget": 4.117210585584737,
+      "falls": 0
+    }
+  ],
+  "provenance": {
+    "git_commit": "84b9c7be9c247ba8f7e0cacacb6eaad847e8f2c9",
+    "git_dirty": true,
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "torch": "2.11.0+cu128",
+    "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU"
+  }
+}

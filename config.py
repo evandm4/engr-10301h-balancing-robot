@@ -479,6 +479,22 @@ class RobustnessSettings:
     """
 
     n_train_seeds: int = 50            # noise seeds 1..N scored during tuning
+    # Unseen seeds (and, through them, unseen robots) for the final validation. Seeds
+    # 1000-1099 were the validation set until 2026-11-09, but the 20 s scenario's push
+    # size and blend times were checked against those robots while it was designed, so
+    # they are no longer held out. 2000-2099 were fixed after the scenario, the search
+    # bounds and the model-based design were frozen, and are used for nothing else.
+    validation_seeds: Tuple[int, ...] = tuple(range(2000, 2100))
+    # The other evaluation tiers (docs/ml-baselines-plan.md 2.5). Smoke is the first 10 dev
+    # seeds, on purpose: both are for development. Development seeds take every
+    # hyperparameter, architecture and run-selection decision; validation and fall-rate are
+    # frozen, used once on final controllers. Seeds are never reused across tiers, and the
+    # retired sets are never used again.
+    smoke_seeds: Tuple[int, ...] = tuple(range(5000, 5010))
+    dev_seeds: Tuple[int, ...] = tuple(range(5000, 5050))
+    fall_rate_seeds: Tuple[int, ...] = tuple(range(6000, 7000))
+    retired_seeds: Tuple[int, ...] = tuple(range(100, 110)) + tuple(range(1000, 1100))
+    fresh_seed_start: int = 1_000_000  # fresh-scenario ablations draw from here up
     # Unseen seeds (and, through them, unseen robots) for the final validation. Retired
     # sets: 1000-1099 (checked against while the 20 s scenario's push and blend times were
     # sized) and 2000-2099 (results seen before the latency range was widened to 2.5 ms
@@ -526,6 +542,110 @@ class RobustnessSettings:
         return math.radians(self.sensitivity_nudge_deg)
 
 
+# -------------------------------------------------------------- LEARNING ---
+@dataclass(frozen=True)
+class RunProfile:
+    """How hard optimization/run_neuroevolution.py works (docs/ml-baselines-plan.md 9).
+
+    "quick" is for development and tests: few training seeds, dev checks on the smoke tier
+    at 20 s only, a short generation cap. "full" is for the 10 final runs per method: all 50
+    training seeds, dev checks on the development tier at 60 s (selection) and 20 s (the
+    overfitting gap), the full budgets, and a stop once the dev score has stagnated.
+    Training runs in float32 on the GPU; dev scores are float64.
+    """
+
+    name: str
+    n_train_seeds: int
+    dev_tier: str                    # "smoke" or "dev" (RobustnessSettings)
+    dev_60s: bool                    # also score the 60 s development scenario (else 20 s only)
+    max_generations: int
+    stagnation_checkpoints: int      # stop after this many checkpoints without a better dev score; 0 = never
+    float32: bool = True
+
+
+@dataclass(frozen=True)
+class LearningConfig:
+    """Learned controllers (balance_sim.policy; docs/ml-baselines-plan.md): what a policy
+    sees, how big it is, and how it is searched.
+
+    The policy sees balance_sim.policy.OBSERVATIONS: the measured state, the goal, two
+    leaky integrals, and its last 4 commands. Each is divided by a scale below so all
+    inputs are of order 1. The scales are fixed (not running statistics), so every
+    method and the float64 validation see the same numbers. Where a Bryson limit from
+    CostConfig fits it is used; the rest are the ranges the reference PID's
+    closed loop produces (measured 2026-11-09 with the PID-equivalent linear policy, 30
+    runs of the 60 s scenario: |theta_dot| peaks at 3.6 rad/s recovering from the 0.30 rad
+    start, int_v stays under 0.29 m and int_theta under 0.19 rad s).
+    """
+
+    speed_scale: float = 1.0           # m/s, for v_meas and goal (the goal reaches 1.3)
+    velocity_error_scale: float = 0.2  # m/s, CostConfig.velocity_limit
+    pitch_scale: float = 0.3           # rad, CostConfig.pitch_limit_rad
+    pitch_rate_scale: float = 3.6      # rad/s, peak recovery rate from the 0.30 rad start
+    int_v_scale: float = 0.3           # m
+    int_theta_scale: float = 0.2       # rad s
+    command_scale: float = 0.1         # N m, CostConfig.torque_limit
+    output_scale: float = 0.1          # N m per unit of network output
+    # Integrators: leaky, frozen while the previous command was saturated (plan 3.1). T_leak
+    # is fixed in advance, never chosen on any policy's results.
+    t_leak_s: float = 10.0
+    integral_limits: Tuple[float, float] = (1.0, 1.0)   # (m, rad s) safety clips, ~4x the normal range
+    hidden: Tuple[int, ...] = (16, 16)
+    # CMA-ES over policy weights: full covariance up to this many parameters, diagonal
+    # (sep-CMA) above it. 600 keeps both A (481) and B1 (513) on full CMA.
+    full_cma_max_params: int = 600
+    linear_popsize: int = 256          # small populations sit on the GPU's per-batch floor
+    mlp_popsize: int = 1332            # 2 chunks of 666 at the default max_batch
+    # Residual policy (B1): torque = clip(PID + authority * max_torque * tanh(z)), on top of the
+    # reference PID (the gains every ratio in the paper is measured against). Its two extra
+    # inputs are the PID's pitch setpoint and pitch integral. Their scales: measured 2026-11-09
+    # on 15 dev scenarios of 60 s, the setpoint peaks at 0.44 rad (the lean cap) and the
+    # PID's pitch integral at 0.07 rad s (99th percentiles 0.18 and 0.03).
+    residual_authority: float = 0.25   # 0.5 as an ablation
+    residual_setpoint_scale: float = 0.3      # rad
+    residual_int_theta_scale: float = 0.05    # rad s
+    reference_pid_file: str = "results/lqr_comparison/20261108-225341/comparison.json"
+    reference_pid_entry: str = "PID, ML-tuned"
+    # Where training runs write (run_neuroevolution.py). Not the repository: a run rewrites its
+    # search state every generation, and a synced folder (OneDrive) can lock a file mid-upload and
+    # stop the run. Copy a finished run into results/ to keep it with the code. The environment
+    # variable BALANCEBOT_TRAINING_DIR overrides this (a cluster's scratch disk); where the folder's
+    # drive doesn't exist (Linux), runs fall back to results/.
+    output_dir: Optional[str] = "C:/balancebot_training"   # forward slashes work on Windows
+    # Search: initial step size per method; A-warm's linear path starts with this fraction of
+    # sigma0 (its MLP with all of it), so the first generation stays near L-best. A's and B1's
+    # hidden layers start Xavier-normal; A's output layer N(0, init_output_std); B1's and
+    # A-warm's output layers at zero (B1 starts exactly at the PID, A-warm exactly at L).
+    sigma0: Tuple[Tuple[str, float], ...] = (("linear", 2.0), ("mlp", 0.5), ("warm", 0.5), ("residual", 0.5))
+    warm_linear_std: float = 0.1
+    init_output_std: float = 0.01
+    # Budgets (robot-seconds, plan 2.6) for the full profile, and the log-spaced checkpoints
+    # at which policies are saved and dev-scored. pid_reference_evaluations is the reference
+    # PID's search (CMA-ES 4,800 + DE 4,920 candidates), scored as a checkpoint too.
+    budget_robot_seconds: Tuple[Tuple[str, float], ...] = (("linear", 1.5e9), ("mlp", 6e9), ("warm", 6e9),
+                                                          ("residual", 6e9))
+    checkpoints_robot_seconds: Tuple[float, ...] = (1e6, 3e6, 1e7, 3e7, 1e8, 3e8, 1e9, 3e9, 6e9)
+    pid_reference_evaluations: int = 9720
+    profiles: Tuple[RunProfile, ...] = (
+        RunProfile("quick", n_train_seeds=10, dev_tier="smoke", dev_60s=False, max_generations=30,
+                   stagnation_checkpoints=0),
+        RunProfile("full", n_train_seeds=50, dev_tier="dev", dev_60s=True, max_generations=100_000,
+                   stagnation_checkpoints=3),
+    )
+
+    def profile(self, name: str) -> RunProfile:
+        for p in self.profiles:
+            if p.name == name:
+                return p
+        raise ValueError(f"no run profile {name!r}; choose from {[p.name for p in self.profiles]}")
+
+    @property
+    def scales(self) -> Tuple[float, ...]:
+        """One per balance_sim.policy.OBSERVATIONS entry, in that order."""
+        return (self.speed_scale, self.pitch_scale, self.pitch_rate_scale, self.speed_scale,
+                self.velocity_error_scale, self.int_v_scale, self.int_theta_scale) + (self.command_scale,) * 4
+
+
 # --------------------------------------------------------- PUT IT TOGETHER -
 @dataclass(frozen=True)
 class ProjectConfig:
@@ -539,6 +659,7 @@ class ProjectConfig:
     search: SearchConfig = field(default_factory=SearchConfig)
     lqr: LQRConfig = field(default_factory=LQRConfig)
     robustness: RobustnessSettings = field(default_factory=RobustnessSettings)
+    learning: LearningConfig = field(default_factory=LearningConfig)
 
     # ---- builders: turn this configuration into the objects other code uses ----
 
@@ -693,6 +814,10 @@ class ProjectConfig:
         return RobustnessConfig(
             train_seeds=tuple(range(1, r.n_train_seeds + 1)),
             validation_seeds=tuple(r.validation_seeds),
+            smoke_seeds=tuple(r.smoke_seeds),
+            dev_seeds=tuple(r.dev_seeds),
+            fall_rate_seeds=tuple(r.fall_rate_seeds),
+            retired_seeds=tuple(r.retired_seeds),
             randomize=tuple(r.randomize),
             randomize_range=tuple(r.randomize_range),
             latency_range=r.latency_range_s,
@@ -700,6 +825,72 @@ class ProjectConfig:
             sensitivity_weight=r.sensitivity_weight,
             sensitivity_nudge=r.sensitivity_nudge_rad,
         )
+
+    def training_output_root(self) -> Path:
+        """Folder training runs write under: $BALANCEBOT_TRAINING_DIR, else LearningConfig.output_dir
+        if its drive exists here, else results/ in the repository."""
+        import os
+
+        override = os.environ.get("BALANCEBOT_TRAINING_DIR")
+        if override:
+            return Path(override)
+        configured = self.learning.output_dir
+        if configured and sys.platform == "win32":
+            drive = Path(configured).drive
+            if drive and Path(drive + "\\").exists():
+                return Path(configured)
+        return _ROOT / "results"
+
+    def reference_pid_gains(self) -> Tuple[float, ...]:
+        """The reference PID's [kp, ki, kd, kv_p], read from LearningConfig.reference_pid_file."""
+        import json
+
+        with open(_ROOT / self.learning.reference_pid_file) as f:
+            return tuple(float(g) for g in json.load(f)["results"][self.learning.reference_pid_entry]["gains"])
+
+    def build_policy_spec(self, kind: str = "mlp", hidden: Optional[Tuple[int, ...]] = None,
+                          base_gains: Optional[Tuple[float, ...]] = None, authority: Optional[float] = None):
+        """A balance_sim.PolicySpec for one of the plan's policies (LearningConfig settings).
+
+        kind: "linear" (L: linear path only, without goal_minus_v, which v_meas and goal
+        already determine; 10 weights), "mlp" (A: MLP on all 11 inputs), "warm"
+        (A-warm: the linear path on all 11 inputs plus the MLP), or "residual" (B1: the MLP
+        on all 11 inputs plus the PID's setpoint and pitch integral, added to the PID with
+        base_gains, by default the reference PID's, with authority x max_torque).
+        """
+        from balance_sim import OBSERVATIONS, PolicySpec
+
+        l = self.learning
+        everything = tuple(range(len(OBSERVATIONS)))
+        hidden = l.hidden if hidden is None else tuple(hidden)
+        shapes = {
+            "linear": (tuple(i for i in everything if OBSERVATIONS[i] != "goal_minus_v"), (), True),
+            "mlp": (everything, hidden, False),
+            "warm": (everything, hidden, True),
+            "residual": (everything, hidden, False),
+        }
+        if kind not in shapes:
+            raise ValueError(f"kind must be one of {sorted(shapes)}, got {kind!r}")
+        inputs, hidden, linear = shapes[kind]
+        extra = {}
+        output_scale = l.output_scale
+        if kind == "residual":
+            authority = l.residual_authority if authority is None else authority
+            extra = dict(residual_gains=tuple(self.reference_pid_gains() if base_gains is None else base_gains),
+                         residual_scales=(l.residual_setpoint_scale, l.residual_int_theta_scale))
+            output_scale = authority * self.robot.max_torque
+        return PolicySpec(inputs=inputs, hidden=hidden, linear_path=linear, scales=l.scales,
+                          output_scale=output_scale, t_leak=l.t_leak_s, integral_limits=tuple(l.integral_limits),
+                          **extra)
+
+    def build_policy_controller(self, spec, params):
+        """A balance_sim.PolicyController with this project's torque limit, goal and PID limits."""
+        from balance_sim import PolicyController
+
+        c = self.controller
+        return PolicyController(spec, params, self.robot.max_torque, goal=self.build_goal(),
+                                max_pitch_command=c.max_lean_rad, pitch_integral_limit=c.pitch_integral_limit,
+                                velocity_integral_limit=c.velocity_integral_limit)
 
     def kp_floor_robot(self) -> RobotParams:
         """The robot whose critical pitch gain sets the search's Kp floor: of every

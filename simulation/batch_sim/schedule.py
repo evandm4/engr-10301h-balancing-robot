@@ -14,7 +14,7 @@ from typing import Callable, Optional, Sequence
 
 import numpy as np
 
-CONTROLLERS = ("cascaded", "lqr")
+CONTROLLERS = ("cascaded", "lqr", "policy")
 
 
 @dataclass(frozen=True)
@@ -42,9 +42,11 @@ class SimSpec:
     latency: float = 0.0
     # External push: force (N) on the body vs time, e.g. balance_sim.push_profile; None = no push.
     disturbance: Optional[Callable[[float], float]] = None
-    # Which controller the gains are for: "cascaded" (CascadedPIDController) or
-    # "lqr" (LQRController; its integral is capped at velocity_integral_limit).
+    # Which controller the gains are for: "cascaded" (CascadedPIDController),
+    # "lqr" (LQRController; its integral is capped at velocity_integral_limit), or
+    # "policy" (balance_sim.policy.PolicyController, shaped by `policy`).
     controller: str = "cascaded"
+    policy: Optional[object] = None         # balance_sim.policy.PolicySpec, for controller "policy" only
     # Sensor noise (standard deviations per control tick), as in SensorNoise.
     pitch_std: float = 0.0
     pitch_bias: float = 0.0
@@ -64,6 +66,11 @@ class SimSpec:
             raise ValueError(f"pitch_reference must be 'commanded' or 'upright', got {self.pitch_reference!r}")
         if self.controller not in CONTROLLERS:
             raise ValueError(f"controller must be one of {CONTROLLERS}, got {self.controller!r}")
+        if (self.controller == "policy") != (self.policy is not None):
+            raise ValueError("a PolicySpec must be given exactly when controller is 'policy'")
+        if self.policy is not None and getattr(self.policy, "residual", False) and \
+                self.pitch_reference != "upright":
+            raise ValueError("residual policies are scored with pitch_reference 'upright' only")
 
 
 @dataclass(frozen=True)

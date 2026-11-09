@@ -68,6 +68,13 @@ class RobustnessConfig:
     robot_seed: int = 0
     sensitivity_weight: float = 0.0               # 0 turns the chaos penalty (and its twin runs) off
     sensitivity_nudge: float = 1e-4               # rad: far below anything physical, far above rounding
+    # The other evaluation tiers (config.py RobustnessSettings): smoke must lie inside dev;
+    # every other pair of sets must be disjoint, and dev, validation and fall-rate must avoid
+    # the retired seeds.
+    smoke_seeds: Tuple[int, ...] = ()
+    dev_seeds: Tuple[int, ...] = ()
+    fall_rate_seeds: Tuple[int, ...] = ()
+    retired_seeds: Tuple[int, ...] = ()
 
     def __post_init__(self):
         for name, spread in self.randomize:
@@ -90,6 +97,20 @@ class RobustnessConfig:
             # Validation seeds also pick the validation robots, so an overlap would score
             # "unseen" robots that training already saw (e.g. --seeds 1000 or more).
             raise ValueError(f"train_seeds and validation_seeds overlap: {sorted(overlap)[:5]}...")
+        tiers = {"train": self.train_seeds, "validation": self.validation_seeds, "dev": self.dev_seeds,
+                 "fall_rate": self.fall_rate_seeds}
+        names = list(tiers)
+        for i, a in enumerate(names):
+            for b in names[i + 1:]:
+                both = set(tiers[a]) & set(tiers[b])
+                if both:
+                    raise ValueError(f"{a} and {b} seeds overlap: {sorted(both)[:5]}...")
+        if not set(self.smoke_seeds) <= set(self.dev_seeds):
+            raise ValueError("smoke_seeds must be a subset of dev_seeds")
+        for name in ("validation", "dev", "fall_rate"):
+            reused = set(tiers[name]) & set(self.retired_seeds)
+            if reused:
+                raise ValueError(f"{name} seeds include retired seeds: {sorted(reused)[:5]}...")
         if self.sensitivity_weight < 0 or self.sensitivity_nudge <= 0:
             raise ValueError("sensitivity_weight must be >= 0 and sensitivity_nudge > 0")
 
