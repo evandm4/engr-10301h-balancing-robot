@@ -2,7 +2,7 @@
 
 from collections import deque
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 
@@ -23,11 +23,12 @@ class SimResult:
     pitch_reference: Optional[np.ndarray] = None  # (N,) pitch the controller was asking for (rad)
 
 
-def _rk4_step(dynamics: Dynamics, state: np.ndarray, torque: float, dt: float) -> np.ndarray:
-    k1 = dynamics.derivatives(state, torque)
-    k2 = dynamics.derivatives(state + 0.5 * dt * k1, torque)
-    k3 = dynamics.derivatives(state + 0.5 * dt * k2, torque)
-    k4 = dynamics.derivatives(state + dt * k3, torque)
+def _rk4_step(dynamics: Dynamics, state: np.ndarray, torque: float, dt: float, *push) -> np.ndarray:
+    """push: nothing, or the external force (N) held over the step, for dynamics that take one."""
+    k1 = dynamics.derivatives(state, torque, *push)
+    k2 = dynamics.derivatives(state + 0.5 * dt * k1, torque, *push)
+    k3 = dynamics.derivatives(state + 0.5 * dt * k2, torque, *push)
+    k4 = dynamics.derivatives(state + dt * k3, torque, *push)
     return state + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
 
@@ -52,6 +53,7 @@ def simulate(
     control_dt: Optional[float] = None,
     sensor: Optional[SensorNoise] = None,
     latency: float = 0.0,
+    disturbance: Optional[Callable[[float], float]] = None,
 ) -> SimResult:
     """Run one simulation.
 
@@ -67,6 +69,10 @@ def simulate(
                 delay lumped together). On top of the hold set by control_dt.
                 Applied at the first physics step at or after it is due, so a
                 latency between steps is rounded up to the next one.
+    disturbance if given, an external push: force (N) vs time, e.g.
+                balance_sim.push_profile. It is held constant over each physics
+                step at its value at the step's start (Planar2D applies it at
+                the body's center of mass).
     The run stops early if the dynamics reports the robot has fallen.
     """
     if latency < 0:
@@ -95,7 +101,8 @@ def simulate(
             torque = pending.popleft()[1]
         torques.append(torque)
         references.append(controller.pitch_reference())
-        state = _rk4_step(dynamics, state, torque, dt)
+        push = () if disturbance is None else (disturbance(t),)
+        state = _rk4_step(dynamics, state, torque, dt, *push)
         ts.append((k + 1) * dt)
         states.append(state.copy())
         if dynamics.is_fallen(state):

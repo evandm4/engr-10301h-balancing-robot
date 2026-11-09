@@ -4,10 +4,10 @@ This document derives every equation in the simulator from first principles. For
 
 All numbers use the robot defined in `config.py`. Since 2026-11-08 that is the datasheet robot ([DATASHEET.md](DATASHEET.md)): real motor, wheel and battery constants, the motors' rotor inertia in the equations of motion (2.2), a gearbox efficiency (4.2) and a pitch-estimate offset (5.1). Two sets of gains appear throughout:
 
-- **Tuned:** the 2026-11-08 CMA-ES result in `results/batch_tuning/20261108-132528/`: $k_p = 1.567$, $k_i = 2.101$, $k_d = 0.285$, $k_v = 0.645$. It was tuned for this robot and the Bryson-rule cost, with friction, latency, rotor inertia and the other parameters randomized.
+- **Tuned:** the 2026-11-08 CMA-ES result in `results/batch_tuning/20261108-153813/`: $k_p = 1.635$, $k_i = 1.766$, $k_d = 0.299$, $k_v = 0.620$. It was tuned for this robot, the Bryson-rule cost and the 20 s scenario with pushes (`ScenarioConfig`, whose docstring justifies each element), with friction, latency, rotor inertia and the other parameters randomized.
 - **Hand-tuned:** `ControllerConfig.hand_tuned_gains`: $k_p = 4.0$, $k_i = 0.5$, $k_d = 0.15$, $k_v = 0.1$.
 
-Several sections also show the 2026-11-06 set ($k_p = 0.660$, $k_i = 0.498$, $k_d = 0.1115$, $k_v = 0.796$), tuned for the robot as it was configured before the datasheet update, to show what the realistic constants change. Numbers for that earlier robot are in this document's git history (commit 944ec30).
+Several sections also show the 2026-11-06 set ($k_p = 0.660$, $k_i = 0.498$, $k_d = 0.1115$, $k_v = 0.796$), tuned for the robot as it was configured before the datasheet update, to show what the realistic constants change. Numbers for that earlier robot are in this document's git history (commit 944ec30). Numbers for the earlier 12 s scenario, and the gains tuned on it ($k_p = 1.567$, $k_i = 2.101$, $k_d = 0.285$, $k_v = 0.645$), are in commit c6b6ffc; 8.2 keeps its cost table as a record.
 
 Here $k_v$ is the code's `kv_p`. Every number quoted is printed by
 
@@ -24,7 +24,7 @@ whose output is labeled with this document's section numbers. It takes about 20 
 3. [Linearization](#3-linearization)
 4. [Actuator model](#4-actuator-model-actuatorspy) (`actuators.py`)
 5. [Sensor model](#5-sensor-model-sensorspy) (`sensors.py`)
-6. [Controller](#6-controller-controllerspy) (`controllers.py`)
+6. [Controller](#6-controller-controllerspy) (`controllers.py`, `pid_design.py`)
 7. [Time stepping, timing and delay](#7-time-stepping-timing-and-delay-simulatorpy) (`simulator.py`)
 8. [Cost function and robust scoring](#8-cost-function-and-robust-scoring-metricspy-robustpy) (`metrics.py`, `robust.py`)
 9. [Checking the assumptions against simulated runs](#9-checking-the-assumptions-against-simulated-runs)
@@ -35,22 +35,22 @@ whose output is labeled with this document's section numbers. It takes about 20 
 
 **What checks out:**
 
-- **The equations of motion are correct.** Two independent derivations (Lagrange and Newton–Euler) agree, and both match `Planar2D.derivatives` term for term, rotor inertia included. The mass matrix is invertible at every pitch angle (proof in 2.5). Energy is conserved without torque and friction, and otherwise changes by exactly the work the motor and friction do (to $9.5\times10^{-9}$ J).
+- **The equations of motion are correct.** Two independent derivations (Lagrange and Newton–Euler) agree, and both match `Planar2D.derivatives` term for term, rotor inertia included. The mass matrix is invertible at every pitch angle (proof in 2.5). Energy is conserved without torque and friction, and otherwise changes by exactly the work the motor and friction do (to $1.1\times10^{-8}$ J).
 - **`critical_pitch_gain` is exact:** on the linearized robot, below it no choice of the other gains can hold the robot up (3.4). The integrator (RK4) shows its expected 4th-order convergence (7.1).
 
 **What the derivations explain:**
 
 - **The robot has an unstable pole at 8.44 rad/s and a right-half-plane zero at 6.74 rad/s** (3.2, 3.3). To speed up it must first roll backward, and the simulator does exactly that.
 - **The motors' rotors dominate the wheel side.** Seen through the 20.4:1 gearboxes they add $J/r^2 = 0.34$ kg to the robot's effective translating mass, against 0.018 kg for the wheels' own spin (1). That slows the unstable pole to 8.4 rad/s, against 10.6 with the same body and wheels but no rotors (13.1 for the robot before 2026-11-08), and it is why the gains tuned before 2026-11-08 are unstable on this robot at any latency (7.4).
-- **New closed-form result (6.3):** the cascaded controller's characteristic polynomial gives a ceiling on the outer-loop gain: $k_v < (c/e)\,(k_d/k_p)$. This explains why outer gains above about 0.23 oscillate with the hand-tuned inner loop. The tuned inner loop has $k_d/k_p = 0.182$ s, so its ceiling is 0.921, and the tuned $k_v = 0.645$ is below it.
-- **An exact discrete-time analysis gives each controller's delay margin** (7.4). The tuned gains tolerate 40.75 ms of latency; the hand-tuned ones tolerate 16 ms. The nonlinear simulator confirms both to within 1 ms.
+- **New closed-form result (6.3):** the cascaded controller's characteristic polynomial gives a ceiling on the outer-loop gain: $k_v < (c/e)\,(k_d/k_p)$. This explains why outer gains above about 0.23 oscillate with the hand-tuned inner loop. The tuned inner loop has $k_d/k_p = 0.183$ s, so its ceiling is 0.954, and the tuned $k_v = 0.620$ is below it.
+- **An exact discrete-time analysis gives each controller's delay margin** (7.4). The tuned gains tolerate 37.5 ms of latency; the hand-tuned ones tolerate 16 ms. The nonlinear simulator confirms both to within 1 ms.
 
 **What could break on hardware**, in order of severity (Section 9):
 
-1. **The motor driver.** The model assumes the driver delivers the commanded current. If the real driver instead sets PWM duty in proportion to the torque command, capped at the 0.34 N m torque limit, every gain set falls in 30 of 30 runs: with this 1.25 Ω motor the cap is only 2.5 V of the 7.6 V supply, and at 0.7 m/s back-EMF eats most of it. Letting the duty reach the full supply keeps the tuned gains up at 15 times the cost (0.255 to 3.76) (9.3).
+1. **The motor driver.** The model assumes the driver delivers the commanded current. If the real driver instead sets PWM duty in proportion to the torque command, capped at the 0.34 N m torque limit, every gain set falls in 30 of 30 runs: with this 1.25 Ω motor the cap is only 2.5 V of the 7.6 V supply, and at 0.7 m/s back-EMF eats most of it (the scenario cruises at 1.3 m/s). Letting the duty reach the full supply keeps the tuned gains up at 33 times the cost (0.783 to 25.6), and the hand-tuned gains still fall in every run (9.3).
 2. **Friction.** Its size is unmeasured; the robust-scoring ranges come from the motors' free-run current (DATASHEET.md 5.2). Any load torque pushes the speed up by $\tau_L/(k_pk_v)$ until the integrator takes it over (9.4). The tuned gains' $k_pk_v$ gives a runaway threshold of 0.035 N m s/rad, 23 times the largest viscous friction scored.
-3. **The IMU model.** It is idealized: a raw accelerometer tilt estimate would be off by up to 42° (tuned) or 52° (hand-tuned) during these transients.
-4. **Traction.** The no-slip assumption needs a friction coefficient of 0.39 for the tuned gains and 0.52 for the hand-tuned ones.
+3. **The IMU model.** It is idealized: a raw accelerometer tilt estimate would be off by up to 50° (tuned) or 52° (hand-tuned) during these transients.
+4. **Traction.** The no-slip assumption needs a friction coefficient of 0.54 for the tuned gains and 0.68 for the hand-tuned ones.
 
 ---
 
@@ -266,7 +266,7 @@ Equating the two expressions for $F$ gives exactly (E1).
 N = (M + m_w)\,g - Ml\bigl(\sin\theta\,\ddot\theta + \cos\theta\,\dot\theta^2\bigr).
 ```
 
-*Numerical check (9.1–9.5 output):* along all 30 validation runs, the Lagrange and Newton–Euler expressions for $F$ agree to $9\times10^{-15}$ N.
+*Numerical check (9.1–9.5 output):* along all 30 validation runs, the Lagrange and Newton–Euler expressions for $F$ agree to $8\times10^{-15}$ N.
 
 ### 2.7 Energy and power balance
 
@@ -282,7 +282,7 @@ Three consequences:
 2. Friction only removes energy, since $-b\omega^2 \le 0$. `test_friction_dissipates_energy` checks this.
 3. The motor's mechanical power is $\tau\omega$, so the speed the actuator must be asked about is the relative speed $\omega$. That is why `Actuator.torque` takes `relative_wheel_speed`.
 
-*Numerical check (2.7 output):* one 10 s closed-loop run with $b = 0.001$. The energy change of 0.130386 J (rotor energy included) matches the integrated power of 0.130386 J; the difference is $9.5\times10^{-9}$ J.
+*Numerical check (2.7 output):* one 10 s closed-loop run with $b = 0.001$. The energy change of 1.012850 J (rotor energy included) matches the integrated power of 1.012850 J; the difference is $1.1\times10^{-8}$ J.
 
 ### 2.8 Equilibria, and lean versus acceleration
 
@@ -359,10 +359,10 @@ z = \sqrt{\frac{Mgl}{d + b_0r}} = 6.74\ \text{rad/s}.
 
 The zero at $+z$ is in the right half plane, which makes position and velocity **non-minimum-phase**. To accelerate forward the robot must lean forward, and the only way to tip the body forward is to drive the wheels backward under it first. So a step up in goal velocity starts with motion the wrong way.
 
-The simulator shows this (3 output, tuned gains, seed 100). The goal now blends smoothly over 2.5 s, so the effect is small:
+The simulator shows this (3 output, tuned gains, seed 100). The goal blends smoothly (over 1.6 s and 3 s for these two changes), so the effect is small:
 
-- **Goal 0 → 1.0 m/s, starting at t = 2 s:** velocity goes from −0.008 to −0.040 m/s within 0.3 s before rising.
-- **Goal 0 → −0.6 m/s, starting at t = 6 s:** velocity first rises from 0.010 to 0.018 m/s within 0.4 s.
+- **Goal 0 → 1.3 m/s, starting at t = 2 s:** velocity goes from −0.010 to −0.071 m/s within 0.4 s before rising.
+- **Goal 1.3 → −0.5 m/s, starting at t = 9.5 s:** velocity first rises from 1.290 to 1.318 m/s within 0.4 s.
 
 The RHP zero is a fundamental limit on velocity control (6.2).
 
@@ -406,13 +406,13 @@ The Routh–Hurwitz conditions for stability are $k_d > 0$, $k_i > 0$, and
 k_p > k_{p,\text{crit}} + \frac{\Delta_0\,k_i}{c\,k_d}.
 ```
 
-So $k_{p,\text{crit}}$ is necessary but not sufficient. The bound is 0.3289 for the tuned gains and 0.3120 for the hand-tuned ones.
+So $k_{p,\text{crit}}$ is necessary but not sufficient. The bound is 0.3228 for the tuned gains and 0.3120 for the hand-tuned ones.
 
 The continuous-time pitch-loop poles, ignoring sampling and delay, are:
 
 | Gains | Poles (rad/s) | $k_p / k_{p,\text{crit}}$ |
 |---|---|---|
-| Tuned | −63.4, −2.33 ± 1.58j | 5.3 |
+| Tuned | −66.6, −2.35 ± 0.90j | 5.5 |
 | Hand-tuned | −17.9 ± 23.7j, −0.14 | 13.4 |
 | Tuned 2026-11-06 (earlier robot's gains) | −23.1, −1.76 ± 1.43j | 2.2 |
 
@@ -479,7 +479,7 @@ The low-resistance winding keeps the full current-limited torque up to 1.65 m/s 
 | 1.4 m/s | 4.32 V | 0.337 N m |
 | 2.0 m/s | 6.18 V | 0.192 N m (57% of stall) |
 
-The scenario's largest goal is 1.0 m/s, and the tuned runs peak at 0.81 m/s (hand-tuned 0.64 m/s), well below the corner (9.1–9.5 output). So back-EMF never binds in this scenario. The motor delivers less than the clipped command 0.00% of the time (tuned) and 0.15% (hand-tuned); those are the moments the hand-tuned gains ask for the full 0.34 N m, 0.003 N m above the current-limited 0.337.
+The scenario cruises at 1.3 m/s, 79% of the corner speed, chosen as the highest speed at which every randomized motor still has the torque that lean-cap acceleration needs (`ScenarioConfig`). The tuned runs peak at 1.69 m/s while recovering from the forward push (hand-tuned 1.39 m/s; 9.1–9.5 output), so on the nominal robot back-EMF binds only briefly. On the weakest randomized motors (corner 1.16 m/s) it binds through the whole cruise. The motor delivers less than the clipped command 0.08% of the time (tuned) and 0.81% (hand-tuned).
 
 ### 4.5 Ideal actuator and friction
 
@@ -517,7 +517,7 @@ The controller (Section 6) gives torque sensitivities $\partial\tau/\partial\hat
 \sigma_\tau = \sqrt{(k_p\sigma_\theta)^2 + (k_d\sigma_{\dot\theta})^2 + (k_pk_v\sigma_v)^2}.
 ```
 
-This is 0.0224 N m (6.6% of $\tau_{\max}$) for the tuned gains, and 0.0217 N m (6.4%) for the hand-tuned ones (5 output). The two are now about equally noisy. The tuned controller's lower $k_p$ removes most of the pitch noise (0.0078 against 0.0200 N m), but its larger $k_pk_v$ makes the velocity term dominate (0.0202 against 0.0080 N m).
+This is 0.0227 N m (6.7% of $\tau_{\max}$) for the tuned gains, and 0.0217 N m (6.4%) for the hand-tuned ones (5 output). The two are now about equally noisy. The tuned controller's lower $k_p$ removes most of the pitch noise (0.0082 against 0.0200 N m), but its larger $k_pk_v$ makes the velocity term dominate (0.0203 against 0.0080 N m).
 
 ### 5.3 Gyro bias in steady state
 
@@ -529,7 +529,7 @@ At constant velocity, (E1) and (E2) with $\ddot x = \ddot\theta = 0$ force $\tau
 v_{\text{goal}} - v = \frac{k_d\,b_g}{k_p\,k_v},
 ```
 
-which is 2.8 mm/s for the tuned gains.
+which is 2.9 mm/s for the tuned gains.
 
 **With $k_i > 0$.** The integrator stops moving only when $\hat\theta - \theta_{\text{sp}} = 0$, which (with $b_\theta = 0$) forces $\theta_{\text{sp}} = 0$ and therefore $v = v_{\text{goal}}$. The integrator settles at $-k_db_g/k_i$, well inside its limit. Integral action rejects the gyro bias completely.
 
@@ -539,7 +539,7 @@ which is 2.8 mm/s for the tuned gains.
 v_{\text{goal}} - v = \frac{b_\theta}{k_v},
 ```
 
-which is 15.5 mm/s for the tuned gains and 0.10 m/s for the hand-tuned ones (5 output). Only an integral on the velocity error (`kv_i`, 0 in this project) or calibrating the offset out would remove it. The torque it costs is small ($k_pb_\theta = 0.016$ N m, tuned), but the steady velocity error enters the cost directly.
+which is 16.1 mm/s for the tuned gains and 0.10 m/s for the hand-tuned ones (5 output). Only an integral on the velocity error (`kv_i`, 0 in this project) or calibrating the offset out would remove it. The torque it costs is small ($k_pb_\theta = 0.016$ N m, tuned), but the steady velocity error enters the cost directly.
 
 Section 9.5 covers what this sensor model leaves out.
 
@@ -571,7 +571,7 @@ u_k = \operatorname{clip}\bigl(k_p e_k + k_i I_k + k_d\hat{\dot\theta}_k,\ \pm\t
 
 | Gains | $\omega_v$ | Time constant |
 |---|---|---|
-| Tuned | 4.61 rad/s | 0.22 s |
+| Tuned | 4.43 rad/s | 0.23 s |
 | Hand-tuned | 0.71 rad/s | 1.40 s |
 
 Two things cap $\omega_v$:
@@ -579,7 +579,7 @@ Two things cap $\omega_v$:
 1. The outer loop must stay well below the inner loop's speed.
 2. The RHP zero at $z = 6.74$ rad/s: a standard rule of thumb keeps bandwidth below $z/2 = 3.37$ rad/s (Skogestad & Postlethwaite, ch. 5).
 
-The tuned estimate (4.61 rad/s) is above that rule of thumb, so the first-order picture is optimistic for the tuned gains. The exact poles in 6.3 show an oscillatory pair at $-2.87 \pm 8.77j$ rad/s and a slow pole at $-1.17$ rad/s (and a fast one at $-23.1$), not a single lag.
+The tuned estimate (4.43 rad/s) is above that rule of thumb, so the first-order picture is optimistic for the tuned gains. The exact poles in 6.3 show an oscillatory pair at $-3.37 \pm 7.98j$ rad/s and a slow pole at $-0.98$ rad/s (and a fast one at $-25.5$), not a single lag.
 
 The lean cap also bounds acceleration at 3.24 m/s² (2.8). There is no position loop, so position is free to drift.
 
@@ -601,7 +601,7 @@ Substitute into $asV + b_0s^2\Theta = T/r$ and $b_0sV + (ds^2 - Mgl)\Theta = -T$
 e = \frac{d}{r} + b_0 = 0.494\ \text{kg m},\qquad h = \frac{Mgl}{r} = 22.4\ \text{N}.
 ```
 
-Two checks: with $k_v = 0$ this reduces to $s$ times the pitch-loop polynomial of 3.5, and its roots match the eigenvalues of the closed-loop state matrix to $3\times10^{-14}$ (6.3 output).
+Two checks: with $k_v = 0$ this reduces to $s$ times the pitch-loop polynomial of 3.5, and its roots match the eigenvalues of the closed-loop state matrix to $9\times10^{-14}$ (6.3 output).
 
 **Every coefficient must be positive.** The $s^3$ coefficient gives a simple necessary condition:
 
@@ -614,7 +614,7 @@ The velocity feedback reaches the torque as $k_pk_v v$ and acts through the non-
 | Inner loop | $k_d/k_p$ | Bound $(c/e)(k_d/k_p)$ | Exact Routh–Hurwitz limit on $k_v$ |
 |---|---|---|---|
 | Hand-tuned (4, 0.5, 0.15) | 0.0375 s | 0.238 | 0.226 |
-| Tuned (1.567, 2.101, 0.285) | 0.182 s | 1.155 | 0.921 |
+| Tuned (1.635, 1.766, 0.299) | 0.183 s | 1.159 | 0.954 |
 
 The nonlinear simulator confirms the hand-tuned limit. With the hand-tuned inner loop and no latency:
 
@@ -623,7 +623,7 @@ The nonlinear simulator confirms the hand-tuned limit. With the hand-tuned inner
 
 That is `CONDITIONS.md`'s empirical observation, "outer gains much above Kv_p of about 0.25 oscillate", now derived (on the earlier robot the limit was 0.295, and above it the robot went into a limit cycle instead of falling).
 
-**What this says about the tuner's result.** Velocity tracking is half of the nominal cost (8.2), so the tuner wants a large $k_v$. With the hand-tuned inner loop, $k_v$ is capped near 0.23, and with the 10 ms latency even $k_v = 0.2$ is unstable (7.4). The tuner cut $k_p$ from 4 to 1.57 and raised $k_d$ from 0.15 to 0.285, so $k_d/k_p$ went from 0.0375 to 0.182 s. That lifts the Routh–Hurwitz ceiling on $k_v$ to 0.921, and the tuned $k_v = 0.645$ sits below it. The delay margin peaks near $k_v = 0.7$ (7.4), and the tuned value is close to that peak. This explains the direction of the change; it does not prove the optimum is unique.
+**What this says about the tuner's result.** Velocity tracking is half of the nominal cost (8.2), so the tuner wants a large $k_v$. With the hand-tuned inner loop, $k_v$ is capped near 0.23, and with the 10 ms latency even $k_v = 0.2$ is unstable (7.4). The tuner cut $k_p$ from 4 to 1.64 and raised $k_d$ from 0.15 to 0.299, so $k_d/k_p$ went from 0.0375 to 0.183 s. That lifts the Routh–Hurwitz ceiling on $k_v$ to 0.954, and the tuned $k_v = 0.620$ sits below it. The delay margin peaks near $k_v = 0.7$ (7.4), and the tuned value is close to that peak. This explains the direction of the change; it does not prove the optimum is unique.
 
 ### 6.4 Anti-windup (`_limited_integral`, `controllers.py:14-51`)
 
@@ -645,6 +645,15 @@ That is `CONDITIONS.md`'s empirical observation, "outer gains much above Kv_p of
 3. The integral term alone never asks for more than the actuator can deliver.
 
 This is conditional integration (clamping), one of the standard anti-windup schemes (Åström & Hägglund). The outer loop uses the same function with the lean cap as its $u_{\max}$.
+
+### 6.5 A model-based design: what the textbook method gives (`pid_design.py`)
+
+The analysis above also gives a way to design the cascade without simulation, the model-based baseline (`ProjectConfig.model_based_gains`, `ControllerConfig.design_*`). Placing all four poles of the quartic is not possible: its coefficients are coupled through $k_pk_v$ and $k_ik_v$, and for typical targets no positive $k_v$ solves them. The textbook sequential method is used instead:
+
+1. **Inner loop:** the pitch-loop cubic of 3.5 has three gains for three poles. They go at a critically damped pair at $2p = 16.9$ rad/s plus an integral pole at a tenth of that.
+2. **Outer loop:** $k_v$ sets the first-order velocity bandwidth $Gk_v$ (6.2) to $z/3 = 2.2$ rad/s.
+
+This gives $k_p = 1.729$, $k_i = 2.012$, $k_d = 0.148$, $k_v = 0.314$: $k_p$ and $k_i$ are close to the tuned values, but $k_d$ and $k_v$ are each about half. By 7.4's analysis (`stability.stable_latency_range`) the sampled, delayed loop is stable from 0 to 23.75 ms. The more aggressive standard choices fail, as 6.3 predicts: with $Gk_v = z/2$ the cascade is unstable even without delay, and an underdamped inner pair ($\zeta = 0.707$, at $z/3$) is unstable at 10 ms. `test_pid_design.py` checks the pole placement, the bandwidth and both stability claims. On the 300 held-out robots (LQR.md) its median cost per scenario is 1.36 times the tuned PID's, but it falls on 1 of them, and its halved $k_d$ and $k_v$ leave less delay margin (23.75 ms against 37.25 ms).
 
 ## 7. Time stepping, timing and delay (`simulator.py`)
 
@@ -670,7 +679,7 @@ with the torque command held constant over the step. The actuator and friction a
 
 **Stability.** RK4 is stable for $\lvert\lambda h\rvert$ up to about 2.8 (Hairer, Nørsett & Wanner). The plant's fastest eigenvalue is 8.4 rad/s. With full back-EMF damping it is 20.9 rad/s (when the voltage saturates; 4.4, 9.3). So $\lvert\lambda h\rvert \le 0.052$. The 2.5 ms step is chosen for accuracy and to line up with the timing, not for stability.
 
-**Closed loop.** The clips make the right-hand side non-smooth, which costs some order at the switching instants. Even so, the full scenario at 2.5 ms differs from 0.25 ms by at most $2.5\times10^{-10}$ rad in pitch and $1.0\times10^{-9}$ m/s in velocity for the tuned gains, and $1.0\times10^{-9}$ rad and $5.7\times10^{-9}$ m/s for the hand-tuned ones (7.5 output).
+**Closed loop.** The clips make the right-hand side non-smooth, which costs some order at the switching instants. Even so, the full scenario at 2.5 ms differs from 0.25 ms by at most $1.7\times10^{-10}$ rad in pitch and $7.8\times10^{-10}$ m/s in velocity for the tuned gains, and $4.3\times10^{-10}$ rad and $2.3\times10^{-9}$ m/s for the hand-tuned ones (7.5 output).
 
 ### 7.2 Multi-rate timing and latency (`simulator.py:72-96`)
 
@@ -720,7 +729,7 @@ The analysis is exact for the linear model. It ignores saturation and noise. It 
 |---|---|---|---|
 | Hand-tuned, pitch-only (4, 0.5, 0.15) | 22.0 ms | 6.4 Hz, damping ratio 0.441 | decays at 11 and 21 ms; 0.051 rad limit cycle at 22 ms, 0.065 rad at 23 ms |
 | Hand-tuned cascade | 16.0 ms | 5.2 Hz, damping ratio 0.128 | n/a |
-| Tuned cascade | 40.75 ms | 1.5 Hz, damping ratio 0.335 | decays at 20.4 and 39.8 ms; 0.11 rad at 40.8 ms, 0.12 rad at 41.8 ms |
+| Tuned cascade | 37.5 ms | 1.4 Hz, damping ratio 0.416 | decays at 18.8 and 36.5 ms; 0.020 rad at 37.5 ms, 0.092 rad at 38.5 ms |
 | Tuned 2026-11-06 (earlier robot's gains) | unstable at every latency | 1.7 Hz, damping ratio −0.236 | n/a |
 
 What the table shows:
@@ -728,16 +737,16 @@ What the table shows:
 - **The analysis predicts the nonlinear simulator's stability boundary to within 1 ms.**
 - **The rotors buy delay tolerance.** On the robot before 2026-11-08 the margins were 9.5 ms (pitch-only), 11.5 ms (hand-tuned cascade) and 36 ms (that robot's tuned gains). The slower unstable pole (3.2) more than doubles the pitch-only margin. `CONDITIONS.md`'s empirical latency findings (oscillating from 10 ms, falling from 30 ms) were made on that earlier robot.
 - **The gains tuned for the earlier robot are unstable here at every latency, even zero.** Their low $k_p$ (2.2 times $k_{p,\text{crit}}$, 3.5) is not enough for the slower, heavier wheel side. That is why they cost about 55 on this robot (8.2).
-- **At the configured 10 ms, the hand-tuned cascade is at 63% of its delay margin** and rings at 5.2 Hz with a damping ratio of 0.13. The tuned gains have a 4.1× margin and a damping ratio of 0.34 at 10 ms. The tuner is not given delay margins directly. It gets them because the simulation includes the delay, and robust scoring also randomizes latency over 5–20 ms (8.4), well inside the 40.75 ms margin.
+- **At the configured 10 ms, the hand-tuned cascade is at 63% of its delay margin** and rings at 5.2 Hz with a damping ratio of 0.13. The tuned gains have a 3.75× margin and a damping ratio of 0.42 at 10 ms. The tuner is not given delay margins directly. It gets them because the simulation includes the delay, and robust scoring also randomizes latency over 5–20 ms (8.4), well inside the 37.5 ms margin.
 
 **Delay margin as a function of $k_v$** (same output), which links back to 6.3:
 
 | Inner loop | $k_v$ = 0.1 | 0.2 | 0.25 | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 |
 |---|---|---|---|---|---|---|---|---|---|---|
 | Hand-tuned | 16.0 ms | 1.75 ms | unstable | unstable | unstable | unstable | unstable | unstable | unstable | unstable |
-| Tuned | 22.0 ms | 24.25 ms | 25.5 ms | 27.0 ms | 30.25 ms | 34.25 ms | 38.75 ms | 41.75 ms | 31.5 ms | 3.0 ms |
+| Tuned | 20.75 ms | 23.0 ms | 24.25 ms | 25.5 ms | 28.75 ms | 32.5 ms | 36.75 ms | 40.0 ms | 34.25 ms | 11.0 ms |
 
-For the tuned inner loop the margin rises with $k_v$ up to about 0.7 and falls steeply beyond it (the Routh–Hurwitz ceiling is 0.921, 6.3). The tuned $k_v = 0.645$ sits just below the peak (40.75 ms), not on a flat part.
+For the tuned inner loop the margin rises with $k_v$ up to about 0.7 and falls steeply beyond it (the Routh–Hurwitz ceiling is 0.954, 6.3). The tuned $k_v = 0.620$ sits just below the peak (37.5 ms), not on a flat part.
 
 ### 7.5 Accuracy of the cost integrals
 
@@ -753,12 +762,12 @@ With the earlier step goals, the velocity term jumped at every goal step. When t
 \frac{h}{2}\sum\Delta v_{\text{goal}}^2 = 0.00945 ,
 ```
 
-and it was observed at +0.42% (tuned) and +0.18% (hand-tuned) at 2.5 ms. The smooth goal removes those jumps (`physics_checks.py` no longer prints this prediction), so the bias is now small (7.5 output, seed 100, 5.73° start):
+and it was observed at +0.42% (tuned) and +0.18% (hand-tuned) at 2.5 ms. The smooth goal removes those jumps (`physics_checks.py` no longer prints this prediction), so the bias is now small (7.5 output, seed 100, 2.86° start):
 
 | | Tuned | Hand-tuned |
 |---|---|---|
-| Left-sum cost at 2.5 ms against 0.25 ms | +0.01% | −0.01% |
-| Trapezoid rule, same comparison | +0.011% | +0.004% |
+| Left-sum cost at 2.5 ms against 0.25 ms | +0.01% | +0.00% |
+| Trapezoid rule, same comparison | +0.009% | +0.001% |
 
 The trapezoid variant takes the smooth goal at both ends of each step. Holding it over the step, which was right for step goals, adds a first-order error of its own: an earlier version of this check did that and reported −0.60% / −0.11%. The state trajectories agree to $10^{-9}$ for both gain sets, so the integrator is not a source either. With the smooth goal and the slower robot the quadrature bias is about 40 times smaller than with step goals, and the trapezoid rule no longer helps (10.4).
 
@@ -771,28 +780,38 @@ J = \int_0^{t_{\text{end}}}\!\Bigl[(\theta - \theta_{\text{ref}})^2 + w_u\,\tau^
 \;+\; \mathbb 1_{\text{fell}}\;P\Bigl(1 + \frac{t_{\text{dur}} - t_{\text{fall}}}{t_{\text{dur}}}\Bigr).
 ```
 
-Since 2026-10-24 the parameters are $w_u = 9$, $w_v = 2.25$, $P = 500$, and $\theta_{\text{ref}} = 0$ (upright). The weights come from Bryson's rule (10.5) and are derived in `config.py` from three limits. Costs quoted in 8.2 to 9.4 use these values and the smooth goal, except the record table in 8.2, which used the earlier values: $w_u = 0.01$, $w_v = 1$, $P = 100$, $\theta_{\text{ref}}$ = the commanded lean, and a step goal.
+Since 2026-10-24 the parameters are $w_u = 9$, $w_v = 2.25$ and $\theta_{\text{ref}} = 0$ (upright); $P = 1000$ since the 20 s scenario (2026-11-08; 500 before). The weights come from Bryson's rule (10.5) and are derived in `config.py` from three limits. Costs quoted in 8.2 to 9.4 use these values and the smooth goal, except the record table in 8.2, which used the earlier values: $w_u = 0.01$, $w_v = 1$, $P = 100$, $\theta_{\text{ref}}$ = the commanded lean, and a step goal.
 
 - **Units.** The weights carry units, which makes each term comparable to rad² s: $w_u$ is in rad²/(N m)² and $w_v$ in rad²/(m/s)².
-- **Why the reference changed (2026-10-24).** Measuring pitch against the commanded lean avoids penalizing the lean the task needs (2.8), but only a controller with a lean command has one. The LQR commands none, so it was scored from upright anyway, and the PID-vs-LQR comparison had to override the setting. Scoring everyone from upright gives one number for all controllers. The price is a floor: the start tilt must be recovered and the goal needs about 0.12 rad of lean, so $\int\theta^2\,dt \approx 0.027$ rad² s is unavoidable and the cost cannot reach zero. The limit $\theta_{\max} = 0.3$ rad is about 2.4 times the lean the goal needs, so it does not make that lean an error.
+- **Why the reference changed (2026-10-24).** Measuring pitch against the commanded lean avoids penalizing the lean the task needs (2.8), but only a controller with a lean command has one. The LQR commands none, so it was scored from upright anyway, and the PID-vs-LQR comparison had to override the setting. Scoring everyone from upright gives one number for all controllers. The price is a floor: the start tilt must be recovered and every goal change needs lean (0.25 rad for the aggressive one), so the pitch term cannot reach zero (on the 12 s scenario the floor was about 0.027 rad² s). The limit $\theta_{\max} = 0.3$ rad sits above that 0.25 rad and equals the largest start tilt, so it does not make the task's own lean an error.
 - **Effort.** $\tau$ here is the command after latency. While the motor is unsaturated, $\tau^2$ is proportional to winding loss (4.6).
 
 ### 8.2 What the cost actually measures
 
-**Current robot and cost (2026-11-08).** Mean over the 30 validation runs, nominal robot, no friction (8 output). The fall penalty is left out of the terms.
+**Current robot, cost and 20 s scenario (2026-11-08).** Mean over the 30 validation runs, nominal robot, no friction (8 output). The fall penalty is left out of the terms.
 
 | Gains | Pitch term | Effort term | Velocity term | Total |
 |---|---|---|---|---|
-| Tuned (2026-11-08) | 0.028 (11%) | 0.098 (39%) | 0.129 (50%) | 0.255 |
-| Tuned 2026-11-06 (earlier robot's gains) | 2.268 (6%) | 4.904 (13%) | 29.62 (81%) | 36.80 (1 fall; 54.9 with its penalty) |
-| Hand-tuned | 0.009 (0.4%) | 0.169 (8%) | 1.904 (91%) | 2.082 |
+| Tuned (2026-11-08) | 0.079 (10%) | 0.249 (32%) | 0.454 (58%) | 0.783 |
+| Tuned 2026-11-06 (earlier robot's gains) | 0.634 (7%) | 1.564 (18%) | 6.298 (74%) | 8.50 before penalties; all 30 runs fall |
+| Hand-tuned | 0.033 (0.5%) | 0.438 (7%) | 5.827 (92.5%) | 6.298 |
 
 So:
 
-- **The tuned cost is 1.8 times the earlier robot's** (0.255 against 0.140 for that robot's tuned gains on it). Effort grew most (0.034 to 0.098): accelerating the rotors through the gearboxes takes torque, and the tuner's stiffer gains ($k_p$ 1.57 against 0.66) spend it. Copper loss is 1.0 J per 12 s run.
-- **The pitch term is at its floor.** It includes the 0.027 that scoring from upright imposes (8.1), and the tuned gains sit at 0.028.
-- **Gains tuned for the earlier robot fail on this one** (1 fall in 30, cost about 55), because their loop is unstable here (7.4).
+- **The tuned gains beat the hand-tuned ones 8 to 1**, mostly on velocity tracking. Copper loss is 2.4 J per 20 s run (hand-tuned 4.3 J).
+- **The pitch term includes a floor** that scoring from upright imposes (8.1): the 0.30 rad start tilt and the 0.25 rad lean of the aggressive change.
+- **Gains tuned for the earlier robot fall in all 30 runs**, because their loop is unstable here (7.4).
 - **The hand-tuned gains pay mostly for velocity.** Their slow outer loop ($k_v = 0.1$) tracks poorly, and the constant pitch offset costs them a 0.1 m/s steady error (5.3).
+
+**12 s scenario, same robot and cost (kept as a record).** "Tuned" here is the set tuned on that scenario ($k_p = 1.567$, $k_i = 2.101$, $k_d = 0.285$, $k_v = 0.645$).
+
+| Gains | Pitch term | Effort term | Velocity term | Total |
+|---|---|---|---|---|
+| Tuned (2026-11-08, 12 s) | 0.028 (11%) | 0.098 (39%) | 0.129 (50%) | 0.255 |
+| Tuned 2026-11-06 (earlier robot's gains) | 2.268 (6%) | 4.904 (13%) | 29.62 (81%) | 36.80 (1 fall; 54.9 with its penalty) |
+| Hand-tuned | 0.009 (0.4%) | 0.169 (8%) | 1.904 (91%) | 2.082 |
+
+On that scenario the tuned cost was 1.8 times the earlier robot's (0.255 against 0.140): accelerating the rotors through the gearboxes takes torque. Its pitch term sat at the 0.027 floor.
 
 **Cost of 2026-11-06 on the robot before the datasheet update (kept as a record).** "Tuned 2026-09-30" was tuned for the earlier cost.
 
@@ -817,13 +836,13 @@ Under that cost:
 
 ### 8.3 Fall penalty
 
-A fall adds between $P$ and $2P$, more the earlier it happens ($P = 500$ since 2026-10-24, 100 before). That gives the optimizer a slope to climb out of falling gains. "A fall is always worse than any non-fall" holds whenever a non-fall run costs under $P$. It is not guaranteed by construction:
+A fall adds between $P$ and $2P$, more the earlier it happens ($P = 1000$ since the 20 s scenario of 2026-11-08; 500 from 2026-10-24; 100 before). That gives the optimizer a slope to climb out of falling gains. "A fall is always worse than any non-fall" holds whenever a non-fall run costs under $P$. Each term of a 20 s run that stays up is bounded:
 
-- the pitch term (from upright, 12 s runs) is bounded, by $(60°)^2 \times 12\,\text{s} = (1.05\ \text{rad})^2 \times 12\,\text{s} = 13.2$;
-- the effort term is bounded, by $w_u\,\tau_{\max}^2 \times 12\,\text{s} = 9 \times 0.34^2 \times 12 = 12.5$;
-- the velocity term has no a priori bound (the no-load speed is 2.46 m/s).
+- the pitch term (from upright), by $(60°)^2 \times 20\,\text{s} = (1.05\ \text{rad})^2 \times 20\,\text{s} = 21.9$;
+- the effort term, by $w_u\,\tau_{\max}^2 \times 20\,\text{s} = 9 \times 0.34^2 \times 20 = 20.8$;
+- the velocity term only through the motor: the speed error is at most the no-load speed of the fastest robot robust scoring can draw (3.02 m/s: high supply, low $k_t$) plus the largest goal (1.3 m/s), so $2.25 \times 4.32^2 \times 20 = 840$.
 
-In practice, tuned controllers cost 0.25–0.6 (robust scoring, with friction, gives the higher end). But 45,000 random-search runs (1,500 random gain sets on 30 randomized robots) included a slow, wandering controller that never fell and cost up to 186 at the current weights (velocity term 174), where the same gains cost 80 at the old ones. With $P = 100$ that exceeds the cheapest fall (110), which is why $P$ was raised to 500. **If a cost limit or the scenario changes, re-check this headroom.**
+The total, 883, is under $P$ (`test_fall_penalty_exceeds_any_non_fall_cost`); for the 12 s scenario it was 462, under its 500. In practice, tuned controllers cost 0.8–2.3 on the 20 s scenario (robust scoring, with friction and pushes, gives the higher end). On the 12 s scenario, 45,000 random-search runs included a slow, wandering controller that never fell and cost up to 186, which is why $P$ was raised from 100 to 500. The 60 s validation runs are not covered by the bound (up to 3 × 883), so validation reports falls as a separate count. **If a cost limit or the scenario changes, re-check this headroom.**
 
 ### 8.4 Robust scoring (`robust.py:100-126`)
 
@@ -855,14 +874,14 @@ with $\ddot x_\tau = e/\Delta_0$ and $\ddot\theta_\tau = -c/\Delta_0$ the accele
 
 | Gains | Max $\lvert F\rvert/N$ | Time above 0.6 | Time above 0.8 |
 |---|---|---|---|
-| Tuned | 0.39 | 0.00% | 0.00% |
-| Hand-tuned | 0.52 | 0.00% | 0.00% |
+| Tuned | 0.54 | 0.00% | 0.00% |
+| Hand-tuned | 0.68 | 0.04% | 0.00% |
 
-Rubber on hard floors is typically around $\mu \approx 0.6$–1.0; it should be measured. Both gain sets stay below that with the smooth goal. Peak axle accelerations reach 8.9 m/s² (tuned) and 12.4 m/s² (hand-tuned; 36.9 on the earlier robot, whose lighter wheel side let the stiff hand-tuned loop jerk the wheels).
+Rubber on hard floors is typically around $\mu \approx 0.6$–1.0; it should be measured. The tuned gains stay below 0.6; the hand-tuned ones exceed it 0.04% of the time. Peak axle accelerations reach 11.6 m/s² (tuned) and 12.7 m/s² (hand-tuned; 36.9 on the earlier robot, whose lighter wheel side let the stiff hand-tuned loop jerk the wheels).
 
 ### 9.2 Wheels stay on the ground
 
-The normal force never drops below 7.97 N (tuned) or 7.46 N (hand-tuned), against a static value of 8.18 N, so the wheels never lift. ✓
+The normal force never drops below 7.01 N (tuned) or 5.45 N (hand-tuned), against a static value of 8.18 N, so the wheels never lift. ✓
 
 ### 9.3 Motor driver: current mode versus voltage mode
 
@@ -874,15 +893,15 @@ A common hobby setup instead sets the PWM duty in proportion to the torque comma
 \tau = nN\eta k_t\,\frac{V - k_tN\omega}{R} = \tau_c - c_m\,\omega,\qquad c_m = \frac{\eta nN^2k_t^2}{R} = 0.0146\ \text{N m s/rad},
 ```
 
-which is exactly extra viscous friction, 2.2 times as much as with the guessed 3 Ω motor before 2026-11-08. Simulating it (`VoltageModeActuator` in `physics_checks.py`; 9.3 output) shows a second, larger effect. With the duty proportional to the torque command and the command capped at $\tau_{\max} = 0.34$ N m, the largest voltage the driver ever applies is $R\tau_{\max}/(nN\eta k_t) = 2.52$ V, a third of the 7.6 V supply. At the scenario's 0.7 m/s the back-EMF is already 2.2 V, so almost no forward torque is left (0.34 − 0.0146 × 20 ≈ 0.05 N m). Letting the duty reach 100% means a command range of 1.025 N m:
+which is exactly extra viscous friction, 2.2 times as much as with the guessed 3 Ω motor before 2026-11-08. Simulating it (`VoltageModeActuator` in `physics_checks.py`; 9.3 output) shows a second, larger effect. With the duty proportional to the torque command and the command capped at $\tau_{\max} = 0.34$ N m, the largest voltage the driver ever applies is $R\tau_{\max}/(nN\eta k_t) = 2.52$ V, a third of the 7.6 V supply. At 0.7 m/s the back-EMF is already 2.2 V, so almost no forward torque is left (0.34 − 0.0146 × 20 ≈ 0.05 N m); at the scenario's 1.3 m/s cruise there is none. Letting the duty reach 100% means a command range of 1.025 N m:
 
 | Gains | Current mode (as simulated) | Voltage mode, duty capped at 0.34 N m | Voltage mode, duty up to the full supply |
 |---|---|---|---|
-| Tuned | 0 of 30 fall, cost 0.255 | 30 of 30 fall | 0 of 30 fall, cost 3.76 |
-| Tuned 2026-11-06 (earlier robot's gains) | 1 of 30 fall, cost 54.9 | 30 of 30 fall | 30 of 30 fall |
-| Hand-tuned | 0 of 30 fall, cost 2.08 | 30 of 30 fall | 0 of 30 fall, cost 22.5 |
+| Tuned | 0 of 30 fall, cost 0.783 | 30 of 30 fall | 0 of 30 fall, cost 25.6 |
+| Tuned 2026-11-06 (earlier robot's gains) | 30 of 30 fall | 30 of 30 fall | 30 of 30 fall |
+| Hand-tuned | 0 of 30 fall, cost 6.30 | 30 of 30 fall | 30 of 30 fall |
 
-The drag alone is below the tuned gains' runaway threshold $rk_pk_v = 0.035$ N m s/rad (9.4), and the linear loop with it is stable (its slowest poles move from −1.17 to −1.51 rad/s), so the tuned gains survive once the voltage can reach the supply. Their cost still rises 15 times. On the earlier robot the capped duty reached 6 V of 7.4, and the tuned gains survived it at 9 times the cost.
+The drag alone is below the tuned gains' runaway threshold $rk_pk_v = 0.035$ N m s/rad (9.4), so they survive once the voltage can reach the supply, though their cost rises 33 times. It is above the hand-tuned gains' threshold (0.014 N m s/rad), and at the 1.3 m/s cruise they now fall in every run; on the 12 s scenario, which peaked at 0.71 m/s, they survived at 11 times the cost. On the earlier robot the capped duty reached 6 V of 7.4, and the tuned gains survived it at 9 times the cost.
 
 **This is still the largest unmodeled effect on the tuned gains.** If the hardware uses a voltage-mode driver, the firmware should compensate back-EMF so that the hardware matches the simulation:
 
@@ -894,15 +913,15 @@ A motor-shaft encoder measures $\hat\omega$ directly, because it reads the rotor
 
 ### 9.4 Friction
 
-Nominal friction is 0. Robust scoring draws it per scenario (8.4): since 2026-11-08 viscous $b \in [0, 0.0015]$ N m s/rad and Coulomb $\tau_c \in [0.02, 0.08]$ N m, from the motors' free-run current (DATASHEET.md 5.2). Sensitivity to viscous friction, for one run (seed 100, 5.73° start; 9.4 output):
+Nominal friction is 0. Robust scoring draws it per scenario (8.4): since 2026-11-08 viscous $b \in [0, 0.0015]$ N m s/rad and Coulomb $\tau_c \in [0.02, 0.08]$ N m, from the motors' free-run current (DATASHEET.md 5.2). Sensitivity to viscous friction, for one run (seed 100, 2.86° start; 9.4 output):
 
 | $b$ (N m s/rad) | 0 | 0.001 | 0.002 | 0.003 | 0.005 |
 |---|---|---|---|---|---|
-| Tuned (2026-11-08) | 0.27 | 0.28 | 0.31 | 0.36 | 0.57 |
-| Tuned 2026-11-06 (earlier robot's gains) | 37.3 | 24.3 | 21.0 | falls at 4.12 s | falls at 4.06 s |
-| Hand-tuned | 2.18 | 2.27 | 2.42 | 2.64 | 3.37 |
+| Tuned (2026-11-08) | 0.67 | 0.74 | 1.02 | 1.52 | 3.18 |
+| Tuned 2026-11-06 (earlier robot's gains) | falls at 3.80 s | falls at 3.59 s | falls at 3.45 s | falls at 3.37 s | falls at 3.45 s |
+| Hand-tuned | 5.96 | 6.14 | 6.73 | 7.86 | 12.66 |
 
-The tuned gains' cost only doubles by $b = 0.005$, more than three times the largest viscous friction scored. Their $k_pk_v$ is 1.01 N m per m/s (0.53 for the 2026-11-06 gains, 0.18 for the 2026-09-30 ones) and $k_i$ is 2.10, which is the trade this section predicts below. The 2026-11-06 gains are unstable on this robot (7.4); their cost falls as friction damps the oscillation, until from $b = 0.003$ they run away and fall.
+The tuned gains never fall, and their cost rises 4.7 times by $b = 0.005$, more than three times the largest viscous friction scored. Their $k_pk_v$ is 1.01 N m per m/s (0.53 for the 2026-11-06 gains, 0.18 for the 2026-09-30 ones) and $k_i$ is 1.77, which is the trade this section predicts below. The 2026-11-06 gains are unstable on this robot (7.4) and fall during the speed-up to 1.3 m/s at every friction level.
 
 **Why the tuned gains are the fragile ones: load torque shifts the speed.** Any steady load torque $\tau_L$ across the wheel–body joint has to be supplied by the motor. Friction, a slope and back-EMF drag are all examples. Until the slow integrator takes the load over, the proportional term must supply it, which needs a pitch error $\theta - \theta_{\text{sp}} = \tau_L/k_p$. At constant speed $\theta = 0$ (2.8), so the lean command must be $\theta_{\text{sp}} = -\tau_L/k_p$. The outer loop only commands that lean when
 
@@ -920,15 +939,15 @@ v = \frac{v_{\text{goal}}}{1 - b/(r\,k_p k_v)},
 
 and no steady speed at all once $b \ge r\,k_pk_v$. That threshold is 0.035 N m s/rad for the tuned gains, 0.018 for the 2026-11-06 ones and 0.014 for the hand-tuned ones (0.0064 for the 2026-09-30 set).
 
-*Check (9.4 output):* with $b = 0.003$, $k_i = 0$, the ideal actuator and a constant 1.4 m/s goal, the formula predicts 1.530 m/s (tuned) and 1.782 m/s (hand-tuned). The simulator settles at exactly those values. (For the 2026-11-06 gains it predicts 1.673 m/s, but on this robot their loop is unstable and the simulated speed is not steady.)
+*Check (9.4 output):* with $b = 0.003$, $k_i = 0$, the ideal actuator and a constant 1.4 m/s goal, the formula predicts 1.529 m/s (tuned) and 1.782 m/s (hand-tuned). The simulator settles at exactly those values. (For the 2026-11-06 gains it predicts 1.673 m/s, but on this robot their loop is unstable and the simulated speed is not steady.)
 
-In the real scenario the integrator does pull the speed back. The tuned gains' slowest pitch-loop poles are at $-2.33 \pm 1.58j$ rad/s (3.5), about 0.4 s. With $b = 0.003$, the DC motor's forward headroom $\tau^+_{\max}(\omega) - b\omega$ (4.4) reaches zero at 58.3 rad/s (2.04 m/s); without friction that would only happen at the 2.46 m/s no-load speed. The tuned runs peak at 0.81 m/s. Beyond that point the motor cannot drive the wheels forward to catch a forward lean, so the robot would fall forward.
+In the real scenario the integrator does pull the speed back. The tuned gains' slowest pitch-loop poles are at $-2.35 \pm 0.90j$ rad/s (3.5), about 0.4 s. With $b = 0.003$, the DC motor's forward headroom $\tau^+_{\max}(\omega) - b\omega$ (4.4) reaches zero at 58.3 rad/s (2.04 m/s); without friction that would only happen at the 2.46 m/s no-load speed. The tuned runs peak at 1.69 m/s (9.1), so at this friction the margin to that point is small. Beyond it the motor cannot drive the wheels forward to catch a forward lean, so the robot would fall forward.
 
 **Measuring friction.** Run the wheels unloaded at a few PWM levels and record the steady speed $\omega_0$ and the current $i_0$ per motor. The friction torque at the output is then $\tau_f(\omega_0) = nNk_t\,i_0$ (no $\eta$: unloaded, the gearbox losses are part of what $i_0$ measures). Fitting $\tau_f = \tau_c + b\,\omega$ separates Coulomb from viscous friction.
 
 ### 9.5 The IMU
 
-The model hands the controller pitch plus white noise. A real robot estimates pitch from a gyro and an accelerometer. An accelerometer measures specific force, so during horizontal acceleration its tilt reading is off by about $\arctan(\ddot x/g)$. At the 8.9 m/s² peaks of the tuned runs (9.1), that is up to 42° (52° for the hand-tuned gains, whose peaks reach 12.4 m/s²). The firmware must therefore rely on the gyro at high frequency, through a complementary or Kalman filter. Two consequences:
+The model hands the controller pitch plus white noise. A real robot estimates pitch from a gyro and an accelerometer. An accelerometer measures specific force, so during horizontal acceleration its tilt reading is off by about $\arctan(\ddot x/g)$. At the 11.6 m/s² peaks of the tuned runs (9.1), that is up to 50° (52° for the hand-tuned gains, whose peaks reach 12.7 m/s²). The firmware must therefore rely on the gyro at high frequency, through a complementary or Kalman filter. Two consequences:
 
 - **Pitch errors are low-frequency and correlated**, not white.
 - **Gyro bias becomes a pitch-estimate offset** of about $b_g\tau_f$ ($\tau_f$ = filter time constant), on top of the rate offset modeled in 5.3. The constant `pitch_bias` (5.1, 5.3) stands in for that and for the IMU's mounting error; it is the same for every run, not drawn per robot.
@@ -955,16 +974,16 @@ Grouped by how strong the evidence is that each one matters.
 
 | Limitation | Evidence | Next iteration |
 |---|---|---|
-| Driver assumed to be current-controlled with exact back-EMF compensation | Voltage-mode driver with the duty capped at the torque limit: every gain set falls 30 of 30; with the full supply available the tuned gains survive at 15 times the cost (9.3) | Decide the hardware driver (DATASHEET.md suggests the DRV8874, whose current-sense output allows a firmware current loop). Either add the back-EMF feedforward of 9.3 to the firmware, or move the `VoltageModeActuator` from `physics_checks.py` into `actuators.py` and retune (or randomize between the two). |
+| Driver assumed to be current-controlled with exact back-EMF compensation | Voltage-mode driver with the duty capped at the torque limit: every gain set falls 30 of 30; with the full supply available the tuned gains survive at 33 times the cost and the hand-tuned ones fall (9.3) | Decide the hardware driver (DATASHEET.md suggests the DRV8874, whose current-sense output allows a firmware current loop). Either add the back-EMF feedforward of 9.3 to the firmware, or move the `VoltageModeActuator` from `physics_checks.py` into `actuators.py` and retune (or randomize between the two). |
 | Friction is zero and cannot be randomized | Tuned gains fall at $b \ge 0.003$; the runaway threshold is $rk_pk_v$ (9.4) | *Implemented and retuned 2026-11-06* (`results/batch_tuning/20261106-154750/`; 8.2, 9.4). Both engines model $\tau_f = b\omega + \tau_c\tanh(\omega/\omega_\epsilon)$ (`RobotConfig.wheel_friction`, `coulomb_friction`, `coulomb_friction_speed`). `linearize` includes the slope $\tau_c/\omega_\epsilon$, and robust scoring draws $b$ and $\tau_c$ per scenario (8.4). With $\omega_\epsilon = 1$ rad/s, $\lvert\lambda h\rvert \approx 0.17$ at the largest $\tau_c$ (7.1). Since 2026-11-08 the ranges come from the motors' free-run current (DATASHEET.md 5.2). Still to do: measure friction (9.4). |
-| Latency is fixed at 10 ms | Delay margin is the key robustness number (7.4) | *Implemented and retuned 2026-11-06, retuned again on the datasheet robot 2026-11-08.* The current tuned gains' nominal linear loop is stable from 0 to 40.5 ms (`results/lqr_comparison/20261108-133118/`). Robust scoring gives each scenario its own latency, uniform over the whole physics steps in 5–20 ms (`RobustnessSettings.latency_range_s`; `simulate_batch(delay_steps=...)`, `TorchSimulator(max_delay_steps=...)`). The alternative, adding the delay margin to the objective, is not done. |
+| Latency is fixed at 10 ms | Delay margin is the key robustness number (7.4) | *Implemented and retuned 2026-11-06, retuned again on the datasheet robot 2026-11-08.* The current tuned gains' nominal linear loop is stable from 0 to 37.25 ms (`results/lqr_comparison/20261108-225341/`; 7.4). Robust scoring gives each scenario its own latency, uniform over the whole physics steps in 5–20 ms (`RobustnessSettings.latency_range_s`; `simulate_batch(delay_steps=...)`, `TorchSimulator(max_delay_steps=...)`). The alternative, adding the delay margin to the objective, is not done. |
 
 ### 10.2 Assumptions violated during transients
 
 | Limitation | Evidence | Next iteration |
 |---|---|---|
-| No traction limit | $\lvert F\rvert/N$ up to 0.39 / 0.52 (9.1) | Simplest: add a penalty on time spent above a measured $\mu$. Full model: make $\varphi$ a fifth coordinate. While sticking, enforce $\dot x = r\dot\varphi$. When the required $\lvert F\rvert$ exceeds $\mu_sN$, switch to sliding with $F = -\mu_kN\operatorname{sign}(\dot x - r\dot\varphi)$. |
-| Idealized IMU | Accelerometer tilt error up to 42° / 52° (9.5) | Simulate the accelerometer (from $\ddot x$, $\ddot\theta$ and the mount height) and the gyro, and run the same complementary filter the firmware will use. |
+| No traction limit | $\lvert F\rvert/N$ up to 0.54 / 0.68 (9.1) | Simplest: add a penalty on time spent above a measured $\mu$. Full model: make $\varphi$ a fifth coordinate. While sticking, enforce $\dot x = r\dot\varphi$. When the required $\lvert F\rvert$ exceeds $\mu_sN$, switch to sliding with $F = -\mu_kN\operatorname{sign}(\dot x - r\dot\varphi)$. |
+| Idealized IMU | Accelerometer tilt error up to 50° / 52° (9.5) | Simulate the accelerometer (from $\ddot x$, $\ddot\theta$ and the mount height) and the gyro, and run the same complementary filter the firmware will use. |
 | Idealized encoders | Velocity is truth plus white noise | Quantize the wheel angle (counts per revolution) and difference it at the control rate, as the firmware will. |
 
 ### 10.3 Physical fidelity
@@ -975,7 +994,7 @@ Grouped by how strong the evidence is that each one matters.
 - **Battery sag.** Use $V_s(t) = V_{oc} - R_{\text{batt}}\,i_{\text{total}}$ instead of a constant per run (`CONDITIONS.md` already lists this). With this motor the voltage only matters above the 1.65 m/s corner speed (4.4), so this is low priority.
 - **Pitch offset per robot.** `pitch_bias` is one constant for every run (5.1). Drawing it per scenario, with either sign, would keep the tuner from fitting one particular offset.
 - **Noise as a density.** Specify sensor noise as a density (rad/s/√Hz, as datasheets do) and convert it with $\sigma = \text{ND}\sqrt{f_s/2}$. Today the per-sample $\sigma$ silently changes the physical noise level if the control rate changes.
-- **Scope.** A 3D model with yaw (differential drive), slopes, and pushes on the body, as already planned in `ARCHITECTURE.md` and `CONDITIONS.md`.
+- **Scope.** Pushes on the body are *implemented 2026-11-08* (a horizontal force at the center of mass, generalized forces $F$ on $x$ and $Fl\cos\theta$ on $\theta$; `ScenarioConfig.pushes`, both engines, `test_push.py`). Still to do: a 3D model with yaw (differential drive) and slopes, as planned in `ARCHITECTURE.md` and `CONDITIONS.md`.
 
 ### 10.4 Numerics and code
 
@@ -984,9 +1003,9 @@ Grouped by how strong the evidence is that each one matters.
 
 ### 10.5 Cost design
 
-- **Choose the weights deliberately.** *Done 2026-10-24.* The effort term was 0.01% of the cost (8.2). Bryson's rule (Franklin, Powell & Emami-Naeini) sets each weight to $1/(\text{largest acceptable value})^2$; normalized to the pitch term, $w_v = (\theta_{\max}/v_{\max})^2$ and $w_u = (\theta_{\max}/\tau_{\max})^2$. The limits are $\theta_{\max} = 0.3$ rad (from upright), $v_{\max} = 0.2$ m/s and $\tau_{\max} = 0.1$ N m, giving $w_v = 2.25$ and $w_u = 9$. They are stored as `CostConfig`'s `pitch_limit_rad`, `velocity_limit` and `torque_limit`, and the weights are derived from them. $\tau_{\max}$ is a typical operating torque, not the 0.34 N m hardware limit, which would leave effort negligible. $\theta_{\max}$ is a tolerance on the lean error: it must sit above the lean the goal needs (about 0.12 rad here) and below the 25° lean cap. Result: pitch, effort and velocity are about 20%, 12% and 69% of the cost of the PID tuned on 2026-10-24, 22%, 25% and 53% for the PID retuned with friction and latency randomized, and 11%, 39% and 50% for the PID retuned on the datasheet robot (8.2). The `kv_p` bound was 0.4 and every retune sat on it; it is now 0.9. A run with the bound at 2.0 settled at `kv_p` 0.82 with the same cost (0.1304 against 0.1305), and the re-run at 0.9 settled at 0.822, inside the bound.
-- **Use feasible goal profiles.** *Done:* `goal_transition_s` blends each goal change smoothly, peaking at 0.9 m/s² (about 7° of lean). Step-shaped goals made much of the velocity cost unavoidable (8.2).
-- **An LQR baseline.** The cost has LQR form, and 3.1 gives $A$ and $B$. Optimal full-state feedback on the linear model, with the same weights, would show how much performance the cascaded-PID structure costs. *Done: see `LQR.md`.* Under the first cost the cost-matched LQR came within 1.8% of the ML-tuned PID with no tuning. On the datasheet robot and the current cost it is 3.7 times worse; the tuned LQR gains come within 18% and the PID still wins.
+- **Choose the weights deliberately.** *Done 2026-10-24.* The effort term was 0.01% of the cost (8.2). Bryson's rule (Franklin, Powell & Emami-Naeini) sets each weight to $1/(\text{largest acceptable value})^2$; normalized to the pitch term, $w_v = (\theta_{\max}/v_{\max})^2$ and $w_u = (\theta_{\max}/\tau_{\max})^2$. The limits are $\theta_{\max} = 0.3$ rad (from upright), $v_{\max} = 0.2$ m/s and $\tau_{\max} = 0.1$ N m, giving $w_v = 2.25$ and $w_u = 9$. They are stored as `CostConfig`'s `pitch_limit_rad`, `velocity_limit` and `torque_limit`, and the weights are derived from them. $\tau_{\max}$ is a typical operating torque, not the 0.34 N m hardware limit, which would leave effort negligible. $\theta_{\max}$ is a tolerance on the lean error: it must sit above the lean the goal needs (0.25 rad for the aggressive change) and below the 25° lean cap. Result: pitch, effort and velocity are about 20%, 12% and 69% of the cost of the PID tuned on 2026-10-24, 22%, 25% and 53% for the PID retuned with friction and latency randomized, 11%, 39% and 50% for the PID retuned on the datasheet robot, and 10%, 32% and 58% on the 20 s scenario (8.2). The `kv_p` bound was 0.4 and every retune sat on it; it is now 0.9. A run with the bound at 2.0 settled at `kv_p` 0.82 with the same cost (0.1304 against 0.1305), and the re-run at 0.9 settled at 0.822, inside the bound.
+- **Use feasible goal profiles.** *Done:* each goal change blends smoothly. The 20 s scenario's aggressive change peaks at 1.78 m/s² (0.25 rad of lean), and every element is sized from a limit of the robot (`ScenarioConfig` docstring). Step-shaped goals made much of the velocity cost unavoidable (8.2).
+- **An LQR baseline.** The cost has LQR form, and 3.1 gives $A$ and $B$. Optimal full-state feedback on the linear model, with the same weights, would show how much performance the cascaded-PID structure costs. *Done: see `LQR.md`.* Under the first cost the cost-matched LQR came within 1.8% of the ML-tuned PID with no tuning. On the datasheet robot and the current cost it was 3.7 times worse on the 12 s scenario; on the 20 s scenario with pushes it is 4.2 times worse and falls on 3 of 300 held-out robots, the tuned LQR gains come within 34%, and the PID still wins.
 - **A physical fall criterion.** Replace the 60° threshold, or add to it, a check based on recoverability (7.3).
 
 ## 11. The batched engine uses the same physics

@@ -22,7 +22,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from balance_sim import step_profile
+from balance_sim import push_profile, step_profile
 from batch_sim import BatchRobot, SimSpec, build_schedule, noise_table, simulate_batch
 from tuning import EvalConfig, EvalResult, SearchSpace
 
@@ -34,6 +34,7 @@ def spec_from_eval_config(config: EvalConfig, controller: str = "cascaded") -> S
     return SimSpec(
         controller=controller,
         goal=step_profile(config.goal_steps, config.goal_transition),
+        disturbance=push_profile(config.pushes) if config.pushes else None,
         duration=config.duration,
         dt=config.dt,
         control_dt=config.control_dt,

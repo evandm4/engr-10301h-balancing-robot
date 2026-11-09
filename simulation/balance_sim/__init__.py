@@ -5,9 +5,10 @@ from .actuators import Actuator, DCMotorActuator, IdealActuator, MotorParams
 from .sensors import SensorNoise
 from .dynamics import Dynamics
 from .planar2d import Planar2D, critical_pitch_gain, linearize
-from .controllers import CascadedPIDController, Controller, PIDController, step_profile
+from .controllers import CascadedPIDController, Controller, PIDController, push_profile, step_profile
 from .lqr import LQRController, LQRWeights, delayed_commands, discrete_model, lqr_gain
 from .stability import LinearController, loop_matrix, spectral_radius, stable_latency_range
+from .pid_design import model_based_pid_gains
 from .simulator import SimResult, simulate, steps_per_control
 from .metrics import PITCH_REFERENCES, Metrics, compute_metrics, cost, pitch_error_signal
 from .trajectory import load_trajectory, save_trajectory
@@ -27,6 +28,7 @@ __all__ = [
     "PIDController",
     "CascadedPIDController",
     "step_profile",
+    "push_profile",
     "LQRController",
     "LQRWeights",
     "lqr_gain",
@@ -36,6 +38,7 @@ __all__ = [
     "loop_matrix",
     "spectral_radius",
     "stable_latency_range",
+    "model_based_pid_gains",
     "SimResult",
     "simulate",
     "steps_per_control",

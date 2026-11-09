@@ -28,7 +28,7 @@ from balance_sim.simulator import _rk4_step
 from batch_sim import BatchRobot, actuator_torque, derivatives
 from config import CONFIG
 
-TUNED = (1.5665012042015811, 2.1008133218371503, 0.2849281098561087, 0.6448938913835949)  # CMA-ES, results/batch_tuning/20261108-132528
+TUNED = (1.6351051516678046, 1.765803347356468, 0.29857655444040127, 0.6197806802419683)  # CMA-ES, results/batch_tuning/20261108-153813 (20 s scenario with pushes)
 TUNED_1106 = (0.659938589993706, 0.4980220464276531, 0.11153595895763543, 0.7956961244475451)  # CMA-ES, 2026-11-06, earlier robot
 HAND = tuple(CONFIG.controller.hand_tuned_gains)
 
@@ -70,13 +70,14 @@ def controller(gains, goal=0.0, torque_limit=None):
 
 
 def scenario_run(gains, tilt, seed, dynamics=None, dt=None, latency=None, torque_limit=None):
-    """One run of the tuner's scenario (goal profile, noise, latency) with the reference simulator."""
+    """One run of the tuner's scenario (goal profile, pushes, noise, latency) with the reference simulator."""
     dyn = CONFIG.build_dynamics() if dynamics is None else dynamics
     return simulate(dyn, controller(gains, CONFIG.build_goal(), torque_limit),
                     duration=CONFIG.scenario.duration_s, dt=CONFIG.timing.dt_s if dt is None else dt,
                     initial_state=dyn.initial_state(tilt), control_dt=CONFIG.timing.control_dt_s,
                     sensor=CONFIG.build_sensor(seed),
-                    latency=CONFIG.timing.latency_s if latency is None else latency)
+                    latency=CONFIG.timing.latency_s if latency is None else latency,
+                    disturbance=CONFIG.build_disturbance())
 
 
 def validation_runs(gains, dynamics=None, torque_limit=None):
@@ -139,7 +140,10 @@ def linear_model():
           f"{math.acosh(CONFIG.timing.fall_angle_rad / 0.05) / pole:.3f} s)")
     print(f"RHP zero of X/T at {zero:.3f} rad/s")
     run = scenario_run(TUNED, CONFIG.scenario.start_pitches_rad[0], 100)
-    for start, span, pick in ((2.0, 0.3, np.min), (6.0, 0.4, np.max)):
+    goal = CONFIG.build_goal()
+    for step in CONFIG.scenario.goal_steps[:2]:      # the speed-up and the brake-and-reverse
+        start, span = step[0], 0.4
+        pick = np.min if step[1] > goal(start - 1e-3) else np.max   # wrong way = opposite to the change
         i = np.searchsorted(run.t, start)
         window = run.states[i:i + int(round(span / CONFIG.timing.dt_s)), 1]
         print(f"  tuned, seed 100: goal step at {start} s, v = {run.states[i, 1]:.3f} m/s, then "
@@ -357,7 +361,7 @@ def integration_accuracy():
 
 def cost_accuracy():
     heading("7.5 Cost vs physics step (seed 100, start tilt 5.73 deg)")
-    tilt, jumps = CONFIG.scenario.start_pitches_rad[0], np.diff([0.0] + [v for _, v in CONFIG.scenario.goal_steps])
+    tilt, jumps = CONFIG.scenario.start_pitches_rad[0], np.diff([0.0] + [step[1] for step in CONFIG.scenario.goal_steps])
     for name, gains in (("tuned", TUNED), ("hand-tuned", HAND)):
         fine = scenario_run(gains, tilt, 100, dt=0.00025)
         coarse = scenario_run(gains, tilt, 100)
@@ -388,7 +392,7 @@ def cost_breakdown():
               f"copper loss {effort / c.effort_weight * _copper_loss_factor():.1f} J per run")
     lean = CONFIG.controller.max_lean_rad
     accel = ML * G * math.sin(lean) / (ML * math.cos(lean) - J / R + A * R)
-    jumps = np.abs(np.diff([0.0] + [v for _, v in CONFIG.scenario.goal_steps]))
+    jumps = np.abs(np.diff([0.0] + [step[1] for step in CONFIG.scenario.goal_steps]))
     if CONFIG.scenario.goal_transition_s > 0:
         return   # the floor below is for instant goal jumps; a smooth goal has none
     print(f"velocity term if each goal step were met at the steady {math.degrees(lean):.0f} deg-lean acceleration "

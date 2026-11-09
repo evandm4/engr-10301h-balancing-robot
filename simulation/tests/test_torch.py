@@ -156,8 +156,16 @@ def test_full_default_scenario_float64_matches_numpy():
     gains = _near_hand_tuned(16, seed=5)
     ref = BatchEvaluator(config, space).evaluate_population(gains)
     got = BatchEvaluator(config, space, backend="torch").evaluate_population(gains)
-    np.testing.assert_array_equal(got.n_fell, ref.n_fell)
-    np.testing.assert_allclose(got.costs, ref.costs, rtol=1e-9)
+    # The 20 s scenario (pushes at top speed, a near-cap acceleration) drives some of these
+    # perturbed hand-tuned gains into saturation-switching runs that NumPy can't reproduce
+    # itself when the start tilt is nudged by 1e-15 (see the module docstring). Compare the rest.
+    nudged = BatchEvaluator(replace(config, start_pitches=tuple(p * (1 + 1e-15) for p in config.start_pitches)),
+                            space).evaluate_population(gains)
+    reproducible = np.abs(nudged.costs - ref.costs) <= 1e-9 * np.abs(ref.costs)
+    assert reproducible.mean() >= 0.8
+    np.testing.assert_allclose(got.costs[reproducible], ref.costs[reproducible], rtol=1e-9)
+    np.testing.assert_array_equal(got.costs[reproducible] > config.fall_penalty,
+                                  ref.costs[reproducible] > config.fall_penalty)
 
 
 @needs_cuda

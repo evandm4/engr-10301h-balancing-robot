@@ -1,0 +1,26 @@
+{
+  "method": "pid_ml_differential_evolution",
+  "gains": {
+    "kp": 1.6310986398764769,
+    "ki": 1.759496083897634,
+    "kd": 0.2983007092853239,
+    "kv_p": 0.6203121693678779
+  },
+  "best_training_cost": 1.5724942330519358,
+  "n_evals": 4920,
+  "elapsed_s": 133.48,
+  "provenance": {
+    "git_commit": "92eaac4529dd5966d11625f82db0b17398853b29",
+    "git_dirty": true,
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "cma": "4.5.0",
+    "torch": "2.11.0+cu128",
+    "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU"
+  },
+  "controller": "PID, ML-tuned",
+  "backend": "torch",
+  "dtype": "float32"
+}

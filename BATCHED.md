@@ -36,7 +36,7 @@ From the project folder, with `C:\venvs\balancebot` active:
 ```
 python -m pytest                                                   # every suite, ~1 min
 python optimization/benchmark_batch.py --backend torch --float32
-python optimization/run_batch_tuning.py --backend torch --float32  # robust tuning, ~70 s
+python optimization/run_batch_tuning.py --backend torch --float32  # robust tuning, ~5 min on battery (20 s runs)
 python optimization/run_batch_tuning.py --plain --backend torch --float32 --de-pop 2000 --cma-pop 10000
 ```
 
@@ -79,7 +79,7 @@ A Python loop of 4,800 steps that launches ~200 small GPU kernels per step would
 - The controller and anti-windup integrator match exactly on CPU and CUDA.
 - The physics derivatives are bit-identical for about 90% of inputs. The rest differ in the last bit, because the GPU's `sin`/`cos` round differently.
 - CUDA-graph replay is bit-identical to running the steps one by one, and repeated runs are identical.
-- With well-behaved gains, float64 GPU costs match NumPy to `rtol=1e-9` and trajectories to 1e-9. That holds for the full tuning scenario (then 6 s; now 12 s), for batches where every robot falls (including fall times and early stop), and with no noise, zero latency and per-robot masses.
+- With well-behaved gains, float64 GPU costs match NumPy to `rtol=1e-9` and trajectories to 1e-9. That holds for the full tuning scenario (then 6 s; now 20 s, with pushes), for batches where every robot falls (including fall times and early stop), and with no noise, zero latency and per-robot masses.
 - float32 on the GPU is within 0.1% of float64.
 
 **Chaos, and why some random-gain runs disagree.** With random gains, roughly a third of runs don't reproduce between the GPU and NumPy. Those same runs don't reproduce between two *NumPy* runs whose start tilt differs by 1e-15: 647 of 651 overlap. Torque saturation and the integrator switching amplify last-bit differences in these gain sets until the runs have nothing in common. Consequences:
@@ -91,7 +91,7 @@ A Python loop of 4,800 steps that launches ~200 small GPU kernels per step would
 
 ## Speed (2026-09-28)
 
-Tuning scenario at the time of this benchmark: 6 s runs, 2,400 physics steps each (the scenario is now 12 s, 4,800 steps, so current runs cost about twice as much). Baseline (`benchmark.py`, the reference code one run at a time): 30.5 ms per simulation.
+Tuning scenario at the time of this benchmark: 6 s runs, 2,400 physics steps each (the scenario is now 20 s, 8,000 steps, so current runs cost about 3.3 times as much). Baseline (`benchmark.py`, the reference code one run at a time): 30.5 ms per simulation.
 
 | sims per batch | NumPy f64 | NumPy f32 | GPU f64 | GPU f32 |
 |---:|---:|---:|---:|---:|
@@ -100,7 +100,7 @@ Tuning scenario at the time of this benchmark: 6 s runs, 2,400 physics steps eac
 | 120,000 | — | — | 16 µs (1,870×) | 8.1 µs (3,750×) |
 | 400,000 | — | — | 14 µs (2,150×) | **5.3 µs (5,800×)** |
 
-- **Below ~100k simulations, a GPU batch takes a flat ~0.7 s.** That's ~200 kernels per step × 2,400 steps (measured on 6 s runs; 12 s runs have 4,800 steps, so the floor is about twice that). Use the GPU for big populations and NumPy for small ones.
+- **Below ~100k simulations, a GPU batch takes a flat ~0.7 s.** That's ~200 kernels per step × 2,400 steps (measured on 6 s runs; 20 s runs have 8,000 steps, so the floor is about 3.3 times that). Use the GPU for big populations and NumPy for small ones.
 - float64 on the GPU is only ~2.7× slower than float32 here, not 64×, because the kernels are limited by memory traffic and launches rather than arithmetic.
 
 Tuning with `--backend torch --float32 --de-pop 2000 --cma-pop 10000 --cma-iters 30` took:

@@ -22,7 +22,9 @@ Options: --seeds N (training seeds), --no-randomize, --sensitivity-weight W (0 =
 The searches can run in float32 for speed. Every finalist is re-scored in
 float64 with NumPy, both the reference way (nominal robot, the scenario's
 validation seeds, so comparable with results/tuning/) and the robust way on
-unseen seeds and unseen robots.
+unseen seeds and unseen robots. Validation runs the held-out validation
+scenario: the training one, run for ScenarioConfig.validation_duration_s
+(the last goal held for the extra time, to expose slow instabilities).
 
 Results are saved under results/batch_tuning/<timestamp>/: the same
 per-method files run_tuning.py writes, comparison.json, and the same
@@ -159,11 +161,15 @@ def main():
 
     # Final scores always in float64 with NumPy. "reference" = exactly
     # run_tuning.py's scoring; "robust" = unseen seeds and unseen robots.
-    ref_check = BatchEvaluator(eval_config, space)
-    robust_check = BatchEvaluator(eval_config, space, robustness=robustness) if robustness else None
-    train_check = robust_check or ref_check
+    # Both validations run the longer held-out validation scenario; "train"
+    # re-scores the training scenario.
+    val_config = CONFIG.build_eval_config(validation=True)
+    ref_check = BatchEvaluator(val_config, space)
+    robust_check = BatchEvaluator(val_config, space, robustness=robustness) if robustness else None
+    train_check = BatchEvaluator(eval_config, space, robustness=robustness)
     ref_val_seeds = CONFIG.scenario.validation_seeds
     candidates = {"hand-tuned": np.array(CONFIG.controller.hand_tuned_gains),
+                  "model-based": np.array(CONFIG.model_based_gains()),
                   **{name: s.gains for name, s in searches.items()}}
     comparison, robust_validation = {}, {}
     header = f"\n{'method':<24}{gains_header(space.names)}{'evals':>8}{'train':>9}{'ref val':>9}{'falls':>7}"
@@ -199,7 +205,8 @@ def main():
         print(line)
     print("\ntrain = what the searches minimized"
           + (" (mean cost + chaos penalty, robust scenarios)" if robustness else " (mean cost)")
-          + f"; ref val = run_tuning.py's scoring on its {len(ref_val_seeds)} validation seeds")
+          + f"; ref val = run_tuning.py's scoring on its {len(ref_val_seeds)} validation seeds"
+          + f"; validation runs last {val_config.duration:g} s (training {eval_config.duration:g} s)")
     if robustness:
         print(f"robust val = mean cost on {len(robustness.validation_seeds)} unseen seeds with unseen robots; "
               "worst = its worst single scenario;\nchaos = mean cost change when the start tilt is nudged by "
@@ -220,6 +227,8 @@ def main():
         "provenance": provenance(),
         "run_arguments": vars(args),
         "simulations_per_evaluation": sims_per_eval,
+        "train_duration_s": eval_config.duration,
+        "validation_duration_s": val_config.duration,
         "results": comparison,
         "robustness": robust_snapshot,
         "config": snapshot}, indent=2))

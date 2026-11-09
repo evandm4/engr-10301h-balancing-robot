@@ -23,7 +23,11 @@ import numpy as np
 class Dynamics(ABC):
     @abstractmethod
     def derivatives(self, state: np.ndarray, torque: float) -> np.ndarray:
-        """Return d(state)/dt for the given state and commanded motor torque."""
+        """Return d(state)/dt for the given state and commanded motor torque.
+
+        A model that supports external pushes takes a third argument, force
+        (N, horizontal, on the body; see Planar2D). The simulator passes it only
+        when it is given a push profile."""
 
     @abstractmethod
     def initial_state(self, pitch: float = 0.0) -> np.ndarray:

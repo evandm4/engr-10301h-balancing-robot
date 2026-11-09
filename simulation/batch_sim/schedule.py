@@ -10,7 +10,7 @@ CPU loop so the two agree exactly.
 import math
 from collections import deque
 from dataclasses import dataclass
-from typing import Callable, Sequence
+from typing import Callable, Optional, Sequence
 
 import numpy as np
 
@@ -40,6 +40,8 @@ class SimSpec:
     velocity_weight: float
     pitch_reference: str                    # "commanded" or "upright"
     latency: float = 0.0
+    # External push: force (N) on the body vs time, e.g. balance_sim.push_profile; None = no push.
+    disturbance: Optional[Callable[[float], float]] = None
     # Which controller the gains are for: "cascaded" (CascadedPIDController) or
     # "lqr" (LQRController; its integral is capped at velocity_integral_limit).
     controller: str = "cascaded"
@@ -73,6 +75,7 @@ class Schedule:
     ring_size: int                 # commands that must be kept in flight to model the latency
     goal_per_tick: np.ndarray      # (n_ticks,) goal velocity the controller sees at each update
     goal_per_step: np.ndarray      # (n_steps,) goal velocity recorded at each physics step (for the cost)
+    force_per_step: np.ndarray     # (n_steps,) external push force held over each physics step (N)
 
 
 def build_schedule(spec: SimSpec) -> Schedule:
@@ -101,8 +104,12 @@ def build_schedule(spec: SimSpec) -> Schedule:
         goal_per_tick[j] = spec.goal(clock)
         clock += control_dt
     goal_per_step = np.array([spec.goal(k * dt) for k in range(n_steps)])
+    # The push at each step's start time, as balance_sim.simulate evaluates it.
+    force_per_step = (np.zeros(n_steps) if spec.disturbance is None
+                      else np.array([float(spec.disturbance(k * dt)) for k in range(n_steps)]))
 
-    return Schedule(n_steps, steps_per_control, n_ticks, active, ring_size, goal_per_tick, goal_per_step)
+    return Schedule(n_steps, steps_per_control, n_ticks, active, ring_size, goal_per_tick, goal_per_step,
+                    force_per_step)
 
 
 def latency_steps(latency: float, dt: float) -> int:
