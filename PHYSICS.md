@@ -9,6 +9,8 @@ All numbers use the robot defined in `config.py`. Since 2026-11-08 that is the d
 
 Several sections also show the 2026-11-06 set ($k_p = 0.660$, $k_i = 0.498$, $k_d = 0.1115$, $k_v = 0.796$), tuned for the robot as it was configured before the datasheet update, to show what the realistic constants change. Numbers for that earlier robot are in this document's git history (commit 944ec30). Numbers for the earlier 12 s scenario, and the gains tuned on it ($k_p = 1.567$, $k_i = 2.101$, $k_d = 0.285$, $k_v = 0.645$), are in commit c6b6ffc; 8.2 keeps its cost table as a record.
 
+**Note on the gains (2026-11-09).** The "Tuned" set above is not the latest: after the latency range was widened, the tuner finds gains within 1.2% of it (`results/batch_tuning/20261108-234630/`). This document was not regenerated for a change that small, so its numbers belong to the set above; LQR.md and the paper report the latest.
+
 Here $k_v$ is the code's `kv_p`. Every number quoted is printed by
 
 ```

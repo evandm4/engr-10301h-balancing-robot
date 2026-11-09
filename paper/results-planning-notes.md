@@ -30,6 +30,7 @@ Validation on 300 unseen robots and noise seeds, 60 s runs, sorted by median cos
 - **Pushes are what separate controllers.** In the batch tuning run, both hand-tuned falls came from the forward push at top speed and disappeared when the pushes were removed. The falls on the current held-out set (3 weight-tuned LQR, 1 hand-tuned, 1 cost-matched LQR) haven't been traced yet.
 - **Delay tolerance differs from typical cost.** The latency-ignoring LQR is mediocre on typical runs (3.14×) but the most delay-tolerant (one fall at 40 ms). Integral action matters for the LQR: with a guarded integral gain the directly tuned LQR went from 34% to 9% behind the ML-tuned PID.
 - **The LQR weight search can't avoid falls** with only its integral weight free (3 falls on the held-out set). Re-opening the other weights is untested.
+- **The stability guard binds, which shows what it is protecting against.** The best directly tuned LQR sits exactly on the 0.999 spectral-radius limit: the optimizer pushes toward slower, near-unstable integral action because it scores better within a 20 s run. An unguarded search could likely close the remaining 9% gap, but an earlier unguarded search found exactly that kind of gain (an eigenvalue of 1.0009, a slow runaway the training runs never exposed). The guard trades a little measured performance for a stability guarantee the score alone cannot provide: a concrete case of an optimizer exploiting the limits of its own test, and of why a black-box tuner needs constraints from analysis.
 
 ## Caveats to state
 

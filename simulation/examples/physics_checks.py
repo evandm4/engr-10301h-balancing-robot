@@ -29,6 +29,10 @@ from batch_sim import BatchRobot, actuator_torque, derivatives
 from config import CONFIG
 
 TUNED = (1.6351051516678046, 1.765803347356468, 0.29857655444040127, 0.6197806802419683)  # CMA-ES, results/batch_tuning/20261108-153813 (20 s scenario with pushes)
+# Not the latest tuned gains: since the robust latency range was widened to 2.5-20 ms
+# (2026-11-09) the tuner finds (1.615, 1.746, 0.298, 0.626), results/batch_tuning/
+# 20261108-234630, within 1.2% of TUNED. PHYSICS.md's numbers come from TUNED, so it is
+# kept as is; switch it and regenerate PHYSICS.md if the gains move further.
 TUNED_1106 = (0.659938589993706, 0.4980220464276531, 0.11153595895763543, 0.7956961244475451)  # CMA-ES, 2026-11-06, earlier robot
 HAND = tuple(CONFIG.controller.hand_tuned_gains)
 
