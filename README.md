@@ -32,26 +32,6 @@ archive/                   the superseded original code and its results (unused)
 
 More detail: `ARCHITECTURE.md` (design, status, change log), `BATCHED.md` (the batched/GPU engine, its verification and speed), `PHYSICS.md` (derivation of every equation in the simulator, its limits, and what to improve), `LQR.md` (the LQR controller, and how it compares with the PID), `simulation/CONDITIONS.md`.
 
-## Side project: pivot robot
-
-An offshoot that adds a servo-driven pivot on top of the robot with a second body piece on it (a third degree of freedom and a second actuator). It lives next to the main system and changes none of it: it reuses `balance_sim`'s motor, sensor, cascaded PID and cost code, and `tuning`'s search methods, by calling them. Shared values (wheels, motors, noise, timing, scenario) come from `config.py`; only the new ones are in `pivot_config.py`. The base cost is the exception: the pivot keeps the original cost weights (`PIVOT_BASE_COST`), not `config.py`'s current ones.
-
-```
-pivot_config.py                         body split, servo, pivot sensor, pivot gains, LQR weights, extra search bounds
-simulation/pivot_sim/                   3-DOF model, servo, simulator, cascaded PID + pivot loop, LQR, cost, plots
-simulation/examples/run_pivot_demo.py   held vs level vs LQR vs tuned, plotted or animated
-simulation/tests/test_pivot.py          its tests (run with the rest by python -m pytest)
-optimization/pivot_tuning/              PivotEvaluator for the existing search methods
-optimization/run_pivot_tuning.py        tune its 7 gains; output in results/pivot_tuning/
-```
-
-```
-python simulation/examples/run_pivot_demo.py --animate
-python optimization/run_pivot_tuning.py --workers -1 --compare-held
-```
-
-Details (derivation, servo model, controllers, results so far): `PIVOT.md`.
-
 ## What runs, in order
 
 ```mermaid
@@ -145,3 +125,24 @@ python optimization/benchmark_batch.py --backend torch --float32     # batched s
 ```
 
 Change the robot, the scenario, the cost or the robustness test in `config.py`, not in the scripts. It's the only place those values are written: the classes it builds (`RobotParams`, `MotorParams`, `EvalConfig`, `SimSpec`, the search space) have no defaults for them, and the tests build from `CONFIG` too.
+
+## Side project: pivot robot
+
+An offshoot that adds a servo-driven pivot on top of the robot with a second body piece on it (a third degree of freedom and a second actuator). It lives next to the main system and changes none of it: it reuses `balance_sim`'s motor, sensor, cascaded PID and cost code, and `tuning`'s search methods, by calling them. Shared values (wheels, motors, noise, timing, scenario) come from `config.py`; only the new ones are in `pivot_config.py`. The base cost is the exception: the pivot keeps the original cost weights (`PIVOT_BASE_COST`), not `config.py`'s current ones.
+
+```
+pivot_config.py                         body split, servo, pivot sensor, pivot gains, LQR weights, extra search bounds
+simulation/pivot_sim/                   3-DOF model, servo, simulator, cascaded PID + pivot loop, LQR, cost, plots
+simulation/examples/run_pivot_demo.py   held vs level vs LQR vs tuned, plotted or animated
+simulation/tests/test_pivot.py          its tests (run with the rest by python -m pytest)
+optimization/pivot_tuning/              PivotEvaluator for the existing search methods
+optimization/run_pivot_tuning.py        tune its 7 gains; output in results/pivot_tuning/
+```
+
+```
+python simulation/examples/run_pivot_demo.py --animate
+python optimization/run_pivot_tuning.py --workers -1 --compare-held
+```
+
+Details (derivation, servo model, controllers, results so far): `PIVOT.md`.
+
