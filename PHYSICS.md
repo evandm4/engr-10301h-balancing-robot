@@ -24,7 +24,7 @@ whose output is labeled with this document's section numbers. It takes about 20 
 3. [Linearization](#3-linearization)
 4. [Actuator model](#4-actuator-model-actuatorspy) (`actuators.py`)
 5. [Sensor model](#5-sensor-model-sensorspy) (`sensors.py`)
-6. [Controller](#6-controller-controllerspy) (`controllers.py`)
+6. [Controller](#6-controller-controllerspy) (`controllers.py`, `pid_design.py`)
 7. [Time stepping, timing and delay](#7-time-stepping-timing-and-delay-simulatorpy) (`simulator.py`)
 8. [Cost function and robust scoring](#8-cost-function-and-robust-scoring-metricspy-robustpy) (`metrics.py`, `robust.py`)
 9. [Checking the assumptions against simulated runs](#9-checking-the-assumptions-against-simulated-runs)
@@ -646,6 +646,15 @@ That is `CONDITIONS.md`'s empirical observation, "outer gains much above Kv_p of
 
 This is conditional integration (clamping), one of the standard anti-windup schemes (Åström & Hägglund). The outer loop uses the same function with the lean cap as its $u_{\max}$.
 
+### 6.5 A model-based design: what the textbook method gives (`pid_design.py`)
+
+The analysis above also gives a way to design the cascade without simulation, the model-based baseline (`ProjectConfig.model_based_gains`, `ControllerConfig.design_*`). Placing all four poles of the quartic is not possible: its coefficients are coupled through $k_pk_v$ and $k_ik_v$, and for typical targets no positive $k_v$ solves them. The textbook sequential method is used instead:
+
+1. **Inner loop:** the pitch-loop cubic of 3.5 has three gains for three poles. They go at a critically damped pair at $2p = 16.9$ rad/s plus an integral pole at a tenth of that.
+2. **Outer loop:** $k_v$ sets the first-order velocity bandwidth $Gk_v$ (6.2) to $z/3 = 2.2$ rad/s.
+
+This gives $k_p = 1.729$, $k_i = 2.012$, $k_d = 0.148$, $k_v = 0.314$: $k_p$ and $k_i$ are close to the tuned values, but $k_d$ and $k_v$ are each about half. By 7.4's analysis (`stability.stable_latency_range`) the sampled, delayed loop is stable from 0 to 23.75 ms. The more aggressive standard choices fail, as 6.3 predicts: with $Gk_v = z/2$ the cascade is unstable even without delay, and an underdamped inner pair ($\zeta = 0.707$, at $z/3$) is unstable at 10 ms. `test_pid_design.py` checks the pole placement, the bandwidth and both stability claims. On 300 unseen robots (LQR.md) its median cost per scenario is 1.36 times the tuned PID's, but it falls on 2 of them, and its halved $k_d$ and $k_v$ leave less delay margin (23.75 ms against 37.25 ms).
+
 ## 7. Time stepping, timing and delay (`simulator.py`)
 
 ### 7.1 RK4 integration (`simulator.py:26-31`)
@@ -967,7 +976,7 @@ Grouped by how strong the evidence is that each one matters.
 |---|---|---|
 | Driver assumed to be current-controlled with exact back-EMF compensation | Voltage-mode driver with the duty capped at the torque limit: every gain set falls 30 of 30; with the full supply available the tuned gains survive at 33 times the cost and the hand-tuned ones fall (9.3) | Decide the hardware driver (DATASHEET.md suggests the DRV8874, whose current-sense output allows a firmware current loop). Either add the back-EMF feedforward of 9.3 to the firmware, or move the `VoltageModeActuator` from `physics_checks.py` into `actuators.py` and retune (or randomize between the two). |
 | Friction is zero and cannot be randomized | Tuned gains fall at $b \ge 0.003$; the runaway threshold is $rk_pk_v$ (9.4) | *Implemented and retuned 2026-11-06* (`results/batch_tuning/20261106-154750/`; 8.2, 9.4). Both engines model $\tau_f = b\omega + \tau_c\tanh(\omega/\omega_\epsilon)$ (`RobotConfig.wheel_friction`, `coulomb_friction`, `coulomb_friction_speed`). `linearize` includes the slope $\tau_c/\omega_\epsilon$, and robust scoring draws $b$ and $\tau_c$ per scenario (8.4). With $\omega_\epsilon = 1$ rad/s, $\lvert\lambda h\rvert \approx 0.17$ at the largest $\tau_c$ (7.1). Since 2026-11-08 the ranges come from the motors' free-run current (DATASHEET.md 5.2). Still to do: measure friction (9.4). |
-| Latency is fixed at 10 ms | Delay margin is the key robustness number (7.4) | *Implemented and retuned 2026-11-06, retuned again on the datasheet robot 2026-11-08.* The current tuned gains' nominal linear loop is stable from 0 to 37.25 ms (`results/lqr_comparison/20261108-182234/`; 7.4). Robust scoring gives each scenario its own latency, uniform over the whole physics steps in 5–20 ms (`RobustnessSettings.latency_range_s`; `simulate_batch(delay_steps=...)`, `TorchSimulator(max_delay_steps=...)`). The alternative, adding the delay margin to the objective, is not done. |
+| Latency is fixed at 10 ms | Delay margin is the key robustness number (7.4) | *Implemented and retuned 2026-11-06, retuned again on the datasheet robot 2026-11-08.* The current tuned gains' nominal linear loop is stable from 0 to 37.25 ms (`results/lqr_comparison/20261108-220417/`; 7.4). Robust scoring gives each scenario its own latency, uniform over the whole physics steps in 5–20 ms (`RobustnessSettings.latency_range_s`; `simulate_batch(delay_steps=...)`, `TorchSimulator(max_delay_steps=...)`). The alternative, adding the delay margin to the objective, is not done. |
 
 ### 10.2 Assumptions violated during transients
 

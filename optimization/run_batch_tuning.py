@@ -169,6 +169,7 @@ def main():
     train_check = BatchEvaluator(eval_config, space, robustness=robustness)
     ref_val_seeds = CONFIG.scenario.validation_seeds
     candidates = {"hand-tuned": np.array(CONFIG.controller.hand_tuned_gains),
+                  "model-based": np.array(CONFIG.model_based_gains()),
                   **{name: s.gains for name, s in searches.items()}}
     comparison, robust_validation = {}, {}
     header = f"\n{'method':<24}{gains_header(space.names)}{'evals':>8}{'train':>9}{'ref val':>9}{'falls':>7}"

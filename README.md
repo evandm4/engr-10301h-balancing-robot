@@ -7,6 +7,7 @@ config.py                  every adjustable number (robot, motor, sensor, timing
 simulation/
   balance_sim/             reference simulator: one robot at a time, readable, the source of truth;
                            controllers: cascaded PID and LQR (lqr.py), plus loop stability (stability.py)
+                           and a PID designed from the linear model alone (pid_design.py)
   batch_sim/               the same simulator stepping many robots at once (NumPy on the CPU, or PyTorch on the GPU)
   examples/                demo runs with plots; physics_checks.py reproduces every number in PHYSICS.md
   animate.py               watch runs: animated side view + live plots, simulated or replayed from CSV
@@ -17,7 +18,7 @@ optimization/
   batch_tuning/            batched tuner: BatchEvaluator, random search / DE / CMA-ES, robust scoring
   run_tuning.py            tune with the reference code
   run_batch_tuning.py      tune with the batched code (robust scoring, NumPy or GPU)
-  run_lqr_comparison.py    hand-tuned and ML-tuned PID vs four LQR variants, on one score (LQR.md)
+  run_lqr_comparison.py    hand-tuned, model-based and ML-tuned PID vs four LQR variants, on one score (LQR.md)
   benchmark.py             speed of the reference code
   benchmark_batch.py       speed of the batched code
   tests/                   tuner and config tests
@@ -135,7 +136,7 @@ python -m pytest                                                     # every tes
 python simulation/examples/run_velocity_demo.py                      # one run, plotted
 python simulation/animate.py                                         # animate hand-tuned vs the latest tuning result
 python simulation/animate.py --gains 1.03 0.2 0.1 0.33 --speed 0.5   # any gains, slow motion
-python simulation/animate.py --save robot.gif                        # save instead of showing
+python simulation/animate.py --save robot.gif                        # save instead of showing (pushes are drawn as red arrows)
 python optimization/run_tuning.py --workers -1 --bayesian            # reference tuner
 python optimization/run_batch_tuning.py --backend torch --float32    # batched robust tuner on the GPU, ~5 min on battery
 python optimization/run_lqr_comparison.py --backend torch --float32  # PID vs LQR, tuned and compared, on the GPU, ~15 min

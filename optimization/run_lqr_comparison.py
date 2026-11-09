@@ -1,8 +1,10 @@
 """Compare the cascaded PID with LQR, hand-designed and ML-tuned, on one common score.
 
-Six controllers:
+Seven controllers:
 
     PID, hand-tuned         config.py's hand_tuned_gains
+    PID, model-based        textbook sequential cascade design from the linear model
+                            (balance_sim.pid_design). Model-based, no tuning, no simulation.
     PID, ML-tuned           the 4 gains [kp, ki, kd, kv_p], searched
     LQR, cost-matched       Q and R are the cost function's own weights, designed for the
                             configured latency. Model-based, no tuning, no simulation.
@@ -65,15 +67,15 @@ from balance_sim import LinearController, spectral_radius, stable_latency_range
 from batch_tuning import BatchEvaluator, cma_es_search, differential_evolution_search
 from tuning import Evaluator, lqr_weights, provenance, save_example_runs, save_result
 
-PID_HAND, PID_ML = "PID, hand-tuned", "PID, ML-tuned"
+PID_HAND, PID_MODEL, PID_ML = "PID, hand-tuned", "PID, model-based", "PID, ML-tuned"
 LQR_COST, LQR_NO_DELAY = "LQR, cost-matched", "LQR, latency ignored"
 LQR_WEIGHTS, LQR_GAINS = "LQR, ML-tuned weights", "LQR, ML-tuned gains"
-NAMES = (PID_HAND, PID_ML, LQR_COST, LQR_NO_DELAY, LQR_WEIGHTS, LQR_GAINS)
+NAMES = (PID_HAND, PID_MODEL, PID_ML, LQR_COST, LQR_NO_DELAY, LQR_WEIGHTS, LQR_GAINS)
 SEARCHED = (PID_ML, LQR_WEIGHTS, LQR_GAINS)
 
-# Categorical slots 1-6 of the dataviz reference palette, in its validated order; one
+# Categorical slots 1-7 of the dataviz reference palette, in its validated order; one
 # color per controller in every figure. Text stays in the ink colors.
-COLORS = dict(zip(NAMES, ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300")))
+COLORS = dict(zip(NAMES, ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#7a5cc7")))
 INK, INK_2, GRID = "#0b0b0b", "#52514e", "#e4e3df"
 SWEEP_LATENCIES_MS = (0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0, 25.0, 30.0, 40.0)
 MAX_STABLE_LATENCY = 0.08   # s, how far the linear stability search looks
@@ -197,6 +199,7 @@ def main():
         gains[name] = evaluator.gains_for([best.gains])[0]
 
     gains[PID_HAND] = np.array(cfg.controller.hand_tuned_gains, dtype=float)
+    gains[PID_MODEL] = np.array(cfg.model_based_gains(), dtype=float)
     gains[LQR_COST] = cfg.build_lqr_gain()
     gains[LQR_NO_DELAY] = cfg.build_lqr_gain(design_latency=0.0)
     gains = {name: gains[name] for name in NAMES}
@@ -337,6 +340,9 @@ def replot(folder: Path, show: bool):
     per-scenario validation costs gets them recomputed (float64 NumPy) and written back."""
     data = json.loads((folder / "comparison.json").read_text())
     comparison = data["results"]
+    missing = [name for name in NAMES if name not in comparison]
+    if missing:
+        raise SystemExit(f"{folder} predates {', '.join(missing)}: re-run the comparison instead of replotting it.")
     cfg = comparison_cfg()
     gains = {name: np.array(comparison[name]["gains"]) for name in NAMES}
     if any("validation_costs" not in comparison[name] for name in NAMES):
@@ -506,7 +512,7 @@ def comparison_figure(comparison, histories, latency):
     untuned_lqr = comparison[LQR_COST]["train_objective"]
     top = max(min(max(firsts), 2 * untuned_lqr), untuned_lqr) * 1.02   # a bad first generation doesn't squash the rest
     off_chart = []
-    for n in (PID_HAND, LQR_COST):
+    for n in (PID_HAND, PID_MODEL, LQR_COST):
         objective = comparison[n]["train_objective"]
         if objective <= top:
             ax.axhline(objective, color=COLORS[n], lw=1.0, ls="--", label=f"{n} (untuned)")

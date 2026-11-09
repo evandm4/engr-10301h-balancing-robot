@@ -40,6 +40,26 @@ from balance_sim import SimResult, load_trajectory, save_trajectory  # noqa: E40
 COLORS = ["tab:blue", "tab:orange", "tab:green", "tab:purple"]
 GROUND_MARK_SPACING = 0.05   # m
 VIEW_HALF_WIDTH = 0.25       # m, robot view extends this far either side of the robot
+PUSH_SHOW_S = 0.6            # s, how long a push's arrow stays up (a 50 ms push is under two frames)
+PUSH_COLOR = "crimson"
+
+
+def scenario_phase(time: float, goal_steps=None, transition: float = None) -> str:
+    """What the scenario is asking for at `time`, in a few words (ScenarioConfig's goal changes)."""
+    goal_steps = CONFIG.scenario.goal_steps if goal_steps is None else goal_steps
+    transition = CONFIG.scenario.goal_transition_s if transition is None else transition
+    goal = 0.0
+    for step in sorted(goal_steps):
+        start, target = step[0], step[1]
+        blend = step[2] if len(step) > 2 else transition
+        if time < start:
+            break
+        if time < start + blend:
+            return f"goal changing to {target:+.1f} m/s"
+        goal = target
+    if goal_steps and time < min(goal_steps)[0]:
+        return "recover the start tilt, stand still"
+    return "stand still" if goal == 0 else f"hold {goal:+.1f} m/s"
 
 
 # ---- where runs come from ----------------------------------------------------
@@ -99,13 +119,15 @@ class RunAnimation:
     """
 
     def __init__(self, runs: Dict[str, SimResult], robot=None, fps: int = 30, speed: float = 1.0,
-                 title: str = ""):
+                 title: str = "", pushes=None):
         import matplotlib.pyplot as plt
 
         if not runs:
             raise ValueError("nothing to animate")
         self.runs = runs
         self.fps, self.speed = fps, speed
+        # (start s, duration s, force N) on the body's center of mass, forward +; shared by every run
+        self.pushes = tuple(CONFIG.scenario.pushes) if pushes is None else tuple(pushes)
 
         # -- robot geometry: only the dimensions that matter for drawing --
         robot = robot if robot is not None else CONFIG.build_robot_params()
@@ -170,6 +192,12 @@ class RunAnimation:
             ax.set_title(title, fontsize=10)
             ax.set_xlim(0, self.end_time)
             self.cursors.append(ax.axvline(0, color="gray", lw=1))   # moved by draw()
+        for start, _, force in self.pushes:
+            for ax in plots:
+                ax.axvline(start, color=PUSH_COLOR, ls=":", lw=1)
+            plots[1].annotate(f"push {force:+.1f} N", (start, 0.98), xycoords=("data", "axes fraction"),
+                              xytext=(-2, 0), textcoords="offset points", rotation=90, ha="right", va="top",
+                              fontsize=7, color=PUSH_COLOR)
         plots[0].legend(fontsize=8, loc="lower left")
         plots[1].legend(fontsize=8, loc="lower left")
         self.artists += self.cursors
@@ -208,9 +236,17 @@ class RunAnimation:
             "com": ax.plot([], [], "o", color="k", ms=5)[0],
             # live readout in the top-left corner (axes coordinates, so it stays put)
             "text": ax.text(0.02, 0.97, "", transform=ax.transAxes, va="top", fontsize=9, family="monospace"),
+            # what the scenario is doing now, top right
+            "phase": ax.text(0.98, 0.97, "", transform=ax.transAxes, va="top", ha="right", fontsize=9,
+                             fontweight="bold"),
+            # a push: an arrow onto the center of mass from the side it comes from, plus its size
+            "push_line": ax.plot([], [], color=PUSH_COLOR, lw=3, solid_capstyle="butt")[0],
+            "push_head": ax.plot([], [], color=PUSH_COLOR, ls="none", ms=12)[0],
+            "push_text": ax.text(0, 0, "", color=PUSH_COLOR, fontsize=9, fontweight="bold", ha="center"),
             "color": color,   # not an artist: remembered so draw() can restore it after a fall
         }
-        self.artists += [parts[k] for k in ("ground", "ghost", "body", "wheel", "spoke", "com", "text")]
+        self.artists += [parts[k] for k in ("ground", "ghost", "body", "wheel", "spoke", "com", "text",
+                                            "phase", "push_line", "push_head", "push_text")]
         return parts
 
     def _index(self, run: SimResult, time: float) -> int:
@@ -275,6 +311,23 @@ class RunAnimation:
             parts["text"].set_text(
                 f"t {time:5.2f} s\nv {x_dot:+.2f} m/s (goal {run.velocity_goal[k]:+.2f})\n"
                 f"pitch {math.degrees(theta):+5.1f} deg\nx {x:+.2f} m\n{status}")
+
+            # -- scenario phase, and any push in progress (held PUSH_SHOW_S so it can be seen) --
+            parts["phase"].set_text(scenario_phase(time))
+            push = next((f for start, dur, f in self.pushes if start <= time < start + max(dur, PUSH_SHOW_S)), None)
+            if push is None:
+                parts["push_line"].set_data([], [])
+                parts["push_head"].set_data([], [])
+                parts["push_text"].set_text("")
+            else:
+                side = -1.0 if push > 0 else 1.0           # a forward push comes from behind (-x)
+                tail = com + np.array([side * 0.12, 0.0])
+                tip = com + np.array([side * (self.body_width / 2 + 0.01), 0.0])
+                parts["push_line"].set_data([tail[0], tip[0]], [tail[1], tip[1]])
+                parts["push_head"].set_data([tip[0]], [tip[1]])
+                parts["push_head"].set_marker(">" if push > 0 else "<")
+                parts["push_text"].set_position((tail[0], tail[1] + 0.02))
+                parts["push_text"].set_text(f"PUSH {push:+.1f} N")
 
         # -- time cursors on the bottom plots (shared by all runs) --
         for cursor in self.cursors:

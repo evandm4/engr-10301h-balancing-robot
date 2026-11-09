@@ -59,6 +59,7 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 | Controller | What it is |
 |---|---|
 | PID, hand-tuned | config.py's `hand_tuned_gains` |
+| PID, model-based | textbook sequential cascade design from the linear model (`pid_design.py`, PHYSICS.md 6.5). No tuning, no simulation |
 | PID, ML-tuned | the 4 gains, searched |
 | LQR, cost-matched | Q, R = the cost's weights, designed for 10 ms. No tuning, no simulation |
 | LQR, latency ignored | the same weights, designed as if there were no latency (the textbook design) |
@@ -71,11 +72,12 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 
 ### Results
 
-**Current: 20 s scenario with pushes (2026-11-08, later).** Run `results/lqr_comparison/20261108-182234/`, same protocol as the run below, on the redesigned scenario (`ScenarioConfig`: start tilts up to 0.30 rad, a 1.6 s speed-up to a 1.3 m/s cruise, two 2.9 N pushes, braking and reversing; 20 s training runs, 60 s validation runs). Same robot, cost and robust scoring.
+**Current: 20 s scenario with pushes (2026-11-08, later).** Run `results/lqr_comparison/20261108-220417/`, which adds the model-based PID; every other row reproduces the first run on this scenario (`20261108-182234/`) exactly. Same protocol as the run below, on the redesigned scenario (`ScenarioConfig`: start tilts up to 0.30 rad, a 1.6 s speed-up to a 1.3 m/s cruise, two 2.9 N pushes, braking and reversing; 20 s training runs, 60 s validation runs). Same robot, cost and robust scoring.
 
 | Controller | Validation cost | vs ML PID (median per scenario) | Falls (of 300) | Worst run | Effort term | Stable latency (linear) |
 |---|---:|---:|---:|---:|---:|---|
 | PID, hand-tuned | 30.02 | 6.18x | 2 | 1901 | 5.986 | 0-15.75 ms |
+| PID, model-based | 15.34 | 1.36x | 2 | 1874 | 1.763 | 0-23.75 ms |
 | **PID, ML-tuned** | **2.261** | | **0** | 4.99 | 1.600 | 0-37.25 ms |
 | LQR, cost-matched | 22.32 | 4.35x | 2 | 1900 | 2.260 | 0-44.25 ms |
 | LQR, latency ignored | 7.077 | 3.15x | 0 | 14.90 | 2.197 | 0-36.50 ms |
@@ -83,7 +85,8 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 | LQR, ML-tuned gains | 3.050 | 1.35x | 0 | 6.44 | 2.244 | 0-35.00 ms |
 
 - **The PID still wins, by more.** The tuned LQR gains are 35% behind (18% on the 12 s scenario), the tuned weights 66%, the cost-matched LQR 4.3x.
-- **Falls now separate the controllers.** Three of the six fall at least once on the 300 unseen robots: the hand-tuned PID (2), the cost-matched LQR (2) and the weight-tuned LQR (7). The ML-tuned PID, the tuned LQR gains and the latency-ignoring LQR never fall. A single fall costs 1000-2000, so mean costs with falls are dominated by them; the median ratio is the fairer comparison of the rest.
+- **A textbook PID design is close on typical runs but not robust.** The model-based PID, designed from the linear model with no tuning and no simulation (PHYSICS.md 6.5), has a median cost per scenario 1.36x the ML-tuned PID's: level with the tuned LQR gains, and far ahead of the hand-tuned PID (6.2x) and the cost-matched LQR (4.3x). But it falls on 2 of the 300 robots, and its linear loop tolerates only 23.75 ms of latency against the tuned PID's 37.25 ms (in the sweep it falls twice at 20 ms and 25 times at 30 ms). What the ML tuning adds over a competent model-based design is mostly robustness: no falls and about 1.6 times the delay margin.
+- **Falls now separate the controllers.** Four of the seven fall at least once on the 300 unseen robots: the hand-tuned PID (2), the model-based PID (2), the cost-matched LQR (2) and the weight-tuned LQR (7). The ML-tuned PID, the tuned LQR gains and the latency-ignoring LQR never fall. A single fall costs 1000-2000, so mean costs with falls are dominated by them; the median ratio is the fairer comparison of the rest.
 - **The PID search confirms the batch tuner.** It lands on kp 1.635, ki 1.767, kd 0.299, kv_p 0.620, the same gains `run_batch_tuning.py` found on this scenario (`results/batch_tuning/20261108-153813/`).
 - **The weight search can't avoid falls.** Its training objective (38.6) includes falls, and its one free parameter (`w_integral`, settled at 6.21) is not enough: with the pitch, velocity and pitch-rate weights held at 0 (the 2026-11-06 normalization below), no design it can reach survives every push. Re-opening those weights (`LQRConfig.w_*_fixed = None`) is the next thing to try.
 - **Ignoring the latency in the design helps again** (7.08 against 22.3 for the delay-aware design, and no falls).

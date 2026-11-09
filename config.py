@@ -52,6 +52,7 @@ from balance_sim import (
     cost,
     critical_pitch_gain,
     lqr_gain,
+    model_based_pid_gains,
     push_profile,
     step_profile,
 )
@@ -215,6 +216,16 @@ class ControllerConfig:
     # kp, ki, kd (pitch loop), kv_p (velocity loop): the hand-picked baseline
     # every tuning run is compared against.
     hand_tuned_gains: Tuple[float, float, float, float] = (4.0, 0.5, 0.15, 0.1)
+    # The model-based baseline (balance_sim.pid_design, ProjectConfig.model_based_gains):
+    # textbook sequential cascade design from the linear model, no simulation.
+    # Inner pitch-loop poles: a pair at design_inner_speed x the unstable pole with
+    # damping design_inner_damping, plus an integral pole design_integral_ratio x
+    # that frequency. Outer bandwidth: design_outer_fraction x the RHP zero.
+    # These defaults are the common choices that stay stable at the 10 ms latency.
+    design_inner_speed: float = 2.0
+    design_inner_damping: float = 1.0
+    design_integral_ratio: float = 0.1
+    design_outer_fraction: float = 1.0 / 3.0
 
     @property
     def max_lean_rad(self) -> float:
@@ -519,6 +530,12 @@ class ProjectConfig:
 
     def build_robot_params(self) -> RobotParams:
         return self.robot.build(self.actuator.reflected_rotor_inertia)
+
+    def model_based_gains(self) -> Tuple[float, float, float, float]:
+        """The model-based baseline's (kp, ki, kd, kv_p) for the nominal robot (ControllerConfig.design_*)."""
+        c = self.controller
+        return model_based_pid_gains(self.build_robot_params(), c.design_inner_speed, c.design_inner_damping,
+                                     c.design_integral_ratio, c.design_outer_fraction)
 
     def build_actuator(self, robot: Optional[RobotParams] = None):
         return self.actuator.build(robot if robot is not None else self.build_robot_params())
