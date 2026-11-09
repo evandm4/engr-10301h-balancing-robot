@@ -84,3 +84,13 @@ def test_end_to_end_on_smoke(tmp_path):
     assert set(report["latency_sweep"]["by_method"]) >= {"L-PID", "PID, ML-tuned"}
     lines = (folder / "per_scenario.csv").read_text().strip().splitlines()
     assert len(lines) == 1 + 9 * 6        # 7 existing + 2 policies, 2 seeds x 3 tilts
+    # Weight sensitivity: the configured variant reproduces the headline; every variant scores the
+    # reference at exactly 1; the variants include halved/doubled limits, effort off and thermal.
+    sens = report["weight_sensitivity"]
+    assert sens["configured"]["headline_median_ratio"]["L-PID"] == l_pid["headline_median_ratio"]
+    assert all(v["headline_median_ratio"]["PID, ML-tuned"] == 1.0 for v in sens.values())
+    assert len(sens) == 1 + 6 + 2 and any("thermal" in k for k in sens)
+    side = ref["side_metrics"]
+    assert side["torque_rms_change_per_tick_n_m"]["median"] > 0
+    assert 0 < side["time_at_torque_limit_fraction"]["worst"] < 1   # the 0.30 rad start saturates
+    assert side["peak_pitch_deg"]["worst"] >= 17.0                  # it starts at 0.30 rad = 17.2 deg

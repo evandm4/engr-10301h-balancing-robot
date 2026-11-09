@@ -544,6 +544,11 @@ Designed now so Phase 0 doesn't block it; built after the current scope, with a 
 - Per-scenario ratio distributions, the latency sweep, one example run with the residual torque.
 - Inference cost per tick (multiply-adds) and whether it fits a microcontroller at 200 Hz.
 - Related work and limitations include robust control (1.1).
+- Weight sensitivity and side metrics from `compare_controllers.py` in every comparison: the
+  headline re-scored under halved and doubled Bryson limits, effort off and the motors' thermal
+  torque limit, plus torque roughness, saturation, peak pitch and velocity error, which no weight
+  touches. Discussion and future iterations: the cost's grounding, and a re-grounded cost (thermal
+  torque limit, torque-rate term) with every controller re-tuned (paper/results-planning-notes.md).
 - New `ML_BASELINES.md`; updates to `README.md` (layout), `ARCHITECTURE.md` (status).
 
 ## 9. One pipeline for laptop and cluster

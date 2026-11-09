@@ -144,6 +144,9 @@ class TorchSimulator:
         self.alive = zeros(torch.bool)
         self.fall_time = zeros()
         self.pitch_error, self.effort, self.velocity_error = zeros(), zeros(), zeros()
+        # Reporting only (BatchResult): torque roughness, saturation and peak pitch while up.
+        self.last_command, self.torque_variation, self.torque_rate_sq = zeros(), zeros(), zeros()
+        self.saturated_ticks, self.alive_ticks, self.peak_pitch = zeros(), zeros(), zeros()
         self.step = torch.zeros(1, dtype=torch.long, device=device)
         self.tick = torch.zeros(1, dtype=torch.long, device=device)
         self.history = (torch.zeros(s.n_steps + 1, B, 4, dtype=dtype, device=device) if record else None)
@@ -200,6 +203,13 @@ class TorchSimulator:
             self.pitch_integral.copy_(pitch_integral)
         self.velocity_integral.copy_(velocity_integral)
         self.ring.index_copy_(0, self.write_slot_per_tick[self.tick], command.unsqueeze(0))
+        torch, alive = self.torch, self.alive
+        change = command - self.last_command
+        self.torque_variation.add_(torch.where(alive, torch.abs(change), 0.0))
+        self.torque_rate_sq.add_(torch.where(alive, change * change, 0.0))
+        self.saturated_ticks.add_(torch.where(alive & (torch.abs(command) >= self.robot.max_torque), 1.0, 0.0))
+        self.alive_ticks.add_(torch.where(alive, 1.0, 0.0))
+        self.last_command.copy_(command)
         self.tick.add_(1)
 
     def _physics_step(self):
@@ -217,6 +227,7 @@ class TorchSimulator:
         # Cost terms at this sample, only for robots still up.
         x, x_dot, theta, theta_dot = self.state
         pitch_err = theta if spec.pitch_reference == "upright" else theta - self.setpoint
+        self.peak_pitch.copy_(torch.maximum(self.peak_pitch, torch.where(alive, torch.abs(theta), 0.0)))
         self.pitch_error.add_(torch.where(alive, pitch_err**2 * dt, 0.0))
         self.effort.add_(torch.where(alive, torque**2 * dt, 0.0))
         self.velocity_error.add_(torch.where(alive, (x_dot - self.goal_per_step[self.step]) ** 2 * dt, 0.0))
@@ -241,7 +252,9 @@ class TorchSimulator:
     def _reset(self):
         for buffer in (*self.state, self.pitch_integral, self.velocity_integral, self.setpoint, self.in_flight,
                        self.ring, self.pitch_error, self.effort, self.velocity_error, self.step, self.tick,
-                       self.int_v, self.int_theta, self.commands, self.saturated):
+                       self.int_v, self.int_theta, self.commands, self.saturated, self.last_command,
+                       self.torque_variation, self.torque_rate_sq, self.saturated_ticks, self.alive_ticks,
+                       self.peak_pitch):
             buffer.zero_()
         self.state[2].copy_(self.start_pitch)
         self.alive.fill_(True)
@@ -348,4 +361,9 @@ class TorchSimulator:
             fall_time=out(self.fall_time),
             final_state=out(self.torch.stack(self.state, dim=-1)),
             states=out(self.history) if self.record else None,
+            torque_variation=out(self.torque_variation),
+            torque_rate_sq=out(self.torque_rate_sq),
+            saturated_ticks=out(self.saturated_ticks),
+            alive_ticks=out(self.alive_ticks),
+            peak_pitch=out(self.peak_pitch),
         )

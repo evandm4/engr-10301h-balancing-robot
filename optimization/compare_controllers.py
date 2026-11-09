@@ -4,7 +4,7 @@ Controllers come from three kinds of file:
     the existing comparison (results/lqr_comparison/<run>/comparison.json): its 7 PID and LQR
         controllers, one run each (--existing; default the reference run in config.py);
     learned policies (.npz from run_neuroevolution.py), grouped into methods:
-        --policies "A=results/neuroevolution/mlp/*/final.npz"   (one method, one run per file);
+        --policies "A=C:/balancebot_training/neuroevolution/mlp/*/final.npz"   (one method, one run per file);
     re-runs of a gain search (.json with "gains", and "kind": "lqr" for LQR gains), the same way:
         --gain-runs "PID re-runs=results/pid_reruns/*/pid.json".
 
@@ -19,7 +19,16 @@ validation scenario. Reported, against a reference controller (default the ML-tu
         shared by every run); the distribution-free order-statistic interval for the median over
         runs; fall-rate and McNemar summaries (median and range over runs); every run's numbers;
     per scenario (per_scenario.csv): cost, fell and fall time for every controller, so each fall
-        can be traced to the start tilt, a push, braking or standstill drift.
+        can be traced to the start tilt, a push, braking or standstill drift;
+    side metrics that no cost weight touches, per run (median over scenarios, and the worst):
+        torque roughness (RMS change per control tick, total variation per second), RMS torque,
+        time at the torque limit, peak pitch, RMS velocity error;
+    weight sensitivity: every controller re-scored, from the same simulations, with each Bryson
+        limit of CostConfig halved and doubled, the effort term off, and the torque limit at the
+        motors' continuous (thermal) rating. Costs are rebuilt from each scenario's unweighted
+        integrals, so nothing is re-simulated. The controllers were trained on the configured
+        cost, so this tests whether a ranking depends on the weights, not how each method would
+        do if trained on another cost.
 With --latency-sweep, each controller also runs at every latency of a 2.5 ms grid from 15 to
 45 ms (no chaos twins, every scenario at that one latency), and reports the first latency with
 4 or more falls (pre-registered; plan 3.4) and the full fall-count curve.
@@ -29,7 +38,7 @@ refuses them without --final, and nobody inspects per-scenario results there unt
 controller in the comparison is frozen. Use --tier dev (or smoke) while developing.
 
 From the project folder:
-    python optimization/compare_controllers.py --tier dev --policies "L=results/neuroevolution/linear/*/final.npz"
+    python optimization/compare_controllers.py --tier dev --policies "L=C:/balancebot_training/neuroevolution/linear/*/final.npz"
     python optimization/compare_controllers.py --tier fall_rate --final --latency-sweep --policies ...
 
 Results: results/comparison/<timestamp>-<tier>/ with comparison.json, per_scenario.csv and,
@@ -121,6 +130,71 @@ def crossed_bootstrap(ratios, n_boot: int = 10_000, seed: int = 0, alpha: float 
     return {"low": float(low), "high": float(high), "n_boot": n_boot}
 
 
+# ---- weight sensitivity and side metrics ------------------------------------------------------
+
+# The motors' continuous rating: Pololu allows 25% of the 6.0 A stall current (1.5 A) continuously
+# (DATASHEET.md 3.1), so torque_constant x 1.5 A x gear ratio x gear efficiency x 2 motors.
+CONTINUOUS_CURRENT_A = 1.5
+
+
+def cost_variants() -> Dict[str, Tuple[float, float, float]]:
+    """name -> (pitch_limit_rad, velocity_limit, torque_limit): the configured limits, each halved
+    and doubled, effort off, and the torque limit at the motors' continuous rating."""
+    c, a = CONFIG.cost, CONFIG.actuator
+    base = (c.pitch_limit_rad, c.velocity_limit, c.torque_limit)
+    thermal = a.torque_constant * CONTINUOUS_CURRENT_A * a.gear_ratio * a.gear_efficiency * a.n_motors
+    variants = {"configured": base}
+    for i, name in enumerate(("pitch", "velocity", "torque")):
+        for factor in (0.5, 2.0):
+            limits = list(base)
+            limits[i] *= factor
+            variants[f"{name} limit x{factor:g}"] = tuple(limits)
+    variants["effort off"] = (base[0], base[1], math.inf)
+    variants[f"torque limit {thermal:.3f} (thermal)"] = (base[0], base[1], thermal)
+    return variants
+
+
+def rescore(s: dict, limits: Tuple[float, float, float], duration: float) -> np.ndarray:
+    """Per-scenario costs under other Bryson limits, from the unweighted integrals (balance_sim.cost)."""
+    pitch_limit, velocity_limit, torque_limit = limits
+    velocity_weight = (pitch_limit / velocity_limit) ** 2
+    effort_weight = 0.0 if math.isinf(torque_limit) else (pitch_limit / torque_limit) ** 2
+    total = s["pitch_error"] + velocity_weight * s["velocity_error"] + effort_weight * s["effort"]
+    fall_time = np.where(s["fell"], s["fall_time"], duration)
+    penalty = CONFIG.cost.fall_penalty * (1.0 + (duration - fall_time) / duration)
+    return np.where(s["fell"], total + penalty, total)
+
+
+def weight_sensitivity(entries, scores, reference: str, duration: float) -> dict:
+    """Each method's headline (median over runs of the median per-scenario ratio) under every variant."""
+    out = {}
+    for name, limits in cost_variants().items():
+        costs = {e.label: rescore(scores[e.label], limits, duration) for e in entries}
+        ref = costs[reference]
+        heads = {}
+        for method in dict.fromkeys(e.method for e in entries):
+            runs = [float(np.median(costs[e.label] / ref)) for e in entries if e.method == method]
+            heads[method] = float(np.median(runs))
+        out[name] = {"limits": {"pitch_rad": limits[0], "velocity_m_s": limits[1], "torque_n_m": limits[2]},
+                     "headline_median_ratio": heads}
+    return out
+
+
+def side_metrics(s: dict, control_dt: float) -> dict:
+    """Weight-free behavior per scenario, summarized as the median and the worst over scenarios."""
+    ticks = np.maximum(s["alive_ticks"], 1.0)
+    seconds = ticks * control_dt
+    per_scenario = {
+        "torque_rms_change_per_tick_n_m": np.sqrt(s["torque_rate_sq"] / ticks),
+        "torque_variation_per_s_n_m": s["torque_variation"] / seconds,
+        "torque_rms_n_m": np.sqrt(s["effort"] / seconds),
+        "time_at_torque_limit_fraction": s["saturated_ticks"] / ticks,
+        "peak_pitch_deg": np.degrees(s["peak_pitch"]),
+        "velocity_rms_error_m_s": np.sqrt(s["velocity_error"] / seconds),
+    }
+    return {k: {"median": float(np.median(v)), "worst": float(np.max(v))} for k, v in per_scenario.items()}
+
+
 def first_latency_with_falls(latencies_ms, falls, threshold: int = SWEEP_FALL_THRESHOLD) -> Optional[float]:
     """The pre-registered sweep metric: the first latency with `threshold` or more falls; None if none."""
     for ms, n in zip(latencies_ms, falls):
@@ -190,9 +264,10 @@ def score(entries: Sequence[Entry], config, robust, seeds, backend="numpy", devi
 
     def keep(group, result):
         for i, e in enumerate(group):
-            out[e.label] = {"costs": result.costs[i], "fell": result.fell[i], "fall_time": result.fall_time[i],
+            out[e.label] = {"costs": result.costs[i], "fell": result.fell[i],
                             "mean_cost": float(result.mean_cost[i]), "objective": float(result.objective[i]),
-                            "sensitivity": float(result.sensitivity[i]), "n_fell": int(result.n_fell[i])}
+                            "sensitivity": float(result.sensitivity[i]), "n_fell": int(result.n_fell[i]),
+                            **{f: getattr(result, f)[i] for f in BatchEvaluator.REPORT_FIELDS}}
 
     common = dict(robustness=robust, backend=backend, device=device, dtype=dtype)
     cascaded = [e for e in entries if e.kind == "cascaded"]
@@ -333,6 +408,11 @@ def main(argv=None) -> Path:
     t0 = time.time()
     scores = score(entries, config, robust, seeds, args.backend, args.device)
     report = summarize(entries, scores, args.reference, args.bootstrap)
+    for e in entries:   # rebuilding the costs from their parts must give the scored costs back
+        np.testing.assert_allclose(rescore(scores[e.label], cost_variants()["configured"], config.duration),
+                                   scores[e.label]["costs"], rtol=1e-9)
+        report["runs"][e.label]["side_metrics"] = side_metrics(scores[e.label], config.control_dt)
+    report["weight_sensitivity"] = weight_sensitivity(entries, scores, args.reference, config.duration)
     report.update(tier=args.tier, seeds=[seeds[0], seeds[-1]], n_seeds=len(seeds), duration_s=config.duration,
                   backend=args.backend, provenance=provenance(), config=CONFIG.snapshot())
 
@@ -369,6 +449,19 @@ def main(argv=None) -> Path:
         interval = "" if ci is None or ci.get("low") is None else f"[{ci['low']:.3f}, {ci['high']:.3f}]"
         print(f"{method:<28}{len(m['runs']):>5}{m['headline_median_ratio']:>14.4f}{interval:>22}"
               f"{m['falls']['median']:>13.1f}")
+    print("\nWeight sensitivity: headline median ratio vs the reference, re-scored under other Bryson limits")
+    methods = list(report["methods"])
+    print(f"{'variant':<32}" + "".join(f"{m[:14]:>16}" for m in methods))
+    for name, v in report["weight_sensitivity"].items():
+        print(f"{name:<32}" + "".join(f"{v['headline_median_ratio'][m]:>16.3f}" for m in methods))
+    print("\nSide metrics (median over scenarios; not in the cost)")
+    keys = [("torque_rms_change_per_tick_n_m", "dU/tick"), ("torque_variation_per_s_n_m", "TV/s"),
+            ("torque_rms_n_m", "U rms"), ("time_at_torque_limit_fraction", "sat."),
+            ("peak_pitch_deg", "pk pitch"), ("velocity_rms_error_m_s", "v err")]
+    print(f"{'controller':<34}" + "".join(f"{label:>10}" for _, label in keys))
+    for label, run in report["runs"].items():
+        m = run["side_metrics"]
+        print(f"{label[:33]:<34}" + "".join(f"{m[k]['median']:>10.4f}" for k, _ in keys))
     print(f"saved {folder}")
     return folder
 

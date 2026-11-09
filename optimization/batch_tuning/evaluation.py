@@ -90,6 +90,12 @@ class BatchEvalResult:
     # Per scenario, (P, n_scenarios): whether it fell, and when (s; NaN if it stayed up).
     fell: Optional[np.ndarray] = None
     fall_time: Optional[np.ndarray] = None
+    # Not in the cost, for reporting (batch_sim BatchResult): torque roughness, saturation, peak pitch.
+    torque_variation: Optional[np.ndarray] = None
+    torque_rate_sq: Optional[np.ndarray] = None
+    saturated_ticks: Optional[np.ndarray] = None
+    alive_ticks: Optional[np.ndarray] = None
+    peak_pitch: Optional[np.ndarray] = None
 
 
 @dataclass(frozen=True)
@@ -232,7 +238,9 @@ class BatchEvaluator:
         self._torch_sims[key] = sim
         return sim
 
-    CHUNK_FIELDS = ("cost", "fell", "pitch_error", "effort", "velocity_error", "fall_time")
+    CHUNK_FIELDS = ("cost", "fell", "pitch_error", "effort", "velocity_error", "fall_time",
+                    "torque_variation", "torque_rate_sq", "saturated_ticks", "alive_ticks", "peak_pitch")
+    REPORT_FIELDS = CHUNK_FIELDS[2:]   # per-scenario arrays BatchEvalResult carries besides the cost
 
     def _simulate_chunk(self, gains, start_pitch, seed_index, robot: BatchRobot, seeds: Tuple[int, ...],
                         delay_steps=None, max_delay_steps=None):
@@ -291,7 +299,7 @@ class BatchEvaluator:
             objective = mean + self.robustness.sensitivity_weight * sensitivity
         else:
             sensitivity, objective = np.zeros(P), mean
-        parts = {f: out[f][:, :s.n_base] for f in ("pitch_error", "effort", "velocity_error", "fell", "fall_time")}
+        parts = {f: out[f][:, :s.n_base] for f in ("fell",) + self.REPORT_FIELDS}
         return BatchEvalResult(mean, base, out["fell"][:, :s.n_base].sum(axis=1), sensitivity, objective, **parts)
 
     def candidates_per_chunk(self, seeds: Optional[Sequence[int]] = None) -> int:

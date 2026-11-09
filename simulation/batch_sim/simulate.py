@@ -38,6 +38,13 @@ class BatchResult:
     fall_time: np.ndarray       # (B,) s; NaN for robots that stayed up
     final_state: np.ndarray     # (B, 4) state at the end (at the moment of falling, for fallen robots)
     states: Optional[np.ndarray] = None  # (n_steps + 1, B, 4) if record=True; frozen after a fall
+    # How the controller drove the motor, counted over control ticks while the robot was up (none
+    # of these enter the cost; they are for reporting, e.g. torque roughness the cost can't see):
+    torque_variation: Optional[np.ndarray] = None   # (B,) sum of |u_k - u_{k-1}| over commands (N m)
+    torque_rate_sq: Optional[np.ndarray] = None     # (B,) sum of (u_k - u_{k-1})^2 (N^2 m^2)
+    saturated_ticks: Optional[np.ndarray] = None    # (B,) ticks whose command sat at the torque limit
+    alive_ticks: Optional[np.ndarray] = None        # (B,) controller ticks while up
+    peak_pitch: Optional[np.ndarray] = None         # (B,) largest |pitch| while up (rad)
 
 
 def simulate_batch(
@@ -121,6 +128,8 @@ def simulate_batch(
     alive = np.ones(B, dtype=bool)
     fall_time = np.full(B, np.nan, dtype=dtype)
     pitch_error, effort, velocity_error = zeros(), zeros(), zeros()
+    last_command, torque_variation, torque_rate_sq = zeros(), zeros(), zeros()
+    saturated_ticks, alive_ticks, peak_pitch = zeros(), zeros(), zeros()
     upright_reference = spec.pitch_reference == "upright"
     history = [np.stack(state, axis=-1)] if record else None
 
@@ -156,6 +165,12 @@ def simulate_batch(
                     spec.pitch_integral_limit, spec.velocity_integral_limit,
                 )
             ring[j % ring_size] = command
+            change = command - last_command
+            torque_variation += np.where(alive, np.abs(change), 0.0)
+            torque_rate_sq += np.where(alive, change * change, 0.0)
+            saturated_ticks += np.where(alive & (np.abs(command) >= torque_limit), 1.0, 0.0)
+            alive_ticks += np.where(alive, 1.0, 0.0)
+            last_command = command
         if per_sim_delay:
             since = k - delay_steps
             torque = ring[np.where(since >= 0, (since // spc) % ring_size, ring_size), columns_b]
@@ -166,6 +181,7 @@ def simulate_batch(
         # Cost terms at this sample, only for robots still up.
         theta = state[2]
         pitch_err = theta if upright_reference else theta - setpoint
+        peak_pitch = np.maximum(peak_pitch, np.where(alive, np.abs(theta), 0.0))
         pitch_error += np.where(alive, pitch_err**2 * dt, 0.0)
         effort += np.where(alive, torque**2 * dt, 0.0)
         velocity_error += np.where(alive, (state[1] - goal_per_step[k]) ** 2 * dt, 0.0)
@@ -197,4 +213,9 @@ def simulate_batch(
         fall_time=fall_time,
         final_state=np.stack(state, axis=-1),
         states=np.stack(history) if record else None,
+        torque_variation=torque_variation,
+        torque_rate_sq=torque_rate_sq,
+        saturated_ticks=saturated_ticks,
+        alive_ticks=alive_ticks,
+        peak_pitch=peak_pitch,
     )

@@ -10,6 +10,8 @@ import numpy as np
 import pytest
 
 from balance_sim import load_policy
+from config import CONFIG
+from power import POWER_FIELDS
 from run_neuroevolution import Setup, parse_args, run
 
 TINY = ["--backend", "numpy", "--train-duration", "0.4", "--dev-duration", "0.4", "--train-seeds", "1",
@@ -18,7 +20,9 @@ TINY = ["--backend", "numpy", "--train-duration", "0.4", "--dev-duration", "0.4"
 
 def _history(folder):
     with open(folder / "history.csv") as f:
-        return [{k: v for k, v in row.items() if k != "elapsed_s"} for row in csv.DictReader(f)]
+        # Wall-clock and the GPU's power state differ between runs; everything else must not.
+        skip = {"elapsed_s", "generation_s", *POWER_FIELDS}
+        return [{k: v for k, v in row.items() if k not in skip} for row in csv.DictReader(f)]
 
 
 @pytest.mark.parametrize("method", ["linear", "residual"])
@@ -58,3 +62,14 @@ def test_warm_start_begins_exactly_at_the_linear_policy(tmp_path):
     l_setup = Setup(parse_args(["--method", "linear", *TINY]))
     l_cost = l_setup.train.evaluate_policies(load_policy(linear / "final.npz")[1][None, :]).objective[0]
     assert start_cost == l_cost
+
+
+def test_training_output_root(monkeypatch, tmp_path):
+    """Runs write outside the synced repository: $BALANCEBOT_TRAINING_DIR first, then the
+    configured folder where its drive exists, else results/."""
+    monkeypatch.setenv("BALANCEBOT_TRAINING_DIR", str(tmp_path))
+    assert CONFIG.training_output_root() == tmp_path
+    monkeypatch.delenv("BALANCEBOT_TRAINING_DIR")
+    root = CONFIG.training_output_root()
+    assert root.name in ("balancebot_training", "results")
+    assert "OneDrive" not in str(root) or root.name == "results"

@@ -40,6 +40,12 @@ Validation on 300 unseen robots and noise seeds, 60 s runs, sorted by median cos
 - **One scenario family.** Step commands, slopes and rough ground are untested.
 - **Fall penalty bound covers 20 s training runs only.** The 60 s validation runs can exceed it, so validation reports falls as a separate count.
 
+## Future iterations (discussion point)
+
+- **The cost's grounding.** The Bryson limits are partly judgment calls: pitch 0.3 rad sits in a defensible range (above the task's 0.25 rad lean, below the 0.44 rad cap), but velocity 0.2 m/s has no spec behind it, and torque 0.1 N m is a "typical operating" torque chosen so effort is a real tradeoff, not the largest acceptable value Bryson's rule asks for. The effort term (integral of torque squared) is proportional to resistive heating, so the motors' continuous rating (about 0.25 N m RMS: 25% of stall current) is a physical anchor; at that limit the effort weight falls from 9 to about 1.4. No term measures torque roughness (chatter), which matters for motor noise and heating on hardware.
+- **Evidence so far (dev tier, 2026-11-09, `compare_controllers.py`):** re-scoring every controller from the same simulations with each limit halved and doubled, effort off, and the thermal torque limit, the linear policy L stays ahead of the ML-tuned PID in every variant (median ratio 0.80–0.90). Rankings among the existing controllers don't flip either, but their gaps move a lot (model-based PID 1.12–2.12×; tuned LQR gains 1.22–1.41×). L is also the smoothest controller by torque change per tick (0.014 N m against the PID's 0.032), which the cost never rewarded.
+- **The fuller fix** is a re-grounded cost (a thermally anchored torque limit plus a torque-rate term) with every controller re-tuned under it, the PID included. Re-scoring tests the rankings, not how each method would do if trained on the other cost.
+
 ## Open items before drafting
 
 - [ ] Trace which scenarios make the model-based PID and the LQRs fall (push, latency draw, or start tilt)

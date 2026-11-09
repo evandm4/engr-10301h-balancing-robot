@@ -13,17 +13,25 @@ the validation and fall-rate tiers are never touched here.
 From the project folder:
     python optimization/run_neuroevolution.py --method linear                    quick profile (default)
     python optimization/run_neuroevolution.py --method mlp --profile full --run-seed 3
-    python optimization/run_neuroevolution.py --method warm --warm-from results/neuroevolution/linear/<run>/final.npz
+    python optimization/run_neuroevolution.py --method warm --warm-from C:/balancebot_training/neuroevolution/linear/<run>/final.npz
     python optimization/run_neuroevolution.py --method residual --authority 0.5
-    python optimization/run_neuroevolution.py --resume results/neuroevolution/mlp/<run>
+    python optimization/run_neuroevolution.py --resume C:/balancebot_training/neuroevolution/mlp/<run>
 
 One run seed per process, so a sweep maps onto a job array (scripts/slurm_neuroevolution.sh).
 State is saved after every generation (state.pkl); --resume continues exactly where it stopped,
 including CMA-ES's random draws. Runs on the GPU when PyTorch sees one, else NumPy on the CPU.
 
-Output: results/neuroevolution/<method>/<timestamp>-seed<k>/
+While it runs, Windows is asked to keep the system and the screen on (optimization/power.py): on
+this laptop the screen-off idle state is when the GPU's power budget gets cut. Every generation
+logs its own wall-clock, the GPU's enforced power limit, draw and clock, and the G-Helper mode, so
+throttling (or a quieter profile chosen mid-run) shows. The script never changes the mode.
+
+Output: <training folder>/neuroevolution/<method>/<timestamp>-seed<k>/, where the training folder
+is ProjectConfig.training_output_root(): LearningConfig.output_dir (C:/balancebot_training, outside
+the synced repository), or $BALANCEBOT_TRAINING_DIR, or results/ where neither exists. --out
+overrides it. Copy a finished run into results/ to keep it with the code.
     snapshot.json      config, arguments, profile, policy spec, hardware
-    history.csv        one row per generation
+    history.csv        one row per generation (with its seconds and the GPU's power state)
     checkpoints.csv    one row per checkpoint: train objective, dev scores, falls, gap
     checkpoints/       best_<robot-seconds>.npz and mean_<robot-seconds>.npz
     final.npz          the selected policy;  summary.json  the run's numbers
@@ -49,6 +57,7 @@ import numpy as np
 from config import CONFIG
 from balance_sim import load_policy, save_policy, unpack
 from batch_tuning import BatchEvaluator, PolicySearch
+from power import POWER_FIELDS, ghelper_mode, keep_awake, power_state
 from tuning import provenance
 
 METHODS = ("linear", "mlp", "warm", "residual")
@@ -76,6 +85,8 @@ def parse_args(argv=None):
     parser.add_argument("--float64", action="store_true", help="train in float64 (default: the profile's float32)")
     parser.add_argument("--out", type=str, default=None, help="run folder (default: a new timestamped one)")
     parser.add_argument("--resume", type=str, default=None, help="continue the run saved in this folder")
+    parser.add_argument("--allow-screen-off", action="store_true",
+                        help="let the screen turn off while it runs (sleep stays blocked either way)")
     # For tests and smoke checks: shorter scenarios, and stopping early as if interrupted.
     parser.add_argument("--train-duration", type=float, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--dev-duration", type=float, default=None, help=argparse.SUPPRESS)
@@ -176,6 +187,7 @@ def initial_point(setup: Setup, rng: np.random.Generator):
 def hardware() -> dict:
     info = provenance()
     info["cpu"] = platform.processor() or platform.machine()
+    info.update(ghelper_mode())            # the laptop's power profile at the start (also logged per generation)
     try:
         from numpy._core._multiarray_umath import __cpu_features__ as features
     except ImportError:   # older NumPy
@@ -224,7 +236,13 @@ def score_checkpoint(setup: Setup, search: PolicySearch, folder: Path):
 # ---- the run --------------------------------------------------------------------------------
 
 def run(argv=None) -> Path:
+    """Parse the arguments and run, keeping the machine (and the GPU's power budget) awake meanwhile."""
     args = parse_args(argv)
+    with keep_awake(display=not args.allow_screen_off):
+        return _run(args)
+
+
+def _run(args) -> Path:
     if args.resume:
         folder = Path(args.resume)
         with open(folder / "state.pkl", "rb") as f:
@@ -237,8 +255,8 @@ def run(argv=None) -> Path:
         run_state = saved["run"]
     else:
         stamp = time.strftime("%Y%m%d-%H%M%S")
-        folder = Path(args.out) if args.out else ROOT / "results" / "neuroevolution" / args.method / \
-            f"{stamp}-seed{args.run_seed}"
+        folder = Path(args.out) if args.out else CONFIG.training_output_root() / "neuroevolution" / \
+            args.method / f"{stamp}-seed{args.run_seed}"
         (folder / "checkpoints").mkdir(parents=True, exist_ok=True)
         setup = Setup(args)
         rng = np.random.default_rng([args.run_seed, 7])
@@ -257,7 +275,8 @@ def run(argv=None) -> Path:
         (folder / "snapshot.json").write_text(json.dumps(snapshot, indent=2, default=str))
         with open(folder / "history.csv", "w", newline="") as f:
             csv.writer(f).writerow(["generation", "n_evals", "robot_seconds", "best_train_objective",
-                                    "generation_min", "generation_median", "sigma", "elapsed_s"])
+                                    "generation_min", "generation_median", "sigma", "elapsed_s",
+                                    "generation_s", *POWER_FIELDS])
         with open(folder / "checkpoints.csv", "w", newline="") as f:
             csv.DictWriter(f, CHECKPOINT_FIELDS).writeheader()
         search.start()
@@ -302,16 +321,23 @@ def run(argv=None) -> Path:
         if args.stop_after is not None and generations_this_call >= args.stop_after:
             save_state()
             return folder            # as if interrupted; --resume continues
+        before = search.elapsed_s
         costs = search.step()
         generations_this_call += 1
+        # The GPU's power state right after the generation: a lowered limit or clock explains a slow one.
+        power = power_state() if setup.backend == "torch" else {}
         with open(folder / "history.csv", "a", newline="") as f:
             csv.writer(f).writerow([search.generation, search.n_evals, search.robot_seconds, search.best_cost,
                                     float(np.min(costs)), float(np.median(costs)), search.sigma,
-                                    round(search.elapsed_s, 2)])
+                                    round(search.elapsed_s, 2), round(search.elapsed_s - before, 3),
+                                    *(power.get(k, "") for k in POWER_FIELDS)])
         save_state()
         if search.generation % 10 == 0:
+            watts = power.get("gpu_power_limit_w")
             print(f"  generation {search.generation}: best {search.best_cost:.4f}, "
-                  f"{search.robot_seconds:.3g} robot-s, {search.elapsed_s:.0f} s")
+                  f"{search.robot_seconds:.3g} robot-s, {search.elapsed_s:.0f} s"
+                  + (f", GPU limit {watts:.0f} W" if watts else "")
+                  + (f" ({power['ghelper_mode']})" if power.get("ghelper_mode") else ""))
 
     finish(setup, search, run_state, folder)
     return folder

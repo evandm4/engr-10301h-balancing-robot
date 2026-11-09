@@ -31,7 +31,8 @@ results/
   tuning/                  run_tuning.py output
   batch_tuning/            run_batch_tuning.py output
   lqr_comparison/          run_lqr_comparison.py output
-  neuroevolution/          run_neuroevolution.py output, one folder per method and run seed
+  neuroevolution/          finished training runs copied here to keep (they are written to C:/balancebot_training,
+                           LearningConfig.output_dir, outside the synced folder)
   comparison/              compare_controllers.py output
   benchmarks/              the benchmarks
 scripts/                   cluster wrappers (SLURM) that only call the normal entry points
@@ -133,7 +134,7 @@ python optimization/benchmark.py                                     # reference
 python optimization/benchmark_batch.py --backend torch --float32     # batched speed
 python optimization/run_neuroevolution.py --method linear            # learned linear policy, quick profile (GPU if present)
 python optimization/run_neuroevolution.py --method mlp --profile full --run-seed 3   # one of the 10 final runs
-python optimization/compare_controllers.py --tier dev --policies "L=results/neuroevolution/linear/*/final.npz"
+python optimization/compare_controllers.py --tier dev --policies "L=C:/balancebot_training/neuroevolution/linear/*/final.npz"
 python optimization/benchmark_policies.py                            # time one generation of each learned policy
 ```
 

@@ -3,7 +3,7 @@
 # Only calls the normal entry point; everything else comes from config.py (docs/ml-baselines-plan.md 9).
 #
 #   sbatch --array=0-9 scripts/slurm_neuroevolution.sh mlp
-#   sbatch --array=0-9 scripts/slurm_neuroevolution.sh warm --warm-from results/neuroevolution/linear/<run>/final.npz
+#   sbatch --array=0-9 scripts/slurm_neuroevolution.sh warm --warm-from <training folder>/neuroevolution/linear/<run>/final.npz
 #
 # A task that runs out of time can be resubmitted with the same array index: it resumes from the
 # run folder's state.pkl.
@@ -17,7 +17,7 @@
 set -euo pipefail
 METHOD="$1"; shift
 SEED="${SLURM_ARRAY_TASK_ID:-0}"
-RUN="results/neuroevolution/${METHOD}/cluster-seed${SEED}"
+RUN="${BALANCEBOT_TRAINING_DIR:-results}/neuroevolution/${METHOD}/cluster-seed${SEED}"   # set BALANCEBOT_TRAINING_DIR to the scratch disk
 cd "${SLURM_SUBMIT_DIR:-.}"
 mkdir -p logs
 if [ -f "${RUN}/state.pkl" ]; then

@@ -591,6 +591,12 @@ class LearningConfig:
     residual_int_theta_scale: float = 0.05    # rad s
     reference_pid_file: str = "results/lqr_comparison/20261108-225341/comparison.json"
     reference_pid_entry: str = "PID, ML-tuned"
+    # Where training runs write (run_neuroevolution.py). Not the repository: a run rewrites its
+    # search state every generation, and a synced folder (OneDrive) can lock a file mid-upload and
+    # stop the run. Copy a finished run into results/ to keep it with the code. The environment
+    # variable BALANCEBOT_TRAINING_DIR overrides this (a cluster's scratch disk); where the folder's
+    # drive doesn't exist (Linux), runs fall back to results/.
+    output_dir: Optional[str] = "C:/balancebot_training"   # forward slashes work on Windows
     # Search: initial step size per method; A-warm's linear path starts with this fraction of
     # sigma0 (its MLP with all of it), so the first generation stays near L-best. A's and B1's
     # hidden layers start Xavier-normal; A's output layer N(0, init_output_std); B1's and
@@ -804,6 +810,21 @@ class ProjectConfig:
             sensitivity_weight=r.sensitivity_weight,
             sensitivity_nudge=r.sensitivity_nudge_rad,
         )
+
+    def training_output_root(self) -> Path:
+        """Folder training runs write under: $BALANCEBOT_TRAINING_DIR, else LearningConfig.output_dir
+        if its drive exists here, else results/ in the repository."""
+        import os
+
+        override = os.environ.get("BALANCEBOT_TRAINING_DIR")
+        if override:
+            return Path(override)
+        configured = self.learning.output_dir
+        if configured and sys.platform == "win32":
+            drive = Path(configured).drive
+            if drive and Path(drive + "\\").exists():
+                return Path(configured)
+        return _ROOT / "results"
 
     def reference_pid_gains(self) -> Tuple[float, ...]:
         """The reference PID's [kp, ki, kd, kv_p], read from LearningConfig.reference_pid_file."""
