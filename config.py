@@ -472,7 +472,12 @@ class RobustnessSettings:
     """
 
     n_train_seeds: int = 50            # noise seeds 1..N scored during tuning
-    validation_seeds: Tuple[int, ...] = tuple(range(1000, 1100))   # unseen seeds (and robots)
+    # Unseen seeds (and, through them, unseen robots) for the final validation. Seeds
+    # 1000-1099 were the validation set until 2026-11-09, but the 20 s scenario's push
+    # size and blend times were checked against those robots while it was designed, so
+    # they are no longer held out. 2000-2099 were fixed after the scenario, the search
+    # bounds and the model-based design were frozen, and are used for nothing else.
+    validation_seeds: Tuple[int, ...] = tuple(range(2000, 2100))
     # (parameter, relative spread): each scenario's robot has that parameter
     # scaled by a random factor in [1 - spread, 1 + spread]. Build and datasheet
     # tolerances (DATASHEET.md 2); replace with measured spreads. Names are

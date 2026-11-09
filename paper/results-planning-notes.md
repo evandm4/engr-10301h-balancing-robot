@@ -2,11 +2,11 @@
 
 Nov 9, 2026 · @Evan Moore
 
-Working notes for drafting the Results and Conclusions of the balancing-robot paper. Numbers come from the 20 s scenario runs of 2026-11-08 (`results/lqr_comparison/20261108-220417`).
+Working notes for drafting the Results and Conclusions of the balancing-robot paper. Numbers come from the 20 s scenario runs of 2026-11-08 (`results/lqr_comparison/20261108-225341`). Validation uses a fresh held-out set (seeds 2000–2099), because the earlier set informed the scenario design.
 
 ## Central thesis
 
-ML tuning's main gain over a competent model-based design is robustness, not typical-case performance. On a typical run, the textbook PID designed from the linear model is only 36% worse than the ML-tuned PID (median per scenario). But it falls on 2 of 300 unseen robots and tolerates 23.75 ms of latency, against no falls and 37.25 ms for the ML-tuned PID. That is a stronger and more honest claim than "ML beats a hand-tuned guess", and the conclusions should be framed around it.
+ML tuning's main gain over a competent model-based design is robustness, not typical-case performance. On a typical run, the textbook PID designed from the linear model is only 36% worse than the ML-tuned PID (median per scenario). But it falls on 1 of 300 held-out robots and tolerates 23.75 ms of latency, against no falls and 37.25 ms for the ML-tuned PID. That is a stronger and more honest claim than "ML beats a hand-tuned guess", and the conclusions should be framed around it.
 
 ## Evidence
 
@@ -14,22 +14,22 @@ Validation on 300 unseen robots and noise seeds, 60 s runs, sorted by median cos
 
 | Controller | Median cost vs ML PID | Mean cost | Falls (of 300) | Linear stable latency | First falls in latency sweep |
 | --- | --- | --- | --- | --- | --- |
-| PID, ML-tuned | 1.00× | 2.26 | 0 | 0–37.25 ms | 40 ms (3 of 60) |
-| LQR, ML-tuned gains | 1.35× | 3.05 | 0 | 0–35.00 ms | 30 ms (1) |
-| PID, model-based | 1.36× | 15.34 | 2 | 0–23.75 ms | 20 ms (2) |
-| LQR, ML-tuned weights | 1.66× | 48.92 | 7 | 0–42.25 ms | 25 ms (1) |
-| LQR, latency ignored | 3.15× | 7.08 | 0 | 0–36.50 ms | none up to 40 ms |
-| LQR, cost-matched | 4.35× | 22.32 | 2 | 0–44.25 ms | 20 ms (1) |
-| PID, hand-tuned | 6.18× | 30.02 | 2 | 0–15.75 ms | 20 ms (2) |
+| PID, ML-tuned | 1.00× | 2.22 | 0 | 0–37.25 ms | 40 ms (4 of 60) |
+| LQR, ML-tuned gains | 1.34× | 2.98 | 0 | 0–35.00 ms | 40 ms (36) |
+| PID, model-based | 1.36× | 9.48 | 1 | 0–23.75 ms | 20 ms (2) |
+| LQR, ML-tuned weights | 1.64× | 29.78 | 4 | 0–42.25 ms | 20 ms (1) |
+| LQR, latency ignored | 3.09× | 6.87 | 0 | 0–36.50 ms | none up to 40 ms |
+| LQR, cost-matched | 4.21× | 28.28 | 3 | 0–44.25 ms | 0 ms (1, at every latency) |
+| PID, hand-tuned | 6.23× | 39.04 | 4 | 0–15.75 ms | 20 ms (5) |
 
 ## Supporting findings
 
 - **The tuned gains are reproducible.** Two independent searches (the batch tuner and the LQR comparison) both land on k\_p 1.635, k\_i 1.77, k\_d 0.299, k\_v 0.620.
 - **Why the tuner moves where it does.** Bound (7) caps the outer gain at (c/e)(k\_d/k\_p). The tuned PID roughly doubles both k\_d and k\_v relative to the model-based design, which buys delay margin (23.75 → 37.25 ms).
 - **Standard design rules fail here.** An outer bandwidth of z/2 is unstable even without delay, and an underdamped inner loop is unstable at 10 ms. The coupling through the RHP zero is the reason.
-- **Pushes are what separate controllers.** Both hand-tuned falls come from the forward push at top speed and disappear when the pushes are removed. The other controllers' falls haven't been traced yet.
-- **Delay tolerance differs from typical cost.** The latency-ignoring LQR is mediocre on typical runs (3.15×) but the most delay-tolerant (no falls up to 40 ms).
-- **The LQR weight search can't avoid falls** with only its integral weight free (7 falls). Re-opening the other weights is untested.
+- **Pushes are what separate controllers.** In the batch tuning run, both hand-tuned falls came from the forward push at top speed and disappeared when the pushes were removed. The falls on the held-out set (4 hand-tuned, 1 model-based, 3 and 4 for two LQRs) haven't been traced yet.
+- **Delay tolerance differs from typical cost.** The latency-ignoring LQR is mediocre on typical runs (3.09×) but the most delay-tolerant (no falls up to 40 ms).
+- **The LQR weight search can't avoid falls** with only its integral weight free (4 falls on the held-out set). Re-opening the other weights is untested.
 
 ## Caveats to state
 

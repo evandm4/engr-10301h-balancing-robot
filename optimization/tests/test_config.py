@@ -200,7 +200,8 @@ def test_train_and_validation_seeds_must_not_overlap():
     with pytest.raises(ValueError, match="overlap"):
         ScenarioConfig(train_seeds=(1, 2, 100), validation_seeds=(100, 101))
     with pytest.raises(ValueError, match="overlap"):
-        replace(CONFIG.build_robustness(), train_seeds=tuple(range(1, 1001)))   # --seeds 1000 reaches seed 1000
+        first = min(CONFIG.robustness.validation_seeds)
+        replace(CONFIG.build_robustness(), train_seeds=tuple(range(1, first + 1)))   # --seeds N reaching the first validation seed
 
 
 def test_control_period_must_be_a_whole_number_of_physics_steps():

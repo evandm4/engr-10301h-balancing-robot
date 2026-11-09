@@ -72,7 +72,24 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 
 ### Results
 
-**Current: 20 s scenario with pushes (2026-11-08, later).** Run `results/lqr_comparison/20261108-220417/`, which adds the model-based PID; every other row reproduces the first run on this scenario (`20261108-182234/`) exactly. Same protocol as the run below, on the redesigned scenario (`ScenarioConfig`: start tilts up to 0.30 rad, a 1.6 s speed-up to a 1.3 m/s cruise, two 2.9 N pushes, braking and reversing; 20 s training runs, 60 s validation runs). Same robot, cost and robust scoring.
+**Current: fresh held-out validation set (2026-11-09).** Run `results/lqr_comparison/20261108-225341/`. The searches are identical to the run below (same training seeds, same results), but validation now uses noise seeds 2000–2099 and the robots they draw. The earlier validation set (seeds 1000–1099) was used while sizing the 20 s scenario's push and blend times, so it was retired; the new set was fixed after the scenario, search bounds and model-based design were frozen and is used for nothing else.
+
+| Controller | Validation cost | vs ML PID (median per scenario) | Falls (of 300) | Worst run | Effort term | Stable latency (linear) |
+|---|---:|---:|---:|---:|---:|---|
+| PID, hand-tuned | 39.04 | 6.23x | 4 | 1918 | 5.277 | 0-15.75 ms |
+| PID, model-based | 9.484 | 1.36x | 1 | 1878 | 1.745 | 0-23.75 ms |
+| **PID, ML-tuned** | **2.221** | | **0** | 4.82 | 1.562 | 0-37.25 ms |
+| LQR, cost-matched | 28.28 | 4.21x | 3 | 1903 | 2.159 | 0-44.25 ms |
+| LQR, latency ignored | 6.871 | 3.09x | 0 | 15.15 | 2.112 | 0-36.50 ms |
+| LQR, ML-tuned weights | 29.78 | 1.64x | 4 | 1988 | 2.048 | 0-42.25 ms |
+| LQR, ML-tuned gains | 2.982 | 1.34x | 0 | 6.41 | 2.190 | 0-35.00 ms |
+
+- **The conclusions survive the new set.** The ML-tuned PID is still the only PID that never falls; the median ratios move by at most 0.14 (cost-matched LQR) and the ranking is unchanged.
+- **The model-based PID** has a median 1.36x the ML-tuned PID's and falls once; the tuned LQR gains are at 1.34x with no falls.
+- **Falls:** hand-tuned PID 4, weight-tuned LQR 4, cost-matched LQR 3, model-based PID 1; the ML-tuned PID, tuned LQR gains and latency-ignoring LQR none.
+- **Latency sweeps** (60 scenarios per point): the ML-tuned PID stays within 6% of its 10 ms cost up to 20 ms (1.55 against 1.47), reaches 2.24 at 30 ms and falls 4 times at 40 ms. The model-based PID falls twice at 20 ms and 37 times at 30 ms. The latency-ignoring LQR never falls up to 40 ms (10.1). The cost-matched LQR falls in one scenario at every latency, including zero.
+
+**Earlier: 20 s scenario, retired validation set (2026-11-08, later).** Run `results/lqr_comparison/20261108-220417/`, which adds the model-based PID; every other row reproduces the first run on this scenario (`20261108-182234/`) exactly. Same protocol as the run below, on the redesigned scenario (`ScenarioConfig`: start tilts up to 0.30 rad, a 1.6 s speed-up to a 1.3 m/s cruise, two 2.9 N pushes, braking and reversing; 20 s training runs, 60 s validation runs). Same robot, cost and robust scoring.
 
 | Controller | Validation cost | vs ML PID (median per scenario) | Falls (of 300) | Worst run | Effort term | Stable latency (linear) |
 |---|---:|---:|---:|---:|---:|---|
