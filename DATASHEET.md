@@ -98,7 +98,7 @@ copper rises 0.39%/°C, so a winding 40 °C hot is 16% higher.
 
 | Field | Sim | Realistic | Tag | Verdict |
 |---|---|---|---|---|
-| `latency_s` | 10 ms (randomized 5–20 ms) | **about 1.5–6 ms** (section 6) | Derived/Est. | ✓ (conservative) |
+| `latency_s` | 10 ms (randomized 2.5–20 ms) | **about 1.5–6 ms** (section 6) | Derived/Est. | ✓ (conservative) |
 | `control_dt_s` | 5 ms (200 Hz) | Any 32-bit MCU can run 1 kHz. The IMU outputs data at 1 kHz | DS | ✓ |
 
 ### 2.5 Pivot robot (`pivot_config.py`)
@@ -358,7 +358,7 @@ From the moment the IMU senses the robot to the moment the motor current respond
 | Current rise, L/R | 0.2–0.5 ms | Est. |
 | **Total** | **about 1.5–6 ms** | |
 
-The sim's 10 ms nominal and 5–20 ms robustness range are conservative. Any extra software filtering on the gyro
+The sim's 10 ms nominal is conservative; since 2026-11-09 the robustness range, 2.5–20 ms, also covers this budget. Any extra software filtering on the gyro
 or encoder velocity would add to this; a first-order filter at f_c adds about 1/(2π f_c) of delay.
 
 ---

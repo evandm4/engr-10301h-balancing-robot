@@ -447,6 +447,13 @@ class LQRConfig:
     w_velocity_fixed: Optional[float] = 0.0         # 0 = velocity enters only through its integral
     w_pitch_rate_fixed: Optional[float] = 0.0       # 0 = no rate term
     direct_commands_scale: Optional[float] = 0.0    # multiple of the design's gains on the commands in flight; 0 = none
+    # The direct search's integral gain (N m per m of integrated velocity error), on a log
+    # scale; None keeps it at 0. LQR designs with an integral weight put it at 0.7-5. A
+    # candidate with integral action must keep the nominal loop's spectral radius below
+    # direct_max_spectral_radius (every mode decaying within 5 s), which rules out the slow
+    # runaway an unguarded search once found (LQR.md).
+    direct_integral_bounds: Optional[Tuple[float, float]] = (1e-3, 10.0)
+    direct_max_spectral_radius: float = 0.999
 
     @property
     def fixed_weights(self) -> dict:
@@ -488,6 +495,12 @@ class RobustnessSettings:
     fall_rate_seeds: Tuple[int, ...] = tuple(range(6000, 7000))
     retired_seeds: Tuple[int, ...] = tuple(range(100, 110)) + tuple(range(1000, 1100))
     fresh_seed_start: int = 1_000_000  # fresh-scenario ablations draw from here up
+    # Unseen seeds (and, through them, unseen robots) for the final validation. Retired
+    # sets: 1000-1099 (checked against while the 20 s scenario's push and blend times were
+    # sized) and 2000-2099 (results seen before the latency range was widened to 2.5 ms
+    # and the direct LQR search gained an integral gain, 2026-11-09). 3000-3099 were fixed
+    # after those changes, and are used for nothing else.
+    validation_seeds: Tuple[int, ...] = tuple(range(3000, 3100))
     # (parameter, relative spread): each scenario's robot has that parameter
     # scaled by a random factor in [1 - spread, 1 + spread]. Build and datasheet
     # tolerances (DATASHEET.md 2); replace with measured spreads. Names are
@@ -517,7 +530,9 @@ class RobustnessSettings:
     # Each scenario's latency, drawn uniformly from the whole physics steps in this
     # range (s); None keeps TimingConfig.latency_s for every scenario. Controllers are
     # still designed for latency_s: they don't know the latency they get.
-    latency_range_s: Optional[Tuple[float, float]] = (0.005, 0.020)
+    # 2.5-20 ms since 2026-11-09 (was 5-20), so the scored latencies include the 1.7-5.6 ms
+    # the reference build's latency budget gives (DATASHEET.md 6): 2.5, 5, ..., 20 ms.
+    latency_range_s: Optional[Tuple[float, float]] = (0.0025, 0.020)
     robot_seed: int = 0                # which set of random robots
     sensitivity_weight: float = 1.0    # chaos penalty weight; 0 turns it (and its twin runs) off
     sensitivity_nudge_deg: float = 0.0057   # start-tilt nudge for the twin runs (1e-4 rad)
@@ -929,7 +944,8 @@ class ProjectConfig:
         from tuning import lqr_gain_space
 
         n_in_flight = delayed_commands(self.timing.control_dt_s, self.timing.latency_s)
-        return lqr_gain_space(n_in_flight, self.lqr.direct_gain_scale, self.lqr.direct_commands_scale)
+        return lqr_gain_space(n_in_flight, self.lqr.direct_gain_scale, self.lqr.direct_commands_scale,
+                              self.lqr.direct_integral_bounds)
 
     def build_direct_lqr_designer(self):
         """Build the tuning.LQRGainScaling for build_direct_lqr_space: scales the
@@ -939,7 +955,9 @@ class ProjectConfig:
 
         return LQRGainScaling(self.build_lqr_gain(), self.build_robot_params(),
                               self.timing.control_dt_s, self.timing.latency_s,
-                              commands_scale=self.lqr.direct_commands_scale)
+                              commands_scale=self.lqr.direct_commands_scale,
+                              integral=self.lqr.direct_integral_bounds is not None,
+                              max_radius=self.lqr.direct_max_spectral_radius)
 
 
 # Edit values above to change the project. To try an alternative all at once

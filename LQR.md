@@ -72,7 +72,25 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 
 ### Results
 
-**Current: fresh held-out validation set (2026-11-09).** Run `results/lqr_comparison/20261108-225341/`. The searches are identical to the run below (same training seeds, same results), but validation now uses noise seeds 2000–2099 and the robots they draw. The earlier validation set (seeds 1000–1099) was used while sizing the 20 s scenario's push and blend times, so it was retired; the new set was fixed after the scenario, search bounds and model-based design were frozen and is used for nothing else.
+**Current: 2.5–20 ms latency, an integral gain in the direct search, third held-out set (2026-11-09).** Run `results/lqr_comparison/20261109-000021/`. Two method changes, then a fresh validation set: robust scoring now draws latency from 2.5–20 ms (it was 5–20 ms, which missed the 1.7–5.6 ms hardware estimate), and the direct LQR gain search now also searches an integral gain (log scale, 10⁻³–10), with any candidate that has integral action required to keep the nominal loop's spectral radius below 0.999 (`LQRConfig.direct_integral_bounds`, `direct_max_spectral_radius`). Because results on the second held-out set (seeds 2000–2099) had been seen before these changes, validation uses a third set, seeds 3000–3099, fixed after them.
+
+| Controller | Validation cost | vs ML PID (median per scenario) | Falls (of 300) | Worst run | Effort term | Stable latency (linear) |
+|---|---:|---:|---:|---:|---:|---|
+| PID, hand-tuned | 23.23 | 5.80x | 1 | 1968 | 5.206 | 0-15.75 ms |
+| PID, model-based | 3.151 | 1.34x | 0 | 11.68 | 1.767 | 0-23.75 ms |
+| **PID, ML-tuned** | **2.324** | | **0** | 4.92 | 1.656 | 0-37.50 ms |
+| LQR, cost-matched | 16.35 | 4.35x | 1 | 1901 | 2.355 | 0-44.25 ms |
+| LQR, latency ignored | 7.281 | 3.14x | 0 | 15.05 | 2.278 | 0-36.50 ms |
+| LQR, ML-tuned weights | 23.41 | 1.54x | 3 | 1990 | 2.370 | 0-39.00 ms |
+| LQR, ML-tuned gains | 2.536 | 1.09x | 0 | 5.48 | 1.840 | 0-35.00 ms |
+
+- **The integral gain closes most of the LQR gap.** The directly tuned LQR is now 9% behind the ML-tuned PID (34% without an integral term), with no falls. Its integral gain settled at 0.27, and its nominal spectral radius sits exactly on the 0.999 margin: the best candidates were pulled back to the guard, so the margin is binding.
+- **The ML-tuned PID still wins and never falls.** Its gains moved by at most 1.2% with the wider latency range (kp 1.615, ki 1.746, kd 0.298, kv_p 0.626; the batch tuner finds the same, `results/batch_tuning/20261108-234630/`).
+- **The model-based PID did not fall on this set** (median 1.34x); it fell 2 and 1 times on the two retired sets. Its weakness is delay: linearly stable only to 23.75 ms, and in the sweep it falls from 20 ms (1 at 20 ms, 29 at 30 ms), where the ML-tuned PID holds to 30 ms (2.62) and falls 3 times at 40 ms.
+- **Falls:** weight-tuned LQR 3, hand-tuned PID 1, cost-matched LQR 1; the rest none.
+- **Latency sweeps** (60 scenarios per point): the directly tuned LQR holds to 30 ms (3.83) and falls 26 times at 40 ms; the latency-ignoring LQR falls once at 40 ms.
+
+**Earlier: second held-out set (2026-11-09).** Run `results/lqr_comparison/20261108-225341/`. The searches are identical to the run below (same training seeds, same results), but validation now uses noise seeds 2000–2099 and the robots they draw. The earlier validation set (seeds 1000–1099) was used while sizing the 20 s scenario's push and blend times, so it was retired; the new set was fixed after the scenario, search bounds and model-based design were frozen and is used for nothing else.
 
 | Controller | Validation cost | vs ML PID (median per scenario) | Falls (of 300) | Worst run | Effort term | Stable latency (linear) |
 |---|---:|---:|---:|---:|---:|---|

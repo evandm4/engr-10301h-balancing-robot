@@ -179,7 +179,8 @@ def lqr_gain_names(n_in_flight: int, commands: bool = True) -> List[str]:
     return names + [f"s_command_{i + 1}" for i in range(n_in_flight)] if commands else names
 
 
-def lqr_gain_space(n_in_flight: int, scale: float, commands_scale: Optional[float] = None) -> SearchSpace:
+def lqr_gain_space(n_in_flight: int, scale: float, commands_scale: Optional[float] = None,
+                   integral_bounds: Optional[Tuple[float, float]] = None) -> SearchSpace:
     """Search space for the LQR's gains themselves, around a reference design.
 
     The reference's gains on velocity, pitch, pitch rate and the commands in
@@ -187,28 +188,40 @@ def lqr_gain_space(n_in_flight: int, scale: float, commands_scale: Optional[floa
     on a log scale, so the middle of the space is the reference itself. With
     `commands_scale` set, the gains on the commands in flight are not searched
     (LQRGainScaling holds them at that multiple of the design's; 0.0 is off,
-    which a log scale cannot reach). Bounds come from config.py (LQRConfig);
-    build it with CONFIG.build_direct_lqr_space().
+    which a log scale cannot reach). With `integral_bounds` set, a last parameter
+    `k_integral` searches the magnitude of the integral gain on a log scale (the
+    reference has none to scale; LQRGainScaling gives it the velocity gain's sign).
+    Bounds come from config.py (LQRConfig); build it with CONFIG.build_direct_lqr_space().
     """
     names = lqr_gain_names(n_in_flight, commands=commands_scale is None)
-    return SearchSpace([Parameter(name, 1.0 / scale, scale, log=True) for name in names])
+    params = [Parameter(name, 1.0 / scale, scale, log=True) for name in names]
+    if integral_bounds is not None:
+        params.append(Parameter("k_integral", *integral_bounds, log=True))
+    return SearchSpace(params)
 
 
 class LQRGainScaling:
     """Turns points of lqr_gain_space into LQR gains: the to_gains map for
     batch_tuning.BatchEvaluator(controller="lqr").
 
-    Gains = the reference's gains, scaled entry by entry. The integral gain
-    stays at the reference's (0 for a design without integral action):
-    searching it too lets the search find gains with a slow runaway that the
-    integral cap and the scenario's finite length hide (LQR.md).
+    Gains = the reference's gains, scaled entry by entry. With `integral` set,
+    the last searched value is the magnitude of an integral gain, given the
+    velocity gain's sign (as every LQR design with an integral weight has it).
+    An unguarded integral search once found gains with a slow runaway (an
+    eigenvalue of 1.0009) that the integral cap and a 12 s scenario hid
+    (LQR.md), so a candidate with integral action must have a spectral radius
+    below `max_radius` (0.999 per 5 ms tick: every mode decays with a time
+    constant under 5 s), not merely below 1.
 
     Every LQR design stabilizes the nominal linear loop, and this keeps that
-    guarantee: gains that don't (balance_sim.spectral_radius >= 1 at the
-    design latency) are pulled back along the straight line toward the
-    reference, which does, to the last stable point (by bisection). So every
-    candidate the simulator sees is stable, and candidates past the edge still
-    score differently from each other, which the optimizers need.
+    guarantee: gains that don't (balance_sim.spectral_radius at the design
+    latency at or above the limit) are pulled back along the straight line
+    toward the reference, to the last acceptable point (by bisection). With an
+    integral gain the pull-back starts from the reference plus that integral
+    gain when that design is itself acceptable, so the integral gain survives;
+    otherwise from the reference. So every candidate the simulator sees is
+    stable, and candidates past the edge still score differently from each
+    other, which the optimizers need.
 
     `commands_scale` (see lqr_gain_space) fixes the gains on the commands in
     flight at that multiple of the reference design's instead of searching
@@ -219,36 +232,49 @@ class LQRGainScaling:
     BISECTION_STEPS = 20
 
     def __init__(self, reference_gain, params: RobotParams, control_dt: float, latency: float,
-                 commands_scale: Optional[float] = None):
+                 commands_scale: Optional[float] = None, integral: bool = False, max_radius: float = 0.999):
         self.reference = np.array(reference_gain, dtype=float)
         n_in_flight = len(self.reference) - 4
         if commands_scale is not None:
             self.reference[4:] *= commands_scale
         self.params, self.control_dt, self.latency = params, control_dt, latency
+        self.integral, self.max_radius = integral, max_radius
         # The gains the search scales: all but the integral's, and the commands' if they are fixed.
         self.scaled = np.r_[0:3] if commands_scale is not None else np.r_[0:3, 4:4 + n_in_flight]
+        if integral and self.reference[3] != 0.0:
+            raise ValueError("the reference must have no integral gain when the integral gain is searched")
         if not self.stable(self.reference):
             raise ValueError("the reference gains must stabilize the nominal linear loop")
 
     def stable(self, gain) -> bool:
+        """Stable at the design latency; with integral action, with the margin max_radius."""
         from balance_sim import LinearController, spectral_radius
 
-        return spectral_radius(self.params, LinearController.lqr(gain), self.control_dt, self.latency) < 1.0
+        limit = self.max_radius if gain[3] != 0.0 else 1.0
+        return spectral_radius(self.params, LinearController.lqr(gain), self.control_dt, self.latency) < limit
 
     def gain(self, values: Sequence[float]) -> np.ndarray:
+        values = np.asarray(values, dtype=float)
         gain = self.reference.copy()
-        gain[self.scaled] *= np.asarray(values, dtype=float)
+        gain[self.scaled] *= values[:len(self.scaled)]
+        start = self.reference
+        if self.integral:
+            gain[3] = math.copysign(values[-1], self.reference[0])
+            with_integral = self.reference.copy()
+            with_integral[3] = gain[3]
+            if self.stable(with_integral):
+                start = with_integral
         if self.stable(gain):
             return gain
-        step = gain - self.reference
-        low, high = 0.0, 1.0          # fraction of the way from the reference: stable at low, not at high
+        step = gain - start
+        low, high = 0.0, 1.0          # fraction of the way from the start: acceptable at low, not at high
         for _ in range(self.BISECTION_STEPS):
             mid = 0.5 * (low + high)
-            if self.stable(self.reference + mid * step):
+            if self.stable(start + mid * step):
                 low = mid
             else:
                 high = mid
-        return self.reference + low * step
+        return start + low * step
 
     def __call__(self, points) -> np.ndarray:
         """(P, n) points -> (P, n) gains."""
