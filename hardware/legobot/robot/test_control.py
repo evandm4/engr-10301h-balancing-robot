@@ -9,6 +9,7 @@ import os
 import sys
 from collections import namedtuple
 
+import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # hardware/legobot
@@ -103,9 +104,15 @@ def test_runaway_trip_catches_free_spinning_wheels(cfg):
     s = control.Safety(dt)
     out = [s.check(k * dt, 0.0, (0.6, 0.6), (19.0, 18.5), **ok) for k in range(n)]
     assert all(o is None for o in out[:-1]) and "running away" in out[-1]
-    s = control.Safety(dt)                        # a transient overshoot shorter than RUNAWAY_S doesn't trip
-    out = [s.check(k * dt, 0.0, (0.6, 0.6), (19.0, 19.0) if k < n - 5 else (12.0, 12.0), **ok) for k in range(n + 50)]
-    assert all(o is None for o in out)
+    s = control.Safety(dt)                        # bench A5: one count per tick is 3.5 rad/s, so at ~19.4 rad/s some
+    rng = np.random.default_rng(0)                # ticks read under 17; they mustn't hold the trip off (2026-11-23)
+    counts = 3.49 * rng.choice([4, 5, 6, 7], size=(n, 2), p=[0.044, 0.30, 0.50, 0.156])
+    assert (counts < lc.RUNAWAY_SPEED).mean() > 0.03 and counts.mean() > 19.0
+    out = [s.check(k * dt, 0.0, (-0.6, -0.6), tuple(-counts[k]), **ok) for k in range(n)]
+    assert all(o is None for o in out[:-1]) and "running away" in out[-1]
+    s = control.Safety(dt)                        # bursts near no-load while cruising at 11.6 rad/s don't trip
+    burst = lambda k: (19.0, 19.0) if (k * dt) % 1.0 < 0.5 else (11.6, 11.6)
+    assert all(s.check(k * dt, 0.0, (0.6, 0.6), burst(k), **{**ok, "vin_reading": (k * dt, 7.6)}) is None for k in range(4 * n))
     s = control.Safety(dt)                        # turning on the spot (wheels opposite) is not a runaway
     assert all(s.check(k * dt, 0.0, (0.6, -0.6), (19.0, -19.0), **ok) is None for k in range(n + 50))
 

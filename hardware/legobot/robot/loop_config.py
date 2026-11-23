@@ -60,8 +60,8 @@ WATCHDOG_S = 0.10          # a separate thread coasts the motors if the loop has
 WATCHDOG_REPEAT_S = 0.05   # ...and keeps re-sending the coast at this interval until the run ends, so a command
                            # the stuck loop finishes writing after the first coast can't leave a motor driven
 IMU_ERROR_LIMIT = 2        # consecutive failed IMU reads (I2C errors) before tripping; one is bridged with the last sample
-RUNAWAY_SPEED = 17.0       # rad/s: both wheels at least this fast the same way (no-load is ~19.6 at 7.4 V; the
-RUNAWAY_S = 1.5            # scenario cruises at 11.6) for this long: lifted while armed, or running away
+RUNAWAY_SPEED = 17.0       # rad/s: both wheels' mean speed at least this, the same way (no-load is ~19.6 at 7.4 V;
+RUNAWAY_S = 1.5            # the scenario cruises at 11.6) over this window: lifted while armed, or running away
 
 # ---- logging (D5) ----
 LOG_DIR = "logs"
