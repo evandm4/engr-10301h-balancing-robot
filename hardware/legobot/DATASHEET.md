@@ -68,7 +68,7 @@ All parts are owned.
 |---|---|---|
 | Total mass, everything on | 440 g | Gram scale |
 | Body mass (total minus both wheels with axles) | **362 g** | 440 − 2 × 39 g; below the 0.45–0.65 kg budget of section 4 |
-| Motor ports | A = left wheel, B = right wheel | One motor is mirrored: check signs at startup (SOFTWARE_PLAN D4) |
+| Motor ports | A = left wheel, B = right wheel | One motor is mirrored: positive HAT duty drives A (left) forward and B (right) backward (`robot/hw_config.PORT_SIGN`, checked on the bench); recheck at startup (SOFTWARE_PLAN D4) |
 | IMU position | 100 mm above the axle, about 11 mm forward of the vertical line through it | Ruler |
 | IMU board | Vertical, square to the chassis, component side facing forward, mounted upside down (header at the bottom); one in-plane axis along the axle | Which axis and sign: rotate about the axle and watch the gyro (3.4) |
 | Power switch | None; barrel jack only. A GPIO switch is available for arm/stop | — |
@@ -210,7 +210,7 @@ outer end of the axle if the chassis allows, so the wheel doesn't toe in under l
 | Drive | PWM of either polarity. **Direct PWM mode (default): setpoint −1 to +1 directly sets the output power.** No current sensing or current control | DS |
 | On-board PID | Optional, per port, on a motor's speed or position; not usable for torque control | DS |
 | `plimit` | Global limit on motor drive power, all ports. **Default 0.1** at the serial level; must be raised. (.NET library default 0.7) | DS |
-| Current firmware (buildhat 0.6.0 library) | Uses a per-port `port_plimit` instead of the global `plimit`, and `pwmparams` (the library sends `0.65 0.01`); `bias` is deprecated (the library raises "Bias no longer available"). The protocol PDF above predates this. Confirm on the bench with `version` and `help` | Library source |
+| Current firmware (buildhat 0.6.0 library) | Uses a per-port `port_plimit` instead of the global `plimit`, and `pwmparams` (the library sends `0.65 0.01`); `bias` is deprecated (the library raises "Bias no longer available"). The protocol PDF above predates this. **Checked on the bench, see "Firmware as found" below** | Library source, Meas. |
 | `bias` | Added to positive and subtracted from negative drive values, to overcome static friction. .NET default 0.3; the protocol's own SPIKE example uses 0.4 | DS |
 | Pi link | UART, 115200 baud 8N1, no flow control, plain text; commands can be abbreviated and chained with `;` | DS |
 | Motor data | Streamed after `select`/`combi`; the SPIKE motors' modes include SPEED (%), POS (°), APOS (°); a combi of modes 1, 2, 3 gives all three in one line | DS |
@@ -218,6 +218,53 @@ outer end of the axle if the chassis allows, so the wheel doesn't toe in under l
 | Stacking | Components on the bottom, 9 mm spacers. For GPIO pass-through, an optional tall header and 15 mm spacers | DS |
 | Pi support | Any 40-pin Pi (so the 3B), Raspberry Pi OS Bookworm (not yet Trixie) | DS |
 | Driver IC part number, per-port current limit, PWM frequency, mass | Not published | — |
+
+**Firmware as found on this robot (bench, 2026-11-22; driver `robot/buildhat_serial.py`).** `version` replies
+`Firmware version: 1674818421 2023-01-27T11:20:21+00:00`; loading it after power-up takes about 16 s. `vin` read
+7.70 V. `list` shows both motors as type 4C (Large Angular), each with modes POWER, SPEED (%), POS (°), APOS (°),
+CALIB and STATS. From `help` and tests:
+
+- **`on` is not a power switch:** it is "same as `pwm ; set 1`", full forward power. `off` is `pwm ; set 0`.
+  Never send `on` to a wheel motor. (Found the hard way: one probe drove port A at full duty, capped by a
+  `port_plimit` of 0.3, for about 0.4 s.)
+- `bias` is gone (replies `Error`). Global `plimit` (default 0.1) and per-port `port_plimit` both exist.
+- `pwmparams <pwmthresh> <minpwm>`: "threshold for slow/fast PWM switchover" and "minimum PWM driver input
+  value", **firmware default 0 0**. The library's docstring says below `pwmthresh` it switches from fast to slow
+  PWM, and below `minpwm` the drive switches off. `Hat()` alone does not send it (only creating a `Motor`
+  does), so after our init the HAT is at 0 0 until the driver sets it.
+- **The duty-to-speed map depends heavily on `pwmparams`.** Left wheel, no load, `port_plimit 1`, raw SPEED %
+  (mean of the second half of a 1.2–1.5 s hold; CSVs in the Pi's `~/legobot/logs/*_sweep.csv`):
+
+  | duty | 0.02 | 0.05 | 0.1 | 0.15 | 0.3 | 0.5 |
+  |---|---|---|---|---|---|---|
+  | `pwmparams 0 0` (firmware default; fast PWM throughout) | — | 0 | 0 | 0 | — | 58 |
+  | `pwmparams 0.65 0.01` (library) | — | — | — | 28 | 53 | 75 |
+  | `pwmparams 1 0.01` (slow PWM throughout) | 9 | 21 | 54 | 73 | 97 | 108 |
+
+  So slow PWM has almost no deadband and a much higher gain at small duty; fast PWM needs more than 0.15
+  to move at all. With `pwmthresh` 0.65 the gain changes where the duty crosses 0.65. Which setting the robot
+  uses, and how the motor model maps duty to voltage, is for C3 and B1 (SOFTWARE_PLAN); the driver keeps
+  the library's 0.65 0.01 for now (`hw_config.PWMPARAMS`). **Direction is symmetric; left and right
+  are not.** Alternating forward and backward in one run (each wheel alone, 1.5 s holds, three pairs at 0.15
+  and two at 0.3; library settings), forward and backward agree within 3% on both wheels, by the motor's SPEED
+  and by the encoder slope alike. The left wheel is about 1.9× the right at 0.15 (256 against 136 °/s) and
+  1.3× at 0.3 (496 against 375 °/s), repeatably: one drivetrain has more friction (rub, axle preload) or the
+  motors differ. Check the build before C3 measures friction per wheel. SPEED % ≈ encoder °/s ÷ 10.
+  (One earlier 3 s run read the left at 16% forward; it did not repeat.)
+- **`port_plimit` is not a clean power scale.** Above about 0.45 it scales the duty (`plimit 0.5, duty 0.3`
+  gave 24% against 28% for `1, 0.15`); at or below 0.4 the motor did not move at any duty up to 1.0 in the
+  slow-PWM range (duty × plimit up to 0.4). So it can't serve as a bench safety cap; the bench keeps it at 1
+  and caps the duty in software (`hw_config.BENCH_DUTY_CAP` = 0.3).
+- **Abbreviations match by prefix:** `po 0;set .15;po 1;set -.15` drives both motors (same speeds as
+  `port 0 ; pwm ; set 0.15 ; ...`), since `set` alone works once the port is in pwm mode. Unknown commands
+  reply `Error`.
+- Combi `combi 0 1 0 2 0 3 0 ; select 0 ; selrate 10` streams `P0C0: <speed> <pos> <apos>` at 100.2 Hz per
+  port. `echo 0` turns off the echo.
+- **After `kill -9` of the Python process the HAT keeps driving** at the last duty (still at full speed 3 s
+  later; tested with wheels off the ground). The firmware has no host watchdog. `robot/run_safe.sh` sends
+  `port 0 ; coast ; port 1 ; coast` when its Python child ends for any reason; with it, the wheels had
+  stopped 1.5 s after the kill. Killing the wrapper itself with -9 leaves no guard: the physical off switch
+  and loop-stall checks of D3 still matter.
 
 ### 3.4 SparkFun Auto pHAT and its ICM-20948
 
@@ -247,7 +294,12 @@ Pi → Auto pHAT (pass-through header) → Build HAT, or Pi → Build HAT (tall 
 square to the chassis, with one of the IMU's axes parallel to the wheel axle. Then pitch rate is that one gyro
 axis, and tilt is atan2 of the two accelerometer axes perpendicular to the axle; no rotation matrix is needed.
 LEGO makes squareness easy. Find which axis is which, and its sign, from the silkscreen or by rotating the robot
-about the axle and watching which gyro channel responds. Small errors don't matter:
+about the axle and watching which gyro channel responds. **Measured on this robot** (`robot/imu_axes.py`, a 35°
+forward lean): pitch rate = +gyro x (along the axle), forward = +accel z (out of the component side), up =
++accel y (+g upright); stored in `robot/hw_config.py`. The gyro x zero-rate offset read 0.047 rad/s (2.7 °/s,
+inside the ±5 °/s spec). The driver (`robot/imu.py`) writes the registers directly, because the SparkFun library
+can set the DLPF but not the sample-rate divider: gyro ±500 °/s and accelerometer ±4 g, DLPF cfg 3 on both, ODR
+1.125 kHz (divider 0, so the newest sample is under 1 ms old at each 200 Hz read), one 12-byte block read. Small errors don't matter:
 
 - A board yawed by δ (gyro axis not quite parallel to the axle) reads pitch rate × cos δ, 0.06% low at 2°, and
   picks up sin δ of any turning rate, which is zero when driving straight.
@@ -279,7 +331,10 @@ Bluetooth, and `/dev/serial0` maps to the mini UART; the Build HAT works on eith
 0.6.0, git 2.39.5; no SparkFun libraries installed yet. `/dev/serial0 → ttyS0` (the mini UART; Bluetooth holds
 the PL011). `config.txt` has `enable_uart=1` and `dtparam=i2c_arm=on`, I²C at the default 100 kHz. `get_throttled`
 0x0 (checked idle, not under motor load). I²C devices: 0x69 (ICM-20948), 0x5D and 0x73 (the pHAT's motor driver
-and encoder reader at SparkFun's default addresses; both unused).
+and encoder reader at SparkFun's default addresses; both unused). **Since then:** `dtoverlay=disable-bt` and
+`dtparam=i2c_arm_baudrate=400000` in `config.txt`, `hciuart` disabled, no serial console, so `/dev/serial0 →
+ttyAMA0` (the PL011); venv `~/legobot-venv` (system site packages) with pyserial 3.5, smbus2 0.4.2 and
+sparkfun-qwiic-icm20948 2.0.1. Robot code lives in `~/legobot/robot/` (copied with scp).
 
 **How the Build HAT is driven (decided):** the `buildhat` library only initializes: it loads the firmware into the
 HAT's RAM when the HAT reports its bootloader, and on exit it coasts and switches off every port and stops the data
@@ -422,6 +477,23 @@ From the moment the IMU senses a change to the moment motor current responds:
 
 The encoder path is slower still: motor data refresh at 100 Hz (0–10 ms old when read), and each motor's data line
 takes about 2 ms to send at 115200 baud. Two motors at 100 Hz use about 40% of the HAT-to-Pi direction.
+
+**Measured on the Pi 3B (2026-11-22, `robot/bench_log.py`, 5 s runs, normal scheduling priority, no RT
+tuning yet):**
+
+| Quantity | Measured | Note |
+|---|---|---|
+| Control loop at 200 Hz (`time.perf_counter`, sleep to deadline) | period 5.000 ms, sd 0.05–0.13 ms, p99 5.03–5.15 ms; 2–4 overruns in 1000 ticks, worst 8.3 ms | D2 adds priority |
+| IMU read, 12 bytes at 400 kHz (smbus2 `i2c_rdwr`) | mean 0.53 ms, p99 0.65–0.70 ms, one 8.1 ms stall per run | Budget said 0.4 ms |
+| IMU samples logged | 200.2 Hz, interval sd 0.07–0.29 ms | |
+| Motor command, both motors, `po 0;set .15;po 1;set -.15` (27 B) | `write()` returns in 0.08 ms; last byte leaves the UART 2.37 ms after (sd 0.01) | 44 B full form: 3.88 ms |
+| `tcdrain` (pyserial `flush()`) after a 44 B command | 14 ms, against 3.8 ms on the wire | Never drain in the loop |
+| Motor data lines | 100.2 Hz per port; interval sd 0.3–0.7 ms, worst 15–20 ms | |
+| Age of the newest motor reading when a command is sent | Anywhere in 0–10 ms, set by the phase between the loop and the HAT's stream; within one 5 s run nearly constant (runs gave 3.3/0.5, 6.0/3.6, 3.4/9.5 ms left/right) | Plus about 2 ms for the line itself to arrive |
+
+The serial command costs 2.4 ms of wire time, as budgeted, but the loop needn't wait for it. The encoder
+reading's age is the larger and more variable term. A loop triggered by the arrival of a data line (D1/D2)
+would make it about 0.3 ms for that port, but the two ports' lines arrive at unrelated phases.
 
 The sim's 10 ms nominal latency fits this budget. Its current randomization (2.5–20 ms) reaches below what this
 hardware can do; 5–25 ms covers the budget with margin.
