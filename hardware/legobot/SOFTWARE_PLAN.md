@@ -82,6 +82,67 @@ All of this runs on the Pi. The first two are also the robot code's drivers (pha
 | D4 | **Calibration at startup:** gyro bias (robot still for 2 s), stored accelerometer offset and balance-point pitch zero, motor and encoder sign check (one motor is mirrored) | S | — |
 | D5 | **Logging** at 200 Hz in the format `balance_sim.save_trajectory` writes, so `animate.py --csv` replays real runs, plus raw sensor channels and loop timing | S | A real run replays in animate.py |
 
+**Phase D as built (2026-11-23).** Code in `robot/`: `control.py` (the hardware-free core), `balance.py` (the
+loop, real-time setup, watchdog, logs), `calibrate.py` (D4), `loop_config.py` (limits), `sim_hw.py` (HAT, IMU
+and clock stand-ins backed by the simulator), `test_control.py`. `deploy.sh` copies `robot/`, `config.py`,
+`legobot_config.py` and `simulation/balance_sim/` to the Pi's `~/legobot`, with a `DEPLOYED` stamp that every
+log records.
+
+- **Shared with the simulator, not copied:** the robot imports `config.load_config("legobot")`. The estimator is
+  `ComplementaryFilter` with the config's τ, run at the 200 Hz control period. Wheel speed is the count
+  difference over one 10 ms HAT period, as `Encoder` computes it, and v = r(ω̄ + gyro). The controller is built by
+  `ProjectConfig.build_controller` or `build_lqr_controller`, so the torque cap, lean cap and integral limits
+  match the sim. Duty = `VoltageModeActuator.drive(τ, ω_wheel)` / vin, per wheel, using the HAT's measured vin.
+- **Controllers:** `--controller hand | model | lqr | <gains JSON>` (tuning results' `gains`, or `K` for LQR).
+  An optional `feedforward_gain` in the JSON is applied too. The LQR design needs scipy, which the Pi doesn't
+  have, so export it first: `--controller lqr --export-gains lqr.json` on the laptop. `--goal still | scenario`.
+- **Trips (each one coasts both motors and ends the run):**
+  - tilt past 0.70 rad;
+  - a wheel stalled (|duty| ≥ 0.5, or 0.8 × the cap on the bench, at under 1 rad/s for 1 s);
+  - a wheel turning fast against its duty (a sign error);
+  - 3 vin replies below 6.6 V, or no vin reply for 2 s;
+  - "Motor power fault";
+  - motor data older than 50 ms;
+  - the serial reader thread dying;
+  - a tick more than 25 ms late;
+  - the loop going silent for 100 ms: a watchdog thread coasts the motors with a raw write that bypasses the
+    driver's lock.
+
+  Arming requires |pitch| < 0.05 rad and rate < 0.3 rad/s for 0.5 s, within 30 s. `--inject loop|hang|stale|vin|fault`
+  triggers one trip on purpose. Tilt and stall are tested by hand.
+- **Startup:** the gyro bias comes from 2 s at rest, and startup refuses to continue if the robot moved. The
+  pitch zero (balance point, which absorbs the accelerometer offset and the mounting angle) and the sign-checked
+  `PORT_SIGN` are read from `calibration.json`, written by `robot.calibrate balance|signs`.
+- **Real time:** sleep to 0.4 ms before each deadline, then spin. If a period is missed, the loop re-phases
+  instead of catching up. GC is frozen and disabled during the run, and memory is locked. The loop runs at
+  SCHED_FIFO 50, pinned to core 3; the watchdog runs at 51 and the reader at 49. The Pi's
+  `/etc/security/limits.d/legobot-rt.conf` (added 2026-11-23) gives `user` rtprio 60 and unlimited memlock, so no
+  root is needed. Without that file, the loop falls back to normal priority and records it in the summary.
+- **Checked against the simulator:** 16 tests pass. Closed loop against the simulator (`--sim --sim-noise
+  --goal scenario`), the hand-tuned, model-based and LQR controllers all finish the 20 s scenario, cruising within
+  0.07 m/s of 0.27 m/s. Plain voltage mode (`--ff-gain 0`) falls and trips on tilt, as the sim predicts (A4). On
+  the Pi 3B, sense + safety + controller + feedforward take 0.06 ms per tick (p99 0.08 ms).
+- **Bench, 2026-11-23** (robot upside down on the stand, wheels off the ground, `--bench` duty cap 0.3,
+  `--pitch-zero` set to the stand's tilt; logs `~/legobot/logs/20261123_06{29,30,3}*`):
+  - **D1:** the loop arms and drives both motors. Positive duty turns both wheels forward, and both encoders read
+    forward. With a 0.03 rad pitch offset the wheels hold the 0.3 cap. On a fixed stand the velocity loop has no
+    pendulum to balance against, so it runs away to the cap. At θ ≈ 0 the duty stays inside the HAT's dead band
+    and the wheels don't move. Duty 0.3 gives about 8 rad/s, above the 5.4 rad/s that duty × vin / k predicts:
+    the HAT's duty-to-voltage map is not linear (C3's finding; see B1).
+  - **D2 (10 s runs at SCHED_FIFO):** period sd 0.002–0.022 ms, worst lateness 0.02–0.70 ms, 0 overruns. At
+    normal priority before (DATASHEET 6) it was sd 0.05–0.13 ms and 2–4 overruns, worst 8.3 ms. From the IMU read
+    to the command written takes 1.3 ms mean, 1.8 ms p99, worst 3.6 ms. The newest motor reading is 0–9 ms old at
+    each tick. Command to first encoder motion is 15–17.5 ms (C3, duty 1.0); that includes the motor's mechanical
+    response.
+  - **D3 (injected, wheels spinning at 0.3):** each trip fired with the right cause: loop stall (one 50 ms tick),
+    watchdog (loop blocked 0.5 s; it fired after 103 ms, and both wheels read 0 at the first tick after the hang,
+    where without it the HAT keeps driving), stale motor data, battery low, and motor power fault. After every one,
+    both wheels were at 0 deg/s 1 s after the stop.
+  - **D5:** a bench `_run.csv` replays in `simulation/animate.py --robot legobot --csv`.
+- **Still to do on hardware (needs hands):** the tilt trip (tilt past 40°) and the stall trip (hold a wheel with
+  `--bench` and a pitch offset), `robot.calibrate balance --save` and `robot.calibrate signs --wheels-off --save`.
+  The feedforward's duty formula waits on the B1 decision about the HAT's PWM mode (C3).
+
 ### Phase E: Retune and compare
 
 | # | Task | Size | Done when |

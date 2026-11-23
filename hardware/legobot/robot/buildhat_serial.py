@@ -55,11 +55,13 @@ class BuildHat:
         self.ser = None
         self._lock = threading.Lock()          # serialises writes
         self._latest = {p: None for p in MOTOR_PORTS}
+        self._pair = {p: (None, None) for p in MOTOR_PORTS}   # (previous, latest), replaced in one assignment
         self._counts = {p: 0 for p in MOTOR_PORTS}
         self.messages = deque(maxlen=200)      # (t, text) for every non-data line
         self.data_log = [] if log_lines else None   # (t, port, speed, pos, apos) raw HAT signs
         self.write_log = []                    # (t0, t_written, t_drained, nbytes, age_l, age_r)
         self.fault = None                      # set on "Motor power fault"
+        self.vin_reading = None                # (t, volts) of the newest reply to `vin`
         self._stop = threading.Event()
         self._reader = None
 
@@ -142,13 +144,20 @@ class BuildHat:
                 return
             if p in self._latest:
                 s = cfg.PORT_SIGN[p]
-                self._latest[p] = MotorReading(t, s * speed, s * pos, s * apos)
+                reading = MotorReading(t, s * speed, s * pos, s * apos)
+                self._pair[p] = (self._latest[p], reading)
+                self._latest[p] = reading
                 self._counts[p] += 1
                 if self.data_log is not None:
                     self.data_log.append((t, p, speed, pos, apos))
             return
         if line:
             self.messages.append((t, line))
+            if line.endswith(" V"):            # reply to `vin`, e.g. "7.70 V"
+                try:
+                    self.vin_reading = (t, float(line.split()[0]))
+                except ValueError:
+                    pass
             if "fault" in line.lower():
                 self.fault = (t, line)
 
@@ -156,8 +165,19 @@ class BuildHat:
     def latest(self, port):
         return self._latest[port]
 
+    def pair(self, port):
+        """(previous, latest) readings of a port, consistent with each other (either may be None)."""
+        return self._pair[port]
+
     def counts(self):
         return dict(self._counts)
+
+    def reader_alive(self):
+        return self._reader is not None and self._reader.is_alive()
+
+    def request_vin(self):
+        """Ask for the input voltage without waiting; the reply lands in vin_reading (control loop)."""
+        self._write(b"vin\r", drain=False)
 
     def _write(self, data, drain=True):
         """drain: True = tcdrain (blocks ~10 ms longer than the wire time on this Pi: don't use it
@@ -201,6 +221,12 @@ class BuildHat:
 
     def coast(self):
         self._write(b"port 0 ; coast ; port 1 ; coast\r")
+
+    def emergency_coast(self):
+        """Coast from another thread (the loop's watchdog) without taking the write lock, which a stuck
+        loop may hold. The leading CR ends any half-written command first."""
+        import os
+        os.write(self.ser.fileno(), b"\rport 0 ; coast ; port 1 ; coast\r")
 
     def vin(self):
         lines = self.command("vin", 0.2)
