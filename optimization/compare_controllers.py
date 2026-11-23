@@ -1,8 +1,11 @@
 """Compare saved controllers on one evaluation tier, with the statistics of docs/ml-baselines-plan.md 3.4.
 
 Controllers come from three kinds of file:
-    the existing comparison (results/pololu/lqr_comparison/<run>/comparison.json): its 7 PID and LQR
-        controllers, one run each (--existing; default the reference run in config.py);
+    an existing comparison.json, from run_lqr_comparison.py (the Pololu robot's 7 PID and LQR
+        controllers) or run_batch_tuning.py ("PID, cma-es", "PID, hand-tuned", ...), one run each
+        (--existing; default the robot's reference file in config.py). A robot with no tuned
+        reference yet (the LEGO robot before E1/E2) gets its own hand-tuned and model-based PIDs
+        instead, and the reference (its hand-tuned PID) is reported as provisional;
     learned policies (.npz from run_neuroevolution.py), grouped into methods:
         --policies "A=C:/balancebot_training/pololu/neuroevolution/mlp/*/final.npz"   (one method, one run per file);
     re-runs of a gain search (.json with "gains", and "kind": "lqr" for LQR gains), the same way:
@@ -78,7 +81,7 @@ sys.path.insert(0, str(ROOT))   # config.py; importing it puts simulation/ and o
 import numpy as np
 from scipy import stats
 
-from config import CONFIG, results_dir
+from config import CONFIG, read_pid_comparison, results_dir
 from balance_sim import load_policy
 from batch_tuning import BatchEvaluator
 from tuning import provenance
@@ -312,10 +315,17 @@ def _run_warnings(path: Path, saved_max_torque: Optional[float] = None) -> List[
     return out
 
 
-def existing_controllers(path) -> List[Entry]:
-    results = json.loads(Path(path).read_text())["results"]
-    return [Entry(name, name, "lqr" if r["kind"] == "lqr" else "cascaded", np.asarray(r["gains"], float),
-                  source=str(path)) for name, r in results.items()]
+def existing_controllers(path=None) -> List[Entry]:
+    """One entry per controller of a comparison.json (either tuning script's layout), or, with no
+    path, the selected robot's reference controllers (config.ProjectConfig.reference_controllers:
+    its reference file, or its own baselines while it has no tuned reference)."""
+    if path is None:
+        controllers = CONFIG.reference_controllers()
+        source = CONFIG.learning.reference_pid_file or f"{CONFIG.name} baselines (config.py)"
+    else:
+        controllers, source = read_pid_comparison(path), str(path)
+    return [Entry(label, label, kind, np.asarray(gains, float), source=str(source))
+            for label, (kind, gains) in controllers.items()]
 
 
 def _expand(pattern: str) -> List[Path]:
@@ -488,8 +498,9 @@ def main(argv=None) -> Path:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--tier", choices=TIERS, default="dev")
     parser.add_argument("--final", action="store_true", help="allow the frozen validation and fall-rate tiers")
-    parser.add_argument("--existing", default=str(ROOT / CONFIG.learning.reference_pid_file),
-                        help="comparison.json with the existing controllers ('' for none)")
+    parser.add_argument("--existing", default=None,
+                        help="comparison.json with the existing controllers (default: the robot's reference "
+                             "file, or its own baselines if it has none; '' for none)")
     parser.add_argument("--policies", action="append", default=[], help="NAME=GLOB of policy .npz files")
     parser.add_argument("--gain-runs", action="append", default=[], help="NAME=GLOB of gain .json files")
     parser.add_argument("--reference", default=CONFIG.learning.reference_pid_entry)
@@ -507,7 +518,14 @@ def main(argv=None) -> Path:
     if args.tier in FROZEN and not args.final:
         parser.error(f"the {args.tier} tier is frozen: pass --final once every controller is final")
 
-    entries = existing_controllers(args.existing) if args.existing else []
+    entries = existing_controllers(args.existing) if args.existing else \
+        ([] if args.existing == "" else existing_controllers())
+    # The robot's reference while it has no tuned one (config.py reference_is_provisional).
+    provisional = (args.existing is None and CONFIG.reference_is_provisional
+                   and args.reference == CONFIG.learning.reference_pid_entry)
+    if provisional:
+        print(f"NOTE: {CONFIG.name} has no tuned reference PID yet; {args.reference!r} is a provisional "
+              "reference, and every ratio against it is provisional")
     for pattern in args.policies:
         entries += policy_runs(pattern)
     for pattern in args.gain_runs:
@@ -539,7 +557,7 @@ def main(argv=None) -> Path:
                                    scores[e.label]["costs"], rtol=1e-9)
         report["runs"][e.label]["side_metrics"] = side_metrics(scores[e.label], config.control_dt)
     report["weight_sensitivity"] = weight_sensitivity(entries, scores, args.reference, config.duration)
-    report.update(tier=args.tier, seeds=[seeds[0], seeds[-1]], n_seeds=len(seeds), duration_s=config.duration,
+    report.update(robot=CONFIG.name, reference_provisional=provisional, tier=args.tier, seeds=[seeds[0], seeds[-1]], n_seeds=len(seeds), duration_s=config.duration,
                   backend=args.backend, provenance=provenance(), config=CONFIG.snapshot())
 
     scenarios = [(seed, pitch) for seed in seeds for pitch in config.start_pitches]
@@ -570,8 +588,8 @@ def main(argv=None) -> Path:
     report["elapsed_s"] = time.time() - t0
     (folder / "comparison.json").write_text(json.dumps(report, indent=2, default=float))
 
-    print(f"{args.tier}: {len(seeds)} seeds x {len(config.start_pitches)} tilts, {config.duration:g} s, "
-          f"against {args.reference}")
+    print(f"{CONFIG.name}, {args.tier}: {len(seeds)} seeds x {len(config.start_pitches)} tilts, "
+          f"{config.duration:g} s, against {args.reference}" + (" (PROVISIONAL reference)" if provisional else ""))
     print(f"{'method':<28}{'runs':>5}{'median ratio':>14}{'bootstrap 95%':>20}{'falls (med)':>13}")
     for method, m in report["methods"].items():
         ci = m["bootstrap_95ci"]   # the order-statistic interval is conditional on these scenarios: not shown here

@@ -275,7 +275,8 @@ def _run(args) -> Path:
                               seed=args.run_seed, stds=stds, full_cma_max_params=CONFIG.learning.full_cma_max_params)
         run_state = {"next_checkpoint": 0, "best_dev": math.inf, "stagnant": 0, "selected": None,
                      "charged_before": charged, "stop_reason": None}
-        snapshot = {"config": CONFIG.snapshot(), "args": vars(args), "profile": asdict(setup.profile),
+        snapshot = {"config": CONFIG.snapshot(), "robot": CONFIG.name,
+                    "reference_provisional": CONFIG.reference_is_provisional, "args": vars(args), "profile": asdict(setup.profile),
                     "spec": asdict(setup.spec), "n_params": setup.spec.n_params, "backend": setup.backend,
                     "train_dtype": np.dtype(setup.train_dtype).name, "train_seeds": list(setup.robust.train_seeds),
                     "dev_seeds": list(setup.dev_seeds), "popsize": setup.popsize, "sigma0": setup.sigma0,
@@ -292,6 +293,9 @@ def _run(args) -> Path:
         with open(folder / "checkpoints.csv", "w", newline="") as f:
             csv.DictWriter(f, CHECKPOINT_FIELDS).writeheader()
         search.start()
+        if args.method == "residual" and CONFIG.reference_is_provisional:
+            print(f"NOTE: {CONFIG.name} has no tuned reference PID yet; B1's base is the provisional "
+                  f"{CONFIG.learning.reference_pid_entry!r}")
         print(f"{args.method}: {setup.spec.n_params} parameters, {search.method}, population {setup.popsize}, "
               f"{setup.backend}; start point scores {search.best_cost:.4f}")
 

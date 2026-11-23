@@ -1,0 +1,53 @@
+{
+  "rows": [
+    {
+      "method": "linear",
+      "n_params": 10,
+      "population": 256,
+      "max_batch": 200000,
+      "chunks": 1,
+      "seconds_per_generation": 4.1997147999936715,
+      "microseconds_per_simulation": 54.68378645825093,
+      "robot_seconds_per_generation": 1536000.0,
+      "budget_robot_seconds": 1500000000.0,
+      "hours_for_budget": 1.139245551213561,
+      "falls": 758
+    },
+    {
+      "method": "mlp (as warm)",
+      "n_params": 492,
+      "population": 1332,
+      "max_batch": 200000,
+      "chunks": 2,
+      "seconds_per_generation": 17.06568499992136,
+      "microseconds_per_simulation": 42.70691941922262,
+      "robot_seconds_per_generation": 7992000.0,
+      "budget_robot_seconds": 6000000000.0,
+      "hours_for_budget": 3.5589099516018847,
+      "falls": 4011
+    },
+    {
+      "method": "residual",
+      "n_params": 513,
+      "population": 1332,
+      "max_batch": 200000,
+      "chunks": 2,
+      "seconds_per_generation": 18.184416500036605,
+      "microseconds_per_simulation": 45.506547797889404,
+      "robot_seconds_per_generation": 7992000.0,
+      "budget_robot_seconds": 6000000000.0,
+      "hours_for_budget": 3.792212316490783,
+      "falls": 5328
+    }
+  ],
+  "provenance": {
+    "git_commit": "6e8c4ae42923f5a04e0fb75b7b81df5f0069a8d0",
+    "git_dirty": true,
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "torch": "2.11.0+cu128",
+    "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU"
+  }
+}

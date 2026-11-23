@@ -125,7 +125,7 @@ flowchart LR
 From the project folder, with `C:\venvs\balancebot` active:
 
 ```
-python -m pytest                                                     # every test (582, with the LEGO robot's; 75 of them the learned policies), ~3 min
+python -m pytest                                                     # every test (587, with the LEGO robot's; 79 of them the learned policies), ~3 min
 python simulation/examples/run_velocity_demo.py                      # one run, plotted
 python simulation/animate.py                                         # animate hand-tuned vs the latest tuning result
 python simulation/animate.py --gains 1.03 0.2 0.1 0.33 --speed 0.5   # any gains, slow motion
@@ -136,6 +136,7 @@ python optimization/run_lqr_comparison.py --backend torch --float32  # PID vs LQ
 python optimization/benchmark.py                                     # reference speed baseline
 python optimization/benchmark_batch.py --backend torch --float32     # batched speed
 python optimization/run_neuroevolution.py --method linear            # learned linear policy, quick profile (GPU if present)
+ROBOT=legobot python optimization/run_neuroevolution.py --method linear   # the same on the LEGO robot (results/legobot/, provisional reference)
 python optimization/run_neuroevolution.py --method mlp --profile full --run-seed 3   # one of the 10 final runs
 python optimization/compare_controllers.py --tier dev --policies "L=C:/balancebot_training/pololu/neuroevolution/linear/*/final.npz"
 python optimization/benchmark_policies.py                            # time one generation of each learned policy

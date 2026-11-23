@@ -717,3 +717,65 @@ Each about 25 min on the laptop GPU (full profile, one run seed). Needs an `--in
 `run_neuroevolution.py` (a PolicySpec with a chosen input subset; `build_policy_spec` already
 builds L from a subset). Compare with `compare_controllers.py --tier dev`; never on validation.
 The outcome is a paper paragraph: the PID's handicap is structural, and which structure.
+
+## 13. The LEGO robot (prepared 2026-11-23, before E1)
+
+Everything above runs on either robot: `ROBOT=legobot` (or `--robot legobot`) selects
+`legobot_config.LEGOBOT_CONFIG`, results go to `results/legobot/<kind>/` and training runs to
+`C:/balancebot_training/legobot/`. The robots share no results folder, and a run's snapshot records
+its robot (`compare_controllers.py` warns about a policy trained under another config).
+
+**What is LEGO-specific** (`legobot_config.LEARNING`): the observation and output scales, measured
+from this robot's closed loop the way the Pololu ones were (hand-tuned PID and its PID-equivalent
+linear policy, the one-robot simulator with the LEGO models, 60 s, nominal robot, all 50 dev seeds
+x 3 tilts, no falls). Where the Pololu robot's Bryson limits don't fit this robot's ranges, the 99th
+percentile is used instead: velocity error 0.25 m/s (the 0.06 m/s limit would put typical inputs
+at 2.5 and peaks at 9) and commands and output 0.4 N m (the 0.09 N m limit is 10% of max_torque by
+design; typical commands are 3-10x it, the voltage-mode drive overcoming Coulomb friction). Table
+and the rest in `legobot_config.py`. Search settings (sizes, populations, budgets) are shared.
+
+**Provisional until E1/E2** (`hardware/legobot/SOFTWARE_PLAN.md`): there is no tuned LEGO PID yet,
+and no LQR on this robot. `LearningConfig.reference_pid_file` is None, so the reference is the
+robot's own hand-tuned PID (2.5, 1.5, 0.2, 0.5): `ProjectConfig.reference_is_provisional` is True,
+`compare_controllers.py` compares against the hand-tuned and model-based PIDs and labels every
+ratio provisional (`reference_provisional` in its output), and B1 would sit on the hand-tuned PID.
+When E2 is done:
+1. set `reference_pid_file` to its `run_batch_tuning.py` comparison.json under `results/legobot/`
+   and `reference_pid_entry` to the chosen search (`"PID, cma-es"`; `config.read_pid_comparison`
+   reads that layout as well as run_lqr_comparison's);
+2. re-measure the scales with the tuned PID: `python hardware/legobot/legobot_learning_scales.py`
+   (it uses the reference PID, so it picks up the tuned one), and update the table and values;
+3. re-run the gate below.
+
+**Checks on the LEGO robot (2026-11-23; training and dev seeds only):**
+- **Gate (b), L-PID against the hand-tuned PID.** Under robust scoring the hand-tuned PID itself
+  falls (2 of 150 on training, 2 on dev), and L-PID's falls land on different scenarios (1 on
+  training, 4 on dev, none shared on dev), so the plan's objective comparison is dominated by
+  single falls (+20% training, +47% dev) and says nothing about the integrator semantics. On the
+  scenarios where both stay up the gap is +0.63% (training, 148 of 150) and -0.99% (60 s dev, 144
+  of 150), median ratios 1.002 and 0.990: within the 1% bound. The different falls at the edge are
+  the leaky, freeze-on-saturation integrators against the PID's own anti-windup, near a robot's
+  limit. Re-run with the tuned PID after E2; a reference that never falls makes the plain gate
+  readable again.
+- **Linear delay margin**: the hand-tuned PID and L-PID are both linearly stable from 0 to the
+  search's 80 ms limit (spectral radius 0.9988 and 0.9986 at 10 ms). This says little: `linearize`
+  models a current-mode actuator and a direct pitch measurement, and the LEGO robot has a
+  voltage-mode drive with back-EMF feedforward and the IMU's complementary filter (0.5 s). A
+  LEGO-faithful margin needs both in the linear model (follow-up); until then the latency sweep
+  (5-25 ms is this robot's scored range) is the evidence.
+- **Throughput** (`results/legobot/benchmarks/policies_20261123-124346.json`, float32, max_batch
+  200k, laptop GPU in Turbo): L at population 256, 4.2 s per generation (1.1 h for 1.5 G
+  robot-seconds); an A-sized MLP at 1,332, 17.1 s (3.6 h for 6 G); B1 18.2 s (3.8 h). About the
+  Pololu robot's, despite the extra models.
+- **End to end**: a quick-profile L run (`ROBOT=legobot python optimization/run_neuroevolution.py
+  --method linear`, 30 generations from a random start, 102 s) trained, checkpointed and finished,
+  in `C:/balancebot_training/legobot/neuroevolution/linear/20261123-124349-seed0`. Its smoke-tier
+  dev score (166, falls included) shows 30 generations are far from enough here, as on the Pololu
+  robot, where L needed about 100 M robot-seconds.
+
+**On the robot itself** (E3/E4): `hardware/legobot/robot/control.py` runs the cascaded PID only. A
+learned controller needs a port that computes the policy's inputs exactly as the simulator does (the
+complementary filter's pitch, the encoder velocity, the leaky integrators with the freeze, the last 4
+commands) and a policy file loaded with `balance_sim.load_policy`. L is 10 multiply-adds per tick
+and an MLP 481, both trivial for the Pi at 200 Hz. Not started.
+
