@@ -17,7 +17,14 @@ validation scenario. Reported, against a reference controller (default the ML-tu
     per method: the headline, the median over runs of each run's median ratio; its two-level
         bootstrap interval with scenarios crossed with runs (one scenario resample per replicate,
         shared by every run); the distribution-free order-statistic interval for the median over
-        runs; fall-rate and McNemar summaries (median and range over runs); every run's numbers;
+        runs, which covers run-seed variation ON THESE SCENARIOS only (conditional on the scenario
+        set: far too narrow as a statement about new scenarios, so never quote it in place of the
+        bootstrap interval); fall-rate and McNemar summaries (median and range over runs); every
+        run's numbers;
+    method against method: for every pair where at least one method has several runs, the ratio
+        of their headlines with a paired bootstrap interval (one scenario resample shared by both
+        methods, run indices resampled within each). Overlapping per-method intervals say little
+        about a difference, because both are measured on the same scenarios;
     per scenario (per_scenario.csv): cost, fell and fall time for every controller, so each fall
         can be traced to the start tilt, a push, braking or standstill drift;
     side metrics that no cost weight touches, per run (median over scenarios, and the worst):
@@ -29,9 +36,17 @@ validation scenario. Reported, against a reference controller (default the ML-tu
         integrals, so nothing is re-simulated. The controllers were trained on the configured
         cost, so this tests whether a ranking depends on the weights, not how each method would
         do if trained on another cost.
-With --latency-sweep, each controller also runs at every latency of a 2.5 ms grid from 15 to
-45 ms (no chaos twins, every scenario at that one latency), and reports the first latency with
-4 or more falls (pre-registered; plan 3.4) and the full fall-count curve.
+With --latency-sweep, each controller also runs at the design latency (10 ms) and at every latency
+of a 2.5 ms grid from 15 to 45 ms (no chaos twins, every scenario at that one latency). Two
+pre-registered metrics (plan 3.4), and the full curves:
+    falls: the first latency with 4 or more falls. If the 10 ms baseline already has that many,
+        latency isn't what makes it fall, and the metric is reported as at or below 10 ms;
+    cost: the first latency at which the median per-scenario cost reaches 1.5x the controller's
+        own at 10 ms. A controller past its delay margin can oscillate for a whole run without
+        falling, which only this metric sees;
+plus, at every latency, the median per-scenario cost ratio against the reference at that same
+latency, and the first latency where a controller that beats the reference at 10 ms stops
+beating it.
 
 The validation and fall-rate tiers are frozen: used once, on final controllers. The script
 refuses them without --final, and nobody inspects per-scenario results there until every
@@ -70,9 +85,11 @@ from tuning import provenance
 
 TIERS = ("smoke", "dev", "validation", "fall_rate")
 FROZEN = ("validation", "fall_rate")
-SWEEP_LATENCIES_MS = tuple(15.0 + 2.5 * i for i in range(13))    # 15, 17.5, ..., 45 ms
+SWEEP_BASELINE_MS = 10.0             # the design latency (TimingConfig.latency_s), inside the training range
+SWEEP_LATENCIES_MS = (SWEEP_BASELINE_MS,) + tuple(15.0 + 2.5 * i for i in range(13))   # 10, then 15, 17.5, ..., 45 ms
 SWEEP_FALL_RATE_SEEDS = 333          # 6000-6332 x 3 tilts = 999 scenarios
 SWEEP_FALL_THRESHOLD = 4             # Clopper-Pearson upper bound passes 1% at about 4 / 1,000
+SWEEP_COST_FACTOR = 1.5              # cost metric: median per-scenario cost at 1.5x the controller's own at 10 ms
 
 
 # ---- statistics -----------------------------------------------------------------------------
@@ -98,6 +115,10 @@ def order_statistic_interval(values, k: Optional[int] = None) -> dict:
     Coverage is 1 - 2 P(Binomial(n, 1/2) <= k - 1). k defaults to the largest k with coverage at
     least 95% (for n = 10, k = 2: the 2nd to 9th values, 97.9%). None for n < 6, where even
     (min, max) covers less than 95%.
+
+    The coverage is over run seeds only, conditional on the scenarios every run was scored on.
+    Where scenario difficulty dominates, it covers the median for new scenarios far less often
+    (29% in the PR #10 review's simulation, against 93% for crossed_bootstrap).
     """
     v = np.sort(np.asarray(values, dtype=float))
     n = len(v)
@@ -107,7 +128,8 @@ def order_statistic_interval(values, k: Optional[int] = None) -> dict:
         if not ks:
             return {"low": None, "high": None, "coverage": None, "k": None}
         k = max(ks)
-    return {"low": float(v[k - 1]), "high": float(v[n - k]), "coverage": coverage(k), "k": k}
+    return {"low": float(v[k - 1]), "high": float(v[n - k]), "coverage": coverage(k), "k": k,
+            "conditional_on_scenarios": True}
 
 
 def crossed_bootstrap(ratios, n_boot: int = 10_000, seed: int = 0, alpha: float = 0.05) -> dict:
@@ -128,6 +150,27 @@ def crossed_bootstrap(ratios, n_boot: int = 10_000, seed: int = 0, alpha: float 
         out[b] = np.median(np.median(ratios[runs][:, scen], axis=1))
     low, high = np.quantile(out, [alpha / 2, 1 - alpha / 2])
     return {"low": float(low), "high": float(high), "n_boot": n_boot}
+
+
+def paired_method_bootstrap(ratios_a, ratios_b, n_boot: int = 10_000, seed: int = 0, alpha: float = 0.05) -> dict:
+    """Interval for headline(A) / headline(B), each headline the median over runs of the median
+    over scenarios of ratios (R_a, N) and (R_b, N) on the same N scenarios.
+
+    Each replicate draws ONE scenario index vector, shared by both methods (they were scored on the
+    same scenarios, so their difference is paired), and run indices within each method separately
+    (their runs are independent). Below 1: A's typical cost is lower than B's.
+    """
+    a, b = np.asarray(ratios_a, dtype=float), np.asarray(ratios_b, dtype=float)
+    if a.shape[1] != b.shape[1]:
+        raise ValueError("both methods must be scored on the same scenarios")
+    head = lambda r: np.median(np.median(r, axis=1))
+    rng = np.random.default_rng(seed)
+    out = np.empty(n_boot)
+    for i in range(n_boot):
+        scen = rng.integers(0, a.shape[1], a.shape[1])
+        out[i] = head(a[rng.integers(0, len(a), len(a))][:, scen]) / head(b[rng.integers(0, len(b), len(b))][:, scen])
+    low, high = np.quantile(out, [alpha / 2, 1 - alpha / 2])
+    return {"ratio": float(head(a) / head(b)), "low": float(low), "high": float(high), "n_boot": n_boot}
 
 
 # ---- weight sensitivity and side metrics ------------------------------------------------------
@@ -166,7 +209,13 @@ def rescore(s: dict, limits: Tuple[float, float, float], duration: float) -> np.
 
 
 def weight_sensitivity(entries, scores, reference: str, duration: float) -> dict:
-    """Each method's headline (median over runs of the median per-scenario ratio) under every variant."""
+    """Each method's headline (median over runs of the median per-scenario ratio) under every variant.
+
+    Also checks, per variant, that the fall penalty still ranks every fall below every run that
+    stayed up: the costliest non-fall scenario scored here must cost less than the cheapest
+    possible fall (the penalty alone, for a fall at the last instant). The analytic bound only
+    holds for 20 s runs under the configured weights (CostConfig), so this is checked on the data.
+    """
     out = {}
     for name, limits in cost_variants().items():
         costs = {e.label: rescore(scores[e.label], limits, duration) for e in entries}
@@ -175,8 +224,11 @@ def weight_sensitivity(entries, scores, reference: str, duration: float) -> dict
         for method in dict.fromkeys(e.method for e in entries):
             runs = [float(np.median(costs[e.label] / ref)) for e in entries if e.method == method]
             heads[method] = float(np.median(runs))
+        stayed_up = [costs[e.label][~scores[e.label]["fell"]] for e in entries]
+        worst_up = max((float(c.max()) for c in stayed_up if c.size), default=0.0)
         out[name] = {"limits": {"pitch_rad": limits[0], "velocity_m_s": limits[1], "torque_n_m": limits[2]},
-                     "headline_median_ratio": heads}
+                     "headline_median_ratio": heads, "max_non_fall_cost": worst_up,
+                     "falls_rank_below_every_non_fall": worst_up < CONFIG.cost.fall_penalty}
     return out
 
 
@@ -196,9 +248,32 @@ def side_metrics(s: dict, control_dt: float) -> dict:
 
 
 def first_latency_with_falls(latencies_ms, falls, threshold: int = SWEEP_FALL_THRESHOLD) -> Optional[float]:
-    """The pre-registered sweep metric: the first latency with `threshold` or more falls; None if none."""
+    """The pre-registered fall metric: the first latency with `threshold` or more falls; None if none.
+    When that is the first grid point (the 10 ms baseline), latency isn't what makes it fall: report
+    it as at or below that latency (sweep_metrics does)."""
     for ms, n in zip(latencies_ms, falls):
         if n >= threshold:
+            return float(ms)
+    return None
+
+
+def first_latency_with_cost(latencies_ms, median_costs, factor: float = SWEEP_COST_FACTOR) -> Optional[float]:
+    """The pre-registered cost metric: the first latency whose median per-scenario cost is at least
+    `factor` times the controller's own at the first grid point (the 10 ms baseline); None if none."""
+    base = median_costs[0]
+    for ms, c in zip(latencies_ms[1:], median_costs[1:]):
+        if c >= factor * base:
+            return float(ms)
+    return None
+
+
+def first_latency_losing(latencies_ms, median_ratios) -> Optional[float]:
+    """For a controller that beats the reference at the baseline (median ratio < 1), the first latency
+    where it no longer does; None if it never stops, or if it didn't beat the reference to begin with."""
+    if not median_ratios[0] < 1.0:
+        return None
+    for ms, r in zip(latencies_ms[1:], median_ratios[1:]):
+        if r >= 1.0:
             return float(ms)
     return None
 
@@ -213,10 +288,28 @@ class Entry:
     gains: np.ndarray    # PID / LQR gains, or policy parameters
     spec: object = None  # PolicySpec, for policies
     source: str = ""
+    warnings: List[str] = field(default_factory=list)   # e.g. trained under a different scoring config
 
     @property
     def label(self) -> str:
         return self.method if self.run == self.method else f"{self.method} / {self.run}"
+
+
+def _run_warnings(path: Path, saved_max_torque: Optional[float] = None) -> List[str]:
+    """Why a saved controller may not be comparable with today's config: its run's snapshot.json
+    (next to it) differs in something that changes training or scoring, or its saved torque limit
+    differs from the one it will be scored with."""
+    out = []
+    snapshot = path.parent / "snapshot.json"
+    if snapshot.exists():
+        differences = CONFIG.scoring_differences(json.loads(snapshot.read_text())["config"])
+        if differences:
+            out.append("trained under a different config: " + ", ".join(differences))
+    else:
+        out.append("no snapshot.json next to it: its training config can't be checked")
+    if saved_max_torque is not None and saved_max_torque != CONFIG.robot.max_torque:
+        out.append(f"saved with max_torque {saved_max_torque}, scored with {CONFIG.robot.max_torque}")
+    return out
 
 
 def existing_controllers(path) -> List[Entry]:
@@ -235,8 +328,9 @@ def policy_runs(pattern: str) -> List[Entry]:
     method = pattern.split("=", 1)[0]
     entries = []
     for path in _expand(pattern):
-        spec, params, _ = load_policy(path)
-        entries.append(Entry(method, path.parent.name, "policy", params, spec, str(path)))
+        spec, params, max_torque = load_policy(path)
+        entries.append(Entry(method, path.parent.name, "policy", params, spec, str(path),
+                             _run_warnings(path, max_torque)))
     if not entries:
         raise SystemExit(f"no files match {pattern!r}")
     return entries
@@ -248,7 +342,7 @@ def gain_runs(pattern: str) -> List[Entry]:
     for path in _expand(pattern):
         data = json.loads(path.read_text())
         entries.append(Entry(method, path.parent.name, data.get("kind", "cascaded"),
-                             np.asarray(data["gains"], float), source=str(path)))
+                             np.asarray(data["gains"], float), source=str(path), warnings=_run_warnings(path)))
     if not entries:
         raise SystemExit(f"no files match {pattern!r}")
     return entries
@@ -299,6 +393,7 @@ def summarize(entries: Sequence[Entry], scores: Dict[str, dict], reference: str,
         low, high = clopper_pearson(s["n_fell"], n)
         ratio = s["costs"] / ref["costs"]
         runs[e.label] = {"method": e.method, "run": e.run, "kind": e.kind, "source": e.source,
+                         "warnings": list(e.warnings),
                          "mean_cost": s["mean_cost"], "objective": s["objective"], "sensitivity": s["sensitivity"],
                          "worst_cost": float(np.max(s["costs"])), "falls": s["n_fell"], "scenarios": n,
                          "fall_rate": s["n_fell"] / n, "fall_rate_95ci": [low, high],
@@ -322,36 +417,63 @@ def summarize(entries: Sequence[Entry], scores: Dict[str, dict], reference: str,
             "mcnemar_p": {"median": float(np.median(p_values)), "min": float(min(p_values)),
                           "max": float(max(p_values))},
         }
-    return {"reference": reference, "runs": runs, "methods": methods}
+    # Method against method: only where at least one side has several runs (two single
+    # controllers are compared exactly by their per-run numbers, or by --reference).
+    ratios_of = {m: np.array([scores[e.label]["costs"] / ref["costs"] for e in entries if e.method == m])
+                 for m in methods}
+    pairs = {}
+    names = list(methods)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            if len(ratios_of[a]) > 1 or len(ratios_of[b]) > 1:
+                pairs[f"{a} vs {b}"] = paired_method_bootstrap(ratios_of[a], ratios_of[b], n_boot)
+    return {"reference": reference, "runs": runs, "methods": methods, "method_pairs": pairs}
 
 
-def latency_sweep(entries: Sequence[Entry], config, robust, seeds, latencies_ms=SWEEP_LATENCIES_MS,
-                  backend="numpy", device="cuda") -> Dict[str, dict]:
-    """Falls and mean cost at each latency: every scenario at that one latency, no chaos twins."""
+def latency_sweep(entries: Sequence[Entry], config, robust, seeds, reference: str,
+                  latencies_ms=SWEEP_LATENCIES_MS, backend="numpy", device="cuda") -> Dict[str, dict]:
+    """Falls and cost at each latency: every scenario at that one latency, no chaos twins.
+
+    The first latency is the baseline the metrics are measured from (SWEEP_BASELINE_MS by default).
+    """
     sweep_robust = replace(robust, latency_range=None, sensitivity_weight=0.0)
-    curves = {e.label: {"latency_ms": [], "falls": [], "mean_cost": [], "fall_rate_95ci": []} for e in entries}
+    fields = ("latency_ms", "falls", "mean_cost", "median_cost", "median_ratio_vs_reference", "fall_rate_95ci")
+    curves = {e.label: {f: [] for f in fields} for e in entries}
     for ms in latencies_ms:
         scores = score(entries, replace(config, latency=ms / 1000), sweep_robust, seeds, backend, device)
+        ref = scores[reference]["costs"]
         for e in entries:
             s, c = scores[e.label], curves[e.label]
             c["latency_ms"].append(ms)
             c["falls"].append(s["n_fell"])
             c["mean_cost"].append(s["mean_cost"])
+            c["median_cost"].append(float(np.median(s["costs"])))
+            c["median_ratio_vs_reference"].append(float(np.median(s["costs"] / ref)))
             c["fall_rate_95ci"].append(list(clopper_pearson(s["n_fell"], len(s["costs"]))))
     for c in curves.values():
-        c["first_latency_with_falls"] = first_latency_with_falls(c["latency_ms"], c["falls"])
+        first = first_latency_with_falls(c["latency_ms"], c["falls"])
+        c["first_latency_with_falls"] = first
+        # Already falling that often at the baseline: latency isn't the cause, so the true
+        # threshold is unknown below the baseline (left-censored).
+        c["falls_at_or_below_baseline"] = first is not None and first == c["latency_ms"][0]
+        c["falls_at_baseline"] = c["falls"][0]
+        c["first_latency_with_cost"] = first_latency_with_cost(c["latency_ms"], c["median_cost"])
+        c["first_latency_losing_to_reference"] = first_latency_losing(c["latency_ms"], c["median_ratio_vs_reference"])
         c["scenarios"] = len(seeds) * len(config.start_pitches)
     return curves
 
 
 def sweep_by_method(entries, curves) -> dict:
-    """The sweep metric per method: each run's, and their median (None = no latency reached it)."""
+    """The sweep metrics per method: each run's value, and their median (None = no latency reached it)."""
     out = {}
     for method in dict.fromkeys(e.method for e in entries):
-        values = [curves[e.label]["first_latency_with_falls"] for e in entries if e.method == method]
-        finite = [v if v is not None else math.inf for v in values]
-        med = float(np.median(finite))
-        out[method] = {"per_run": values, "median": None if math.isinf(med) else med}
+        group = [curves[e.label] for e in entries if e.method == method]
+        out[method] = {}
+        for metric in ("first_latency_with_falls", "first_latency_with_cost", "first_latency_losing_to_reference"):
+            values = [c[metric] for c in group]
+            med = float(np.median([v if v is not None else math.inf for v in values]))
+            out[method][metric] = {"per_run": values, "median": None if math.isinf(med) else med}
+        out[method]["falls_at_or_below_baseline"] = [c["falls_at_or_below_baseline"] for c in group]
     return out
 
 
@@ -374,7 +496,8 @@ def main(argv=None) -> Path:
     parser.add_argument("--latency-sweep", action="store_true")
     parser.add_argument("--seeds", type=int, default=None, help="only the tier's first N seeds (development)")
     parser.add_argument("--duration", type=float, default=None, help="run length (default: 60 s validation scenario)")
-    parser.add_argument("--latencies", type=str, default=None, help="sweep latencies in ms, e.g. 15,30,45")
+    parser.add_argument("--latencies", type=str, default=None,
+                        help="sweep latencies in ms, the first being the baseline, e.g. 10,15,30,45")
     parser.add_argument("--bootstrap", type=int, default=10_000)
     parser.add_argument("--backend", choices=("numpy", "torch"), default="numpy",
                         help="numpy float64 is the designated validation path; torch float64 for development")
@@ -394,6 +517,9 @@ def main(argv=None) -> Path:
         parser.error(f"reference {args.reference!r} is not among the controllers")
     if len(set(labels)) != len(labels):
         parser.error("two controllers share a label; give the methods different names")
+    for e in entries:
+        for warning in e.warnings:
+            print(f"WARNING {e.label}: {warning}")
 
     robust = CONFIG.build_robustness()
     seeds = tier_seeds(robust, args.tier)
@@ -429,31 +555,48 @@ def main(argv=None) -> Path:
         sweep_seeds = seeds[:SWEEP_FALL_RATE_SEEDS] if args.tier == "fall_rate" else seeds
         latencies = (tuple(float(x) for x in args.latencies.split(",")) if args.latencies
                      else SWEEP_LATENCIES_MS)
-        curves = latency_sweep(entries, config, robust, sweep_seeds, latencies, args.backend, args.device)
-        report["latency_sweep"] = {"seeds": [sweep_seeds[0], sweep_seeds[-1]], "threshold_falls": SWEEP_FALL_THRESHOLD,
+        curves = latency_sweep(entries, config, robust, sweep_seeds, args.reference, latencies,
+                               args.backend, args.device)
+        report["latency_sweep"] = {"seeds": [sweep_seeds[0], sweep_seeds[-1]], "baseline_ms": latencies[0],
+                                   "threshold_falls": SWEEP_FALL_THRESHOLD, "cost_factor": SWEEP_COST_FACTOR,
                                    "curves": curves, "by_method": sweep_by_method(entries, curves)}
         with open(folder / "latency_sweep.csv", "w", newline="") as f:
             w = csv.writer(f)
-            w.writerow(["controller", "latency_ms", "falls", "mean_cost"])
+            w.writerow(["controller", "latency_ms", "falls", "mean_cost", "median_cost", "median_ratio_vs_reference"])
             for label, c in curves.items():
-                for ms, n, mc in zip(c["latency_ms"], c["falls"], c["mean_cost"]):
-                    w.writerow([label, ms, n, mc])
+                for row in zip(c["latency_ms"], c["falls"], c["mean_cost"], c["median_cost"],
+                               c["median_ratio_vs_reference"]):
+                    w.writerow([label, *row])
     report["elapsed_s"] = time.time() - t0
     (folder / "comparison.json").write_text(json.dumps(report, indent=2, default=float))
 
     print(f"{args.tier}: {len(seeds)} seeds x {len(config.start_pitches)} tilts, {config.duration:g} s, "
           f"against {args.reference}")
-    print(f"{'method':<28}{'runs':>5}{'median ratio':>14}{'interval':>22}{'falls (med)':>13}")
+    print(f"{'method':<28}{'runs':>5}{'median ratio':>14}{'bootstrap 95%':>20}{'falls (med)':>13}")
     for method, m in report["methods"].items():
-        ci = m["bootstrap_95ci"] or m["order_statistic_interval"]
-        interval = "" if ci is None or ci.get("low") is None else f"[{ci['low']:.3f}, {ci['high']:.3f}]"
-        print(f"{method:<28}{len(m['runs']):>5}{m['headline_median_ratio']:>14.4f}{interval:>22}"
+        ci = m["bootstrap_95ci"]   # the order-statistic interval is conditional on these scenarios: not shown here
+        interval = "" if ci is None else f"[{ci['low']:.3f}, {ci['high']:.3f}]"
+        print(f"{method:<28}{len(m['runs']):>5}{m['headline_median_ratio']:>14.4f}{interval:>20}"
               f"{m['falls']['median']:>13.1f}")
+    if report["method_pairs"]:
+        print("\nMethod against method: ratio of headlines, paired bootstrap 95% (below 1: the first is better)")
+        for pair, p in report["method_pairs"].items():
+            print(f"  {pair:<50}{p['ratio']:>8.4f}  [{p['low']:.3f}, {p['high']:.3f}]")
     print("\nWeight sensitivity: headline median ratio vs the reference, re-scored under other Bryson limits")
     methods = list(report["methods"])
     print(f"{'variant':<32}" + "".join(f"{m[:14]:>16}" for m in methods))
     for name, v in report["weight_sensitivity"].items():
-        print(f"{name:<32}" + "".join(f"{v['headline_median_ratio'][m]:>16.3f}" for m in methods))
+        flag = "" if v["falls_rank_below_every_non_fall"] else \
+            f"   WARNING: a non-fall run cost {v['max_non_fall_cost']:.0f}, above the fall penalty"
+        print(f"{name:<32}" + "".join(f"{v['headline_median_ratio'][m]:>16.3f}" for m in methods) + flag)
+    if args.latency_sweep:
+        print(f"\nLatency sweep (baseline {latencies[0]:g} ms): first latency with >= {SWEEP_FALL_THRESHOLD} falls; "
+              f"with median cost >= {SWEEP_COST_FACTOR}x baseline; losing to the reference")
+        show = lambda v: "none" if v is None else f"{v:g} ms"
+        for label, c in report["latency_sweep"]["curves"].items():
+            falls = show(c["first_latency_with_falls"]) + (" (at/below baseline)" if c["falls_at_or_below_baseline"] else "")
+            print(f"  {label[:40]:<42}{falls:>26}{show(c['first_latency_with_cost']):>10}"
+                  f"{show(c['first_latency_losing_to_reference']):>10}")
     print("\nSide metrics (median over scenarios; not in the cost)")
     keys = [("torque_rms_change_per_tick_n_m", "dU/tick"), ("torque_variation_per_s_n_m", "TV/s"),
             ("torque_rms_n_m", "U rms"), ("time_at_torque_limit_fraction", "sat."),

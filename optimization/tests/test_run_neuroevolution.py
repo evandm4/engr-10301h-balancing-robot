@@ -73,3 +73,39 @@ def test_training_output_root(monkeypatch, tmp_path):
     root = CONFIG.training_output_root()
     assert root.name in ("balancebot_training", "results")
     assert "OneDrive" not in str(root) or root.name == "results"
+
+
+def test_checkpoints_never_pass_their_marks(tmp_path, monkeypatch):
+    """Each checkpoint is scored at the last generation that doesn't pass its mark (so "at the PID's
+    budget" never means more than it), and the run stops before passing its budget."""
+    from dataclasses import replace
+
+    import run_neuroevolution
+
+    marks = (10.0, 20.0)                      # robot-seconds; a tiny generation is 6 x 6 x 0.4 = 14.4
+    monkeypatch.setattr(run_neuroevolution, "CONFIG",
+                        replace(CONFIG, learning=replace(CONFIG.learning, checkpoints_robot_seconds=marks)))
+    folder = run(["--method", "linear", *TINY, "--generations", "100", "--budget", "40",
+                  "--out", str(tmp_path / "marks")])
+    with open(folder / "checkpoints.csv") as f:
+        scored = sorted({float(r["robot_seconds"]) for r in csv.DictReader(f)})
+    assert scored == pytest.approx([2.4, 16.8, 31.2])       # at or below 10, 20 and the 40 budget
+    assert json.loads((folder / "summary.json").read_text())["stop_reason"] == "budget"
+
+
+def test_resume_refuses_a_changed_config(tmp_path):
+    part = run(["--method", "linear", *TINY, "--out", str(tmp_path / "part"), "--stop-after", "1"])
+    snapshot = json.loads((part / "snapshot.json").read_text())
+    snapshot["config"]["robustness"]["latency_range_s"] = [0.005, 0.02]     # as before 2026-11-09
+    (part / "snapshot.json").write_text(json.dumps(snapshot))
+    with pytest.raises(SystemExit, match="latency_range_s"):
+        run(["--resume", str(part)])
+    run(["--resume", str(part), "--ignore-config-change"])                    # an explicit override works
+    assert (part / "summary.json").exists()
+
+
+def test_warm_start_needs_the_linear_runs_summary(tmp_path):
+    linear = run(["--method", "linear", *TINY, "--out", str(tmp_path / "linear")])
+    (linear / "summary.json").unlink()
+    with pytest.raises(SystemExit, match="summary.json"):
+        run(["--method", "warm", *TINY, "--warm-from", str(linear / "final.npz"), "--out", str(tmp_path / "warm")])

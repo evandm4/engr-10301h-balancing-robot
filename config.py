@@ -260,11 +260,16 @@ class CostConfig:
     #     scoring draws takes 0.02-0.14 N m.
     #   - velocity_limit is the tracking error accepted on ScenarioConfig's goal.
     #     Change the goal profile and revisit it.
-    #   - fall_penalty must exceed any non-fall cost. These weights scale costs up,
-    #     and the bound grows with the run length and top speed, so changing a
-    #     limit or the scenario can silently break that; re-check it (PHYSICS.md
-    #     8.3, test_fall_penalty_exceeds_any_non_fall_cost). For the 20 s scenario
-    #     the bound is 883 (462 for the earlier 12 s one, under its 500).
+    #   - fall_penalty must exceed any non-fall cost of a TRAINING run. These weights
+    #     scale costs up, and the bound grows with the run length and top speed, so
+    #     changing a limit or the scenario can silently break that; re-check it
+    #     (PHYSICS.md 8.3, test_fall_penalty_exceeds_any_non_fall_cost). For the 20 s
+    #     scenario the bound is 883 (462 for the earlier 12 s one, under its 500).
+    #     It is NOT guaranteed for the 60 s validation runs (bound 2,648, above the
+    #     2,000 a fall costs there) or under heavier weightings, so validation
+    #     reports falls as a separate count, and compare_controllers.py checks, for
+    #     every weighting it re-scores, that the costliest non-fall run it actually
+    #     scored stays below the cheapest possible fall.
     # Changing one limit changes every score: runs under different limits are not
     # comparable (every run records them in its config snapshot). A limit of
     # math.inf switches that term off. pitch_limit_rad is in radians, not degrees
@@ -479,12 +484,14 @@ class RobustnessSettings:
     """
 
     n_train_seeds: int = 50            # noise seeds 1..N scored during tuning
-    # Unseen seeds (and, through them, unseen robots) for the final validation. Seeds
-    # 1000-1099 were the validation set until 2026-11-09, but the 20 s scenario's push
-    # size and blend times were checked against those robots while it was designed, so
-    # they are no longer held out. 2000-2099 were fixed after the scenario, the search
-    # bounds and the model-based design were frozen, and are used for nothing else.
-    validation_seeds: Tuple[int, ...] = tuple(range(2000, 2100))
+    # Unseen seeds (and, through them, unseen robots) for the final validation. Retired
+    # sets: 1000-1099 (checked against while the 20 s scenario's push and blend times were
+    # sized) and 2000-2099 (results seen before the latency range was widened to 2.5 ms
+    # and the direct LQR search gained an integral gain, 2026-11-09). 3000-3099 were fixed
+    # after those changes, and are used for nothing else. Only the final comparison scores
+    # them: compare_controllers.py, run_lqr_comparison.py and run_batch_tuning.py all
+    # score the dev seeds instead unless given --final.
+    validation_seeds: Tuple[int, ...] = tuple(range(3000, 3100))
     # The other evaluation tiers (docs/ml-baselines-plan.md 2.5). Smoke is the first 10 dev
     # seeds, on purpose: both are for development. Development seeds take every
     # hyperparameter, architecture and run-selection decision; validation and fall-rate are
@@ -493,14 +500,10 @@ class RobustnessSettings:
     smoke_seeds: Tuple[int, ...] = tuple(range(5000, 5010))
     dev_seeds: Tuple[int, ...] = tuple(range(5000, 5050))
     fall_rate_seeds: Tuple[int, ...] = tuple(range(6000, 7000))
-    retired_seeds: Tuple[int, ...] = tuple(range(100, 110)) + tuple(range(1000, 1100))
-    fresh_seed_start: int = 1_000_000  # fresh-scenario ablations draw from here up
-    # Unseen seeds (and, through them, unseen robots) for the final validation. Retired
-    # sets: 1000-1099 (checked against while the 20 s scenario's push and blend times were
-    # sized) and 2000-2099 (results seen before the latency range was widened to 2.5 ms
-    # and the direct LQR search gained an integral gain, 2026-11-09). 3000-3099 were fixed
-    # after those changes, and are used for nothing else.
-    validation_seeds: Tuple[int, ...] = tuple(range(3000, 3100))
+    retired_seeds: Tuple[int, ...] = tuple(range(100, 110)) + tuple(range(1000, 1100)) + tuple(range(2000, 2100))
+    # Fresh-scenario ablations draw from here up. Spent by the PR #10 review (2026-11-09):
+    # 1,000,000-1,000,003 and 5,000,000-5,000,332; start new experiments above 6,000,000.
+    fresh_seed_start: int = 1_000_000
     # (parameter, relative spread): each scenario's robot has that parameter
     # scaled by a random factor in [1 - spread, 1 + spread]. Build and datasheet
     # tolerances (DATASHEET.md 2); replace with measured spreads. Names are
@@ -604,7 +607,7 @@ class LearningConfig:
     residual_authority: float = 0.25   # 0.5 as an ablation
     residual_setpoint_scale: float = 0.3      # rad
     residual_int_theta_scale: float = 0.05    # rad s
-    reference_pid_file: str = "results/lqr_comparison/20261108-225341/comparison.json"
+    reference_pid_file: str = "results/lqr_comparison/20261109-000021/comparison.json"   # tuned at 2.5-20 ms
     reference_pid_entry: str = "PID, ML-tuned"
     # Where training runs write (run_neuroevolution.py). Not the repository: a run rewrites its
     # search state every generation, and a synced folder (OneDrive) can lock a file mid-upload and
@@ -770,6 +773,36 @@ class ProjectConfig:
             pitch_integral_limit=self.controller.pitch_integral_limit,
             velocity_integral_limit=self.controller.velocity_integral_limit,
         )
+
+    # Snapshot sections and keys that don't change how a controller is trained or scored: where
+    # output goes, which seeds other tiers hold back, the LQR and PID search settings, and
+    # values derived from the rest.
+    NOT_SCORING = ("lqr", "search", "derived", "learning.output_dir", "robustness.validation_seeds",
+                   "robustness.fall_rate_seeds", "robustness.retired_seeds", "robustness.fresh_seed_start")
+
+    def scoring_differences(self, snapshot: dict) -> list:
+        """Dotted keys (e.g. "robustness.latency_range_s") where a saved snapshot() differs from
+        this config in something that changes how a controller is trained or scored. An empty
+        list means a run saved under that snapshot is comparable with runs made now."""
+        import json
+
+        normalize = lambda value: json.loads(json.dumps(value, default=str))
+        now = normalize(self.snapshot())
+        then = normalize(snapshot)
+        differences = []
+        for section in sorted(set(now) | set(then)):
+            if section in self.NOT_SCORING:
+                continue
+            a, b = now.get(section), then.get(section)
+            if not isinstance(a, dict) or not isinstance(b, dict):
+                if a != b:
+                    differences.append(section)
+                continue
+            for key in sorted(set(a) | set(b)):
+                name = f"{section}.{key}"
+                if name not in self.NOT_SCORING and a.get(key) != b.get(key):
+                    differences.append(name)
+        return differences
 
     def snapshot(self) -> dict:
         """Everything this configuration defines, as plain JSON-friendly data.

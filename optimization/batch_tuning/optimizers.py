@@ -156,7 +156,13 @@ class PolicySearch:
 
     @property
     def sigma(self) -> float:
+        """cma's global step-size factor. Not the step size: that is sigma x sqrt(diag C) per weight."""
         return float(self.es.sigma)
+
+    @property
+    def median_std(self) -> float:
+        """The median over weights of the search distribution's standard deviation (sigma x sqrt(C_ii))."""
+        return float(np.median(self.es.result.stds))
 
     def start(self) -> float:
         """Score x0 (once). Returns its cost."""

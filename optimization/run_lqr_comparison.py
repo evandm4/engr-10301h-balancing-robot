@@ -64,7 +64,7 @@ import numpy as np
 
 from config import CONFIG
 from balance_sim import LinearController, spectral_radius, stable_latency_range
-from batch_tuning import BatchEvaluator, cma_es_search, differential_evolution_search
+from batch_tuning import BatchEvaluator, checking_tier, cma_es_search, differential_evolution_search
 from tuning import Evaluator, lqr_weights, provenance, save_example_runs, save_result
 
 PID_HAND, PID_MODEL, PID_ML = "PID, hand-tuned", "PID, model-based", "PID, ML-tuned"
@@ -152,6 +152,8 @@ def main():
     parser.add_argument("--sweep-seeds", type=int, default=20,
                         help="validation seeds per latency in the latency sweep (x 3 tilts)")
     parser.add_argument("--quick", action="store_true", help="tiny budgets, to check the script runs")
+    parser.add_argument("--final", action="store_true",
+                        help="score the frozen validation seeds (only for the final comparison, once every controller is final); without it, results are checked on the development seeds")
     parser.add_argument("--no-plot", action="store_true")
     parser.add_argument("--no-show", action="store_true", help="save the plots without opening a window")
     parser.add_argument("--replot", metavar="FOLDER", help="redraw the figures of an earlier run, without rerunning it")
@@ -169,6 +171,11 @@ def main():
     robustness = cfg.build_robustness()
     if args.seeds is not None:
         robustness = replace(robustness, train_seeds=tuple(range(1, args.seeds + 1)))
+    # The validation seeds are frozen (docs/ml-baselines-plan.md 2.5): without --final, "validation"
+    # below and the latency sweep run on the development seeds, and comparison.json says so.
+    robustness, checked_on = checking_tier(robustness, args.final)
+    print(f"Checking results on the {checked_on} seeds"
+          + ("" if args.final else " (the frozen validation seeds need --final)"))
     if args.quick:
         robustness = replace(robustness, validation_seeds=robustness.validation_seeds[:10])
     dtype = np.float32 if args.float32 else np.float64
@@ -321,6 +328,7 @@ def main():
         "run_arguments": vars(args),
         "score": "config.py cost with pitch_reference='upright' (same for every controller)",
         "simulations_per_evaluation": sims,
+        "checked_on": checked_on,   # which seeds the "validation" fields and the sweep used
         "results": comparison,
         "robustness": asdict(robustness),
         "config": snapshot}, indent=2))
