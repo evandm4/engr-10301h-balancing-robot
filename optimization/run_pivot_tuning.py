@@ -25,7 +25,7 @@ From the project folder:
     python optimization/run_pivot_tuning.py --workers -1 --compare-held
     python optimization/run_pivot_tuning.py --iters 5 --pop 4         quick and rough
 
-Results go to results/pivot_tuning/<timestamp>/.
+Results go to results/pololu/pivot_tuning/<timestamp>/.
 """
 
 import argparse
@@ -42,6 +42,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from pivot_config import PIVOT_CONFIG  # noqa: E402  (imports config.py, which sets up the paths)
+from config import results_dir  # noqa: E402
 from pivot_sim.plotting import runs_figure  # noqa: E402
 from pivot_tuning import PivotEvaluator  # noqa: E402
 from tuning import SearchSpace, differential_evolution_search, gains_cells, gains_header, provenance, save_result  # noqa: E402
@@ -124,7 +125,7 @@ def main():
           " commands no lean, so its is from upright either way). upright: every controller's validation runs"
           " scored from upright.")
 
-    folder = HERE.parent / "results" / "pivot_tuning" / time.strftime("%Y%m%d-%H%M%S")
+    folder = results_dir("pivot_tuning", time.strftime("%Y%m%d-%H%M%S"), robot="pololu")   # the pivot builds on the Pololu robot
     snapshot = cfg.snapshot()
     for search, _ in searches.values():
         save_result(search, folder, extra={"pivot_config": snapshot})

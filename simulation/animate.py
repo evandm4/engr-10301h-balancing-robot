@@ -10,8 +10,8 @@ From the project folder:
     python simulation/animate.py                          hand-tuned vs the latest tuning result
     python simulation/animate.py --gains 1.03 0.20 0.10 0.33 --label tuned
     python simulation/animate.py --gains 4 0.5 0.15 0.1 --gains 1.03 0.2 0.1 0.33 --tilt -4.58 --seed 105
-    python simulation/animate.py --results results/batch_tuning/20260928-145838
-    python simulation/animate.py --csv results/batch_tuning/<run>/trajectories/cma-es.csv
+    python simulation/animate.py --results results/pololu/batch_tuning/20260928-145838
+    python simulation/animate.py --csv results/pololu/batch_tuning/<run>/trajectories/cma-es.csv
     python simulation/animate.py --speed 0.25             slow motion
     python simulation/animate.py --save robot.gif         save instead of showing (.gif, or .mp4 with ffmpeg)
     python simulation/animate.py --export out/            also save the shown runs as CSV
@@ -73,7 +73,7 @@ def simulate_runs(gains_by_label: Dict[str, List[float]], tilt_rad: float, seed:
 
 
 def latest_results_folder() -> Optional[Path]:
-    """The most recent folder under results/tuning or results/batch_tuning that has a comparison.json."""
+    """The most recent folder under results/pololu/tuning or results/pololu/batch_tuning that has a comparison.json."""
     found = [p.parent for sub in ("tuning", "batch_tuning") for p in results_dir(sub).glob("*/comparison.json")]
     return max(found, key=lambda p: p.name) if found else None
 

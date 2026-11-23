@@ -11,7 +11,7 @@ early and look faster than training really is):
     B1        the residual with a zero output layer: exactly the reference PID   (population 1,332)
 
 Reports seconds per generation, microseconds per simulation, and hours for each method's full
-budget (LearningConfig.budget_robot_seconds). Saved to results/benchmarks/policies_<time>.json.
+budget (LearningConfig.budget_robot_seconds). Saved to results/pololu/benchmarks/policies_<time>.json.
 
 From the project folder (GPU; plug the laptop in for representative numbers):
     python optimization/benchmark_policies.py
@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT))
 
 import numpy as np
 
-from config import CONFIG
+from config import CONFIG, results_dir
 from balance_sim import pid_equivalent_weights
 from batch_tuning import BatchEvaluator
 from tuning import provenance
@@ -90,7 +90,7 @@ def main():
                   f"{per_gen:6.2f} s/gen, {1e6 * per_gen / n_sims:5.2f} us/sim, "
                   f"{hours:5.1f} h for {budgets[budget_key[name]]:.2g} robot-s  (falls {rows[-1]['falls']})")
 
-    out = ROOT / "results" / "benchmarks" / f"policies_{time.strftime('%Y%m%d-%H%M%S')}.json"
+    out = results_dir("benchmarks", f"policies_{time.strftime('%Y%m%d-%H%M%S')}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"rows": rows, "provenance": provenance()}, indent=2))
     print(f"saved {out}")

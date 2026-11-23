@@ -6,7 +6,7 @@ seeds (0-9, all under the current config), then A and A-warm.
 
 **Config change under the first results (found by the PR #10 review).** Merging `main` (PR #9) widened
 the scored latency to 2.5-20 ms, moved validation to 3000-3099 and re-tuned the PID
-(`results/lqr_comparison/20261109-000021`: kp 1.615, ki 1.746, kd 0.298, kv_p 0.626). Everything in the
+(`results/pololu/lqr_comparison/20261109-000021`: kp 1.615, ki 1.746, kd 0.298, kv_p 0.626). Everything in the
 first-L-run paragraph below was made at 5-20 ms against the earlier PID (`20261108-225341`). Since
 2026-11-23 `reference_pid_file` points at the re-tuned PID, the gate is re-measured against it (+0.63%
 training, -0.66% -> -0.68% 60 s dev), and 2000-2099 are retired. The review re-scored the recorded L on
@@ -14,7 +14,7 @@ dev under the merged config: 0.870 against the earlier PID, and the re-tuned PID
 first result stands; but run seed 0 is NOT pooled with the final runs: all 10 are trained fresh.
 
 First L run (2026-11-09, full profile, run seed 0; a development run, copied to
-`results/neuroevolution/linear/20261109-133801-seed0`, dev comparison in `results/comparison/20261109-dev-L-seed0`): converged by generation about 110 and stopped itself at 468 (CMA-ES
+`results/pololu/neuroevolution/linear/20261109-133801-seed0`, dev comparison in `results/pololu/comparison/20261109-dev-L-seed0`): converged by generation about 110 and stopped itself at 468 (CMA-ES
 tolflatfitness) after 0.72 G robot-seconds, 26 min. Training objective 1.372 against the PID's 1.572.
 On dev (60 s): median per-scenario ratio 0.870 against the ML-tuned PID, no falls, better on 149 of
 150 scenarios; ahead under all 9 cost weightings (0.80-0.90); the smoothest torque of any controller;
@@ -54,10 +54,10 @@ Phase 0 progress (2026-11-09): built, tested, gate passed.
 - TF32: cuDNN's turned off and matmul's checked in `TorchSimulator`.
 - Benchmark (`benchmark_policies.py`, RTX 5070 Ti laptop on AC, float32, full-length runs). With the
   first GPU forward pass (elementwise, about 600 small kernels per tick for A;
-  `results/benchmarks/policies_20261109-130318.json`): A-sized MLP at population 1,332, 32 s per
+  `results/pololu/benchmarks/policies_20261109-130318.json`): A-sized MLP at population 1,332, 32 s per
   generation; B1 39 s. Switched the GPU path to batched matrix products (`baddbmm`, as 3.1 allows;
   NumPy keeps the fixed-order loop and its bit-identity with the reference; GPU float64 still matches
-  NumPy at rtol 1e-9). Now (`results/benchmarks/policies_20261109-131647.json`):
+  NumPy at rtol 1e-9). Now (`results/pololu/benchmarks/policies_20261109-131647.json`):
 
   | Policy | Population | s per generation | hours for the full cap |
   |---|---|---|---|
@@ -230,7 +230,7 @@ comparison.
    - Validation is scored only with `--final`, in every script: `compare_controllers.py`,
      `run_lqr_comparison.py` and `run_batch_tuning.py` check on dev otherwise and record which.
      Disclosed in the paper: the existing PID and LQR controllers were scored on the current
-     validation set (`results/lqr_comparison/20261109-000021`) before the learned controllers were
+     validation set (`results/pololu/lqr_comparison/20261109-000021`) before the learned controllers were
      frozen. No selection used it (each search was chosen by training objective).
    - Smoke inside dev is the one intended overlap; every other pair of sets must be disjoint, and the
      overlap check enforces exactly that.
@@ -491,7 +491,7 @@ It checks the whole Phase 0 pipeline and gives the reference point for reading A
 - Overfitting checks (481 to 1,473 weights can memorize 150 scenarios where 4 gains can't): log the
   training-vs-dev gap at each checkpoint, with dev scored at **20 s** for this purpose so the gap
   isn't confused with the extra 40 s of standstill in the 60 s runs.
-- Outputs: `results/neuroevolution/<timestamp>/` with policies at each checkpoint, history CSV and
+- Outputs: `results/pololu/neuroevolution/<timestamp>/` with policies at each checkpoint, history CSV and
   config snapshot.
 
 ### 4.3 A-warm
@@ -510,7 +510,7 @@ how hard it is to search 481 weights from scratch. Details:
 ## 5. Method B1: residual policy with CMA-ES
 
 - Base: the reference PID, loaded from `LearningConfig.reference_pid_file`
-  (`results/lqr_comparison/20261109-000021/comparison.json` since 2026-11-23; the same gains every
+  (`results/pololu/lqr_comparison/20261109-000021/comparison.json` since 2026-11-23; the same gains every
   ratio in the paper is measured against), recorded in the run snapshot.
 - Torque: `clip(PID + authority * max_torque * tanh(NN(obs)), +-max_torque)`, authority 0.25 and 0.5
   as an ablation. Output weights and bias start at zero, so training starts exactly at the PID, and
@@ -680,7 +680,7 @@ Remaining:
 
 ### 12.1 Why L beats the PID: constrained re-training (noted 2026-11-09, not started)
 
-The first full L run (`results/neuroevolution/linear/20261109-133801-seed0`) beats the
+The first full L run (`results/pololu/neuroevolution/linear/20261109-133801-seed0`) beats the
 ML-tuned PID on dev (median ratio 0.870, no falls, 149 of 150 scenarios better), but with a smaller
 linear delay margin (28 ms against 37.25 ms). Its weights point to two structural differences:
 
@@ -693,7 +693,7 @@ linear delay margin (28 ms against 37.25 ms). Its weights point to two structura
   per tick (0.014 against 0.032 N m).
 
 Knock-outs (one feature set back the PID's way, nothing re-tuned; dev, 60 s;
-`results/comparison/20261109-dev-L-seed0/l_knockouts.py`) show the features are co-adapted, so they can't
+`results/pololu/comparison/20261109-dev-L-seed0/l_knockouts.py`) show the features are co-adapted, so they can't
 attribute the gain:
 
 | Variant | vs PID | Falls | Stable latency up to |
@@ -717,3 +717,65 @@ Each about 25 min on the laptop GPU (full profile, one run seed). Needs an `--in
 `run_neuroevolution.py` (a PolicySpec with a chosen input subset; `build_policy_spec` already
 builds L from a subset). Compare with `compare_controllers.py --tier dev`; never on validation.
 The outcome is a paper paragraph: the PID's handicap is structural, and which structure.
+
+## 13. The LEGO robot (prepared 2026-11-23, before E1)
+
+Everything above runs on either robot: `ROBOT=legobot` (or `--robot legobot`) selects
+`legobot_config.LEGOBOT_CONFIG`, results go to `results/legobot/<kind>/` and training runs to
+`C:/balancebot_training/legobot/`. The robots share no results folder, and a run's snapshot records
+its robot (`compare_controllers.py` warns about a policy trained under another config).
+
+**What is LEGO-specific** (`legobot_config.LEARNING`): the observation and output scales, measured
+from this robot's closed loop the way the Pololu ones were (hand-tuned PID and its PID-equivalent
+linear policy, the one-robot simulator with the LEGO models, 60 s, nominal robot, all 50 dev seeds
+x 3 tilts, no falls). Where the Pololu robot's Bryson limits don't fit this robot's ranges, the 99th
+percentile is used instead: velocity error 0.25 m/s (the 0.06 m/s limit would put typical inputs
+at 2.5 and peaks at 9) and commands and output 0.4 N m (the 0.09 N m limit is 10% of max_torque by
+design; typical commands are 3-10x it, the voltage-mode drive overcoming Coulomb friction). Table
+and the rest in `legobot_config.py`. Search settings (sizes, populations, budgets) are shared.
+
+**Provisional until E1/E2** (`hardware/legobot/SOFTWARE_PLAN.md`): there is no tuned LEGO PID yet,
+and no LQR on this robot. `LearningConfig.reference_pid_file` is None, so the reference is the
+robot's own hand-tuned PID (2.5, 1.5, 0.2, 0.5): `ProjectConfig.reference_is_provisional` is True,
+`compare_controllers.py` compares against the hand-tuned and model-based PIDs and labels every
+ratio provisional (`reference_provisional` in its output), and B1 would sit on the hand-tuned PID.
+When E2 is done:
+1. set `reference_pid_file` to its `run_batch_tuning.py` comparison.json under `results/legobot/`
+   and `reference_pid_entry` to the chosen search (`"PID, cma-es"`; `config.read_pid_comparison`
+   reads that layout as well as run_lqr_comparison's);
+2. re-measure the scales with the tuned PID: `python hardware/legobot/legobot_learning_scales.py`
+   (it uses the reference PID, so it picks up the tuned one), and update the table and values;
+3. re-run the gate below.
+
+**Checks on the LEGO robot (2026-11-23; training and dev seeds only):**
+- **Gate (b), L-PID against the hand-tuned PID.** Under robust scoring the hand-tuned PID itself
+  falls (2 of 150 on training, 2 on dev), and L-PID's falls land on different scenarios (1 on
+  training, 4 on dev, none shared on dev), so the plan's objective comparison is dominated by
+  single falls (+20% training, +47% dev) and says nothing about the integrator semantics. On the
+  scenarios where both stay up the gap is +0.63% (training, 148 of 150) and -0.99% (60 s dev, 144
+  of 150), median ratios 1.002 and 0.990: within the 1% bound. The different falls at the edge are
+  the leaky, freeze-on-saturation integrators against the PID's own anti-windup, near a robot's
+  limit. Re-run with the tuned PID after E2; a reference that never falls makes the plain gate
+  readable again.
+- **Linear delay margin**: the hand-tuned PID and L-PID are both linearly stable from 0 to the
+  search's 80 ms limit (spectral radius 0.9988 and 0.9986 at 10 ms). This says little: `linearize`
+  models a current-mode actuator and a direct pitch measurement, and the LEGO robot has a
+  voltage-mode drive with back-EMF feedforward and the IMU's complementary filter (0.5 s). A
+  LEGO-faithful margin needs both in the linear model (follow-up); until then the latency sweep
+  (5-25 ms is this robot's scored range) is the evidence.
+- **Throughput** (`results/legobot/benchmarks/policies_20261123-124346.json`, float32, max_batch
+  200k, laptop GPU in Turbo): L at population 256, 4.2 s per generation (1.1 h for 1.5 G
+  robot-seconds); an A-sized MLP at 1,332, 17.1 s (3.6 h for 6 G); B1 18.2 s (3.8 h). About the
+  Pololu robot's, despite the extra models.
+- **End to end**: a quick-profile L run (`ROBOT=legobot python optimization/run_neuroevolution.py
+  --method linear`, 30 generations from a random start, 102 s) trained, checkpointed and finished,
+  in `C:/balancebot_training/legobot/neuroevolution/linear/20261123-124349-seed0`. Its smoke-tier
+  dev score (166, falls included) shows 30 generations are far from enough here, as on the Pololu
+  robot, where L needed about 100 M robot-seconds.
+
+**On the robot itself** (E3/E4): `hardware/legobot/robot/control.py` runs the cascaded PID only. A
+learned controller needs a port that computes the policy's inputs exactly as the simulator does (the
+complementary filter's pitch, the encoder velocity, the leaky integrators with the freeze, the last 4
+commands) and a policy file loaded with `balance_sim.load_policy`. L is 10 multiply-adds per tick
+and an MLP 481, both trivial for the Pi at 200 Hz. Not started.
+

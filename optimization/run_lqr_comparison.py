@@ -41,10 +41,10 @@ Then, for every controller:
 From the project folder:
     python optimization/run_lqr_comparison.py --backend torch --float32     on the GPU (about 10 min)
     python optimization/run_lqr_comparison.py --quick --backend torch       tiny budgets, to check it runs
-    python optimization/run_lqr_comparison.py --replot results/lqr_comparison/<run>   redraw a run's figures
+    python optimization/run_lqr_comparison.py --replot results/pololu/lqr_comparison/<run>   redraw a run's figures
 NumPy works too (--backend numpy, the default) but the searches take hours.
 
-Results go to results/lqr_comparison/<timestamp>/ (results/legobot/... with --robot legobot): comparison.json, lqr_comparison.png,
+Results go to results/pololu/lqr_comparison/<timestamp>/ (results/legobot/... with --robot legobot): comparison.json, lqr_comparison.png,
 example_runs.png, each search's <method>.json and history CSV, and trajectories/.
 """
 

@@ -668,7 +668,11 @@ class LearningConfig:
     residual_authority: float = 0.25   # 0.5 as an ablation
     residual_setpoint_scale: float = 0.3      # rad
     residual_int_theta_scale: float = 0.05    # rad s
-    reference_pid_file: str = "results/lqr_comparison/20261109-000021/comparison.json"   # tuned at 2.5-20 ms
+    # The reference controller: an entry of a comparison.json from run_lqr_comparison.py (entries
+    # "PID, ML-tuned", ...) or run_batch_tuning.py (read as "PID, cma-es", "PID, hand-tuned", ...;
+    # read_pid_comparison). None: no tuned reference exists yet for this robot, and the entry is
+    # one of its own baselines (ProjectConfig.baseline_pids), flagged as provisional.
+    reference_pid_file: Optional[str] = "results/pololu/lqr_comparison/20261109-000021/comparison.json"   # tuned at 2.5-20 ms
     reference_pid_entry: str = "PID, ML-tuned"
     # Where training runs write (run_neuroevolution.py). Not the repository: a run rewrites its
     # search state every generation, and a synced folder (OneDrive) can lock a file mid-upload and
@@ -930,26 +934,50 @@ class ProjectConfig:
         )
 
     def training_output_root(self) -> Path:
-        """Folder training runs write under: $BALANCEBOT_TRAINING_DIR, else LearningConfig.output_dir
-        if its drive exists here, else results/ in the repository."""
+        """Folder this robot's training runs write under: <base>/<robot name>, where <base> is
+        $BALANCEBOT_TRAINING_DIR, else LearningConfig.output_dir if its drive exists here, else
+        results/ in the repository. One subfolder per robot, so their runs never mix."""
         import os
 
         override = os.environ.get("BALANCEBOT_TRAINING_DIR")
         if override:
-            return Path(override)
+            return Path(override) / self.name
         configured = self.learning.output_dir
         if configured and sys.platform == "win32":
             drive = Path(configured).drive
             if drive and Path(drive + "\\").exists():
-                return Path(configured)
-        return _ROOT / "results"
+                return Path(configured) / self.name
+        return _ROOT / "results" / self.name
+
+    def baseline_pids(self) -> dict:
+        """This robot's own PID baselines, needing no tuning run: {label: ("cascaded", gains)}."""
+        return {"PID, hand-tuned": ("cascaded", tuple(float(g) for g in self.controller.hand_tuned_gains)),
+                "PID, model-based": ("cascaded", tuple(float(g) for g in self.model_based_gains()))}
+
+    @property
+    def reference_is_provisional(self) -> bool:
+        """True while no tuned reference exists for this robot (LearningConfig.reference_pid_file is
+        None): the reference is one of its baselines, and every ratio against it is provisional."""
+        return self.learning.reference_pid_file is None
+
+    def reference_controllers(self) -> dict:
+        """{label: (kind, gains)}: the controllers of the reference file, or this robot's baselines
+        when there is none."""
+        if self.reference_is_provisional:
+            return self.baseline_pids()
+        return read_pid_comparison(_ROOT / self.learning.reference_pid_file)
 
     def reference_pid_gains(self) -> Tuple[float, ...]:
-        """The reference PID's [kp, ki, kd, kv_p], read from LearningConfig.reference_pid_file."""
-        import json
-
-        with open(_ROOT / self.learning.reference_pid_file) as f:
-            return tuple(float(g) for g in json.load(f)["results"][self.learning.reference_pid_entry]["gains"])
+        """The reference PID's [kp, ki, kd, kv_p]: LearningConfig.reference_pid_entry of the reference
+        file, or of this robot's baselines while it has no tuned reference (reference_is_provisional)."""
+        controllers = self.reference_controllers()
+        entry = self.learning.reference_pid_entry
+        if entry not in controllers:
+            raise KeyError(f"reference entry {entry!r} not among {sorted(controllers)}")
+        kind, gains = controllers[entry]
+        if kind != "cascaded":
+            raise ValueError(f"the reference {entry!r} is not a cascaded PID")
+        return gains
 
     def build_policy_spec(self, kind: str = "mlp", hidden: Optional[Tuple[int, ...]] = None,
                           base_gains: Optional[Tuple[float, ...]] = None, authority: Optional[float] = None):
@@ -1114,13 +1142,36 @@ def add_robot_argument(parser) -> None:
                         help=f"which robot to simulate (default: $ROBOT, else {DEFAULT_ROBOT}; now {CONFIG.name})")
 
 
+def read_pid_comparison(path) -> dict:
+    """{label: (kind, gains)} from a comparison.json of either tuning script.
+
+    run_lqr_comparison.py: entries are labels ("PID, ML-tuned", "LQR, ..."), each with "kind"
+    ("cascaded_pid" or "lqr") and a gains list. run_batch_tuning.py: entries are search methods and
+    baselines ("cma-es", "hand-tuned", ...), cascaded PIDs with gains as a {kp, ki, kd, kv_p(, kv_i)}
+    dict; they are labeled "PID, <entry>" so labels mean the same in both.
+    """
+    import json
+
+    out = {}
+    for name, entry in json.loads(Path(path).read_text())["results"].items():
+        gains = entry["gains"]
+        if isinstance(gains, dict):
+            gains = [gains[k] for k in ("kp", "ki", "kd", "kv_p", "kv_i") if k in gains]
+        if "kind" in entry:
+            kind = "lqr" if entry["kind"] == "lqr" else "cascaded"
+            label = name
+        else:
+            kind, label = "cascaded", f"PID, {name}"
+        out[label] = (kind, tuple(float(g) for g in gains))
+    return out
+
+
 def results_dir(*parts: str, robot: Optional[str] = None) -> Path:
-    """Where results for `robot` (default: the selected one) go: results/<...> for
-    the Pololu robot, whose earlier results and the documents citing them live
-    there, and results/<robot>/<...> for any other robot."""
+    """Where results for `robot` (default: the selected one) go: results/<robot>/<...>.
+    Every robot has its own tree, so no script can mix one robot's results into another's
+    (the Pololu robot's moved from results/<...> to results/pololu/<...> on 2026-11-23)."""
     robot = CONFIG.name if robot is None else robot
-    base = _ROOT / "results"
-    return base.joinpath(*parts) if robot == "pololu" else base.joinpath(robot, *parts)
+    return (_ROOT / "results").joinpath(robot, *parts)
 
 
 ROBOT = _selected_robot()
