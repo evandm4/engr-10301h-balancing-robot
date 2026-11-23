@@ -162,3 +162,15 @@ def robot_at(robot: BatchRobot, index: int):
         motor = MotorParams(**{name: (int(value(name)) if name == "n_motors" else value(name))
                                for name in MOTOR_PARAM_FIELDS})
     return params, motor
+
+
+def pitch_bias_at(robot: BatchRobot, index: int):
+    """One simulation's pitch offset (rad), or None when the robot leaves it to the SimSpec.
+
+    robot_at's RobotParams/MotorParams hold no sensor settings; build the reference run's sensor
+    with replace(sensor, pitch_bias=pitch_bias_at(robot, i)).
+    """
+    bias = robot.pitch_bias
+    if bias is None:
+        return None
+    return float(np.asarray(bias)[index] if np.ndim(bias) else bias)

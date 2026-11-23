@@ -75,6 +75,8 @@ class TorchSimulator:
         self.use_graphs = device.type == "cuda" if use_graphs is None else use_graphs
         self.record = record
         self.robot = robot.to_torch(device, dtype)
+        self.pitch_bias = spec.pitch_bias if robot.pitch_bias is None else self.robot.pitch_bias   # (B,) or scalar
+        self.has_bias = bool(np.any(spec.pitch_bias if robot.pitch_bias is None else robot.pitch_bias))
         self.lqr = spec.controller == "lqr"
         if self.lqr and (n_gains is None or n_gains < LQR_STATE_GAINS):
             raise ValueError(f"an LQR simulator needs n_gains >= {LQR_STATE_GAINS}, got {n_gains}")
@@ -161,10 +163,10 @@ class TorchSimulator:
             derivs = derivatives(self.robot, self.state, self.applied, xp, force)
             if self.noise is not None:
                 gyro = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
-                tilt_offset = spec.pitch_std * n[1] + spec.pitch_bias
+                tilt_offset = spec.pitch_std * n[1] + self.pitch_bias
             else:   # the biases still apply, with zero noise
                 gyro = theta_dot + spec.pitch_rate_bias
-                tilt_offset = spec.pitch_bias
+                tilt_offset = self.pitch_bias
             tilt = accelerometer_tilt(theta, theta_dot, derivs[1], derivs[3],
                                       spec.imu_height, self.robot.gravity, xp) + tilt_offset
             filtered = self.alpha * (self.estimate + spec.control_dt * gyro) + self.one_minus_alpha * tilt
@@ -172,10 +174,10 @@ class TorchSimulator:
             self.estimate.copy_(estimate)
             theta, theta_dot = self.estimate, gyro
         elif self.noise is not None:
-            theta = theta + (spec.pitch_std * n[1] + spec.pitch_bias)
+            theta = theta + (spec.pitch_std * n[1] + self.pitch_bias)
             theta_dot = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
-        elif spec.pitch_rate_bias or spec.pitch_bias:   # deterministic, so they need no table
-            theta = theta + spec.pitch_bias
+        elif spec.pitch_rate_bias or self.has_bias:   # deterministic, so they need no table
+            theta = theta + self.pitch_bias
             theta_dot = theta_dot + spec.pitch_rate_bias
         if self.encoder:
             torch = self.torch

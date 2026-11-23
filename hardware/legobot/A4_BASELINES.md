@@ -4,7 +4,21 @@ SOFTWARE_PLAN A4, 2026-11-22. The LEGO robot (`legobot_config.py`) on its derive
 `legobot_scenario.py`), with the voltage-mode driver since B1, the simulated IMU since B2 and the encoder model since B3. These are the reference points the
 LEGO tuning runs (E1, E2) are compared against. Re-score with `python hardware/legobot/legobot_baselines.py`.
 
-## Scores with the measured body mass (current)
+## Scores with the pitch offset drawn per robot (B6; current)
+
+Robust scoring now draws each scenario's pitch offset (the accelerometer's) uniformly in ±0.015 rad
+instead of +0.015 rad every time; plain runs keep +0.015. Everything else as below.
+
+| Baseline | Plain (seeds 1–3, 9 runs) | Robust, train seeds 1–50 (150) | Robust, dev seeds 5000–5049 (150) | Dev chaos |
+|---|---|---|---|---|
+| Hand-tuned PID | 2.405 (0) | 1.766 (0) | 1.784 (0) | 4.5e-3 |
+| Model-based PID | 2.136 (0) | 220.3 (18) | 159.8 (13) | 24 |
+| Cost-matched LQR | 2.039 (0) | 14.94 (1) | 39.33 (3) | 0.11 |
+
+The hand-tuned PID's cost fell (its mean offset is now 0, and its integral handles either sign); the
+model-based PID falls more (13 of 150, from 9), so the sign of the offset matters to it.
+
+## Scores with the measured body mass (superseded by B6)
 
 Body mass measured at 0.44 kg (was the 0.55 kg estimate; spread now ±1%). The scenario was re-derived
 for it: lean cap 13° (was 12°), pushes 0.85 N (was 0.90 N; 98% of the 0.0434 N s catchable on every

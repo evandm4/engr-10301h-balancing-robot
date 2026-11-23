@@ -100,7 +100,7 @@ SENSOR = SensorConfig(
     encoder_period_s=0.010,
     encoder_delay_s=0.005,
     imu_height=0.10,               # m above the axle, Est. (the HAT stack's height; DATASHEET 3.4)
-    filter_time_constant=0.5,      # s: 1 s raised the baselines' cost 15-25% more, 0.25 s was mixed (B2)
+    filter_time_constant=0.5,      # s: 1 s raised the baselines' cost 9-24% more, 0.25 s was mixed (B2)
 )
 
 # ---------------------------------------------------------------- TIMING ---
@@ -133,6 +133,12 @@ ROBUSTNESS = replace(
     randomize_range=(
         ("wheel_friction", 0.0, 0.001),       # N m s/rad
         ("coulomb_friction", 0.03, 0.08),     # N m, both motors
+        # SOFTWARE_PLAN B6: the pitch offset (the accelerometer's, in the IMU model) drawn per
+        # scenario in +-b, b = SENSOR.pitch_bias, the residual after balance-point calibration
+        # (DATASHEET 8.4), so the tuner sees both signs and every size. It also covers a fore-aft
+        # COM offset e: a pitch offset of atan(e / l), 0.011 rad per mm at l = 90 mm. Last in the
+        # list, so the draws above are unchanged. Plain (non-robust) runs keep +b.
+        ("pitch_bias", -0.015, 0.015),        # rad
     ),
     latency_range_s=(0.005, 0.025),           # 2.5 ms is not reachable on this hardware
 )

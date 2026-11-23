@@ -103,6 +103,8 @@ def simulate_batch(
     ring = np.zeros((ring_size + 1, B), dtype=dtype)   # the extra last row stays 0: no command yet
     torque, active = zeros(), -1
     voltage = robot.voltage_mode
+    pitch_bias = spec.pitch_bias if robot.pitch_bias is None else robot.pitch_bias   # per-simulation (B,) or the spec's scalar
+    has_bias = bool(np.any(pitch_bias))
     ring_drive = np.zeros_like(ring) if voltage else None   # drive voltages, same slots as ring
     drive = zeros() if voltage else None
     estimate = None   # the IMU complementary filter's pitch estimate; set on the first tick
@@ -137,10 +139,10 @@ def simulate_batch(
                 derivs = derivatives(robot, state, drive if voltage else torque, np, float(schedule.force_per_step[k]))
                 if noise is not None:
                     gyro = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
-                    tilt_offset = spec.pitch_std * n[1] + spec.pitch_bias
+                    tilt_offset = spec.pitch_std * n[1] + pitch_bias
                 else:   # the biases still apply, with zero noise
                     gyro = theta_dot + spec.pitch_rate_bias
-                    tilt_offset = spec.pitch_bias
+                    tilt_offset = pitch_bias
                 tilt = accelerometer_tilt(theta, theta_dot, derivs[1], derivs[3],
                                           spec.imu_height, robot.gravity, np) + tilt_offset
                 if j == 0:
@@ -149,10 +151,10 @@ def simulate_batch(
                     estimate = alpha * (estimate + control_dt * gyro) + one_minus_alpha * tilt
                 theta, theta_dot = estimate, gyro
             elif noise is not None:
-                theta = theta + (spec.pitch_std * n[1] + spec.pitch_bias)
+                theta = theta + (spec.pitch_std * n[1] + pitch_bias)
                 theta_dot = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
-            elif spec.pitch_rate_bias or spec.pitch_bias:   # deterministic, so they need no table
-                theta = theta + spec.pitch_bias
+            elif spec.pitch_rate_bias or has_bias:   # deterministic, so they need no table
+                theta = theta + pitch_bias
                 theta_dot = theta_dot + spec.pitch_rate_bias
             if encoder:
                 m = (k - n_delay) // n_period if k >= n_delay else -1

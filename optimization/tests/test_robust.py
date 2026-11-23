@@ -14,6 +14,7 @@ from batch_tuning import (
     cma_es_search,
     decode_units,
     robot_at,
+    pitch_bias_at,
     sample_delay_steps,
     sample_robots,
 )
@@ -72,6 +73,23 @@ def test_ranged_parameters_are_drawn_in_range_without_moving_the_scaled_ones():
     assert len(set(np.round(b.coulomb_friction, 12))) == 9
 
 
+def test_ranged_pitch_bias_is_drawn_per_scenario_without_moving_the_other_draws():
+    base = BatchEvaluator(SHORT, CONFIG.build_search_space()).robot
+    assert base.pitch_bias is not None   # robot_from_eval_config fills it, so sample_robots can replace it
+    without = replace(ROBUST, randomize_range=(("wheel_friction", 0.0, 0.001),))
+    with_bias = replace(ROBUST, randomize_range=(("wheel_friction", 0.0, 0.001), ("pitch_bias", -0.015, 0.015)))
+    a = sample_robots(base, without, (1, 2, 3), 3)
+    b = sample_robots(base, with_bias, (1, 2, 3), 3)
+    assert b.pitch_bias.shape == (9,)
+    assert b.pitch_bias.min() >= -0.015 and b.pitch_bias.max() <= 0.015
+    assert len(set(np.round(b.pitch_bias, 12))) == 9
+    for name in ("body_mass", "coulomb_friction", "wheel_friction"):   # appended at the end: nothing else moves
+        if getattr(a, name) is not None:
+            np.testing.assert_array_equal(getattr(a, name), getattr(b, name))
+    assert pitch_bias_at(b, 4) == b.pitch_bias[4]
+    assert pitch_bias_at(a, 4) == base.pitch_bias
+
+
 def test_latency_draws_are_whole_steps_in_range_and_repeatable():
     config = replace(ROBUST, latency_range=(0.005, 0.020))
     d = sample_delay_steps(config, tuple(range(1, 41)), 3, 0.0025)
@@ -90,7 +108,8 @@ def test_twins_share_their_scenario_latency(space):
 
 def test_project_config_randomizes_friction_and_latency():
     r = CONFIG.build_robustness()
-    assert {name for name, _, _ in r.randomize_range} == {"wheel_friction", "coulomb_friction"}
+    names = {name for name, _, _ in r.randomize_range}
+    assert {"wheel_friction", "coulomb_friction"} <= names <= {"wheel_friction", "coulomb_friction", "pitch_bias"}
     assert r.latency_range is not None and r.latency_range[0] <= CONFIG.timing.latency_s <= r.latency_range[1]
 
 
@@ -142,7 +161,9 @@ def test_randomized_robot_scores_match_reference_runs_with_those_parameters(spac
     robots, delays = ev.robots(), ev.delay_steps()
     for i, (pitch, seed) in enumerate(ev.scenarios()):
         params, motor = robot_at(robots, i)
-        ref = Evaluator(replace(SHORT, params=params, motor=motor, latency=delays[i] * SHORT.dt), space)
+        bias = pitch_bias_at(robots, i)   # drawn per scenario when randomize_range has pitch_bias (B6)
+        sensor = SHORT.sensor if bias is None else replace(SHORT.sensor, pitch_bias=bias)
+        ref = Evaluator(replace(SHORT, params=params, motor=motor, sensor=sensor, latency=delays[i] * SHORT.dt), space)
         assert result.costs[0, i] == pytest.approx(ref.score(ref.run(HAND_TUNED, pitch, seed)), rel=1e-12)
 
 

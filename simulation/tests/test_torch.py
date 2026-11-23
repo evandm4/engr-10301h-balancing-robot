@@ -19,7 +19,7 @@ torch = pytest.importorskip("torch")
 from batch_sim import BatchRobot, cascaded_update, derivatives, limited_integral, simulate_batch, torch_ops
 from batch_sim.torch_sim import TorchSimulator
 from batch_tuning import BatchEvaluator, decode_units, differential_evolution_search, robot_from_eval_config
-from balance_sim import IMUSensor
+from balance_sim import IMUSensor, SensorNoise
 from config import CONFIG
 
 HAS_CUDA = torch.cuda.is_available()
@@ -345,6 +345,30 @@ def test_encoder_float64_matches_numpy(device):
     ref = simulate_batch(evaluator.spec, evaluator.robot, G, pitch, noise, seed_index, evaluator.schedule,
                          record=True)
     got = TorchSimulator(evaluator.spec, evaluator.robot, len(G), noise, evaluator.schedule, device=device,
+                         dtype=torch.float64, record=True).run(G, pitch, seed_index)
+    up = ~ref.fell
+    assert up.sum() >= 0.5 * len(G)
+    assert not got.fell[up].any()
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
+    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
+
+
+@pytest.mark.parametrize("imu", [False, True])
+@pytest.mark.parametrize("device", DEVICES)
+def test_per_simulation_pitch_bias_float64_matches_numpy(device, imu):
+    sensor = dict(pitch_std=0.004, pitch_bias=0.01, pitch_rate_std=0.02, pitch_rate_bias=0.015, velocity_std=0.01,
+                  seed=0)
+    if imu:
+        sensor = IMUSensor(imu_height=0.1, filter_time_constant=0.5, control_dt=SHORT.control_dt,
+                           gravity=SHORT.params.gravity, **sensor)
+    else:
+        sensor = SensorNoise(**sensor)
+    evaluator = BatchEvaluator(replace(SHORT, sensor=sensor, voltage_estimate=None), SPACE)
+    G, pitch, seed_index, noise = _flat(evaluator, _near_hand_tuned(32))
+    biases = np.random.default_rng(11).uniform(-0.02, 0.02, len(G))
+    robot = replace(evaluator.robot, pitch_bias=biases)
+    ref = simulate_batch(evaluator.spec, robot, G, pitch, noise, seed_index, evaluator.schedule, record=True)
+    got = TorchSimulator(evaluator.spec, robot, len(G), noise, evaluator.schedule, device=device,
                          dtype=torch.float64, record=True).run(G, pitch, seed_index)
     up = ~ref.fell
     assert up.sum() >= 0.5 * len(G)

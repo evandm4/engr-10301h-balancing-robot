@@ -43,6 +43,9 @@ class BatchRobot:
     est_torque_constant: object = None
     est_resistance: object = None
     est_gear_efficiency: object = None
+    # Constant pitch-estimate offset, rad. None: the SimSpec's scalar. A (B,) array gives each simulation
+    # its own (drawn per scenario by robust.sample_robots through randomize_range).
+    pitch_bias: object = None
 
     @classmethod
     def from_params(cls, params, motor=None, voltage_estimate=None, voltage_feedforward=True,

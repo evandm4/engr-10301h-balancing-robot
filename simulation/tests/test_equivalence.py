@@ -440,3 +440,47 @@ def test_encoder_timing_must_be_a_multiple_of_dt(field, value):
     sensor = replace(ENCODER_CONFIGS["imu"].sensor, **{field: value})
     with pytest.raises(ValueError, match=field):
         BatchEvaluator(replace(ENCODER_CONFIGS["imu"], sensor=sensor), SPACE)
+
+
+# ---- Per-simulation pitch offset (SOFTWARE_PLAN B6) ----
+
+PITCH_BIAS_CONFIGS = {
+    "noise_model": replace(SHORT, sensor=SensorNoise(pitch_std=0.004, pitch_bias=0.01, pitch_rate_std=0.02,
+                                                     pitch_rate_bias=0.015, velocity_std=0.01, seed=0)),
+    "imu_voltage_encoder": _encoder_config(imu=True, voltage=True),
+}
+
+
+@pytest.mark.parametrize("name", list(PITCH_BIAS_CONFIGS))
+def test_per_simulation_pitch_bias_matches_separate_reference_runs(name):
+    """Every simulation has its own pitch offset (drawn per scenario by randomize_range)."""
+    config = PITCH_BIAS_CONFIGS[name]
+    n = 8
+    biases = np.random.default_rng(5).uniform(-0.02, 0.02, n)
+    batched = BatchEvaluator(config, SPACE)
+    robot = replace(batched.robot, pitch_bias=biases)
+    gains = _candidates(n=n, seed=6)
+    pitch, seed = batched.scenarios()[0]
+    run = simulate_batch(batched.spec, robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(n, dtype=int), schedule=batched.schedule)
+    shared = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                            seed_index=np.zeros(n, dtype=int), schedule=batched.schedule)
+    assert not np.array_equal(run.final_state, shared.final_state)   # the offsets matter
+    for i in range(n):
+        ref = Evaluator(replace(config, sensor=replace(config.sensor, pitch_bias=biases[i])), SPACE)
+        expected = ref.run(gains[i], pitch, seed)
+        np.testing.assert_allclose(run.cost[i], ref.score(expected), rtol=COST_RTOL)
+        np.testing.assert_array_equal(run.final_state[i], expected.states[-1])
+
+
+def test_equal_per_simulation_pitch_bias_is_the_same_as_the_spec_scalar():
+    config = PITCH_BIAS_CONFIGS["imu_voltage_encoder"]
+    batched = BatchEvaluator(config, SPACE)
+    gains = _candidates(n=6, seed=2)
+    pitch, seed = batched.scenarios()[0]
+    kwargs = dict(noise=batched.noise_for((seed,)), seed_index=np.zeros(6, dtype=int), schedule=batched.schedule)
+    plain = simulate_batch(batched.spec, replace(batched.robot, pitch_bias=None), gains, pitch, **kwargs)
+    arrays = simulate_batch(batched.spec, replace(batched.robot, pitch_bias=np.full(6, config.sensor.pitch_bias)),
+                            gains, pitch, **kwargs)
+    np.testing.assert_array_equal(plain.cost, arrays.cost)
+    np.testing.assert_array_equal(plain.final_state, arrays.final_state)

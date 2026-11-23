@@ -77,7 +77,8 @@ def robot_from_eval_config(config: EvalConfig, **overrides) -> BatchRobot:
         config.params, config.motor,
         voltage_estimate=config.voltage_estimate if config.motor is not None else None,
         voltage_feedforward=config.voltage_feedforward,
-        voltage_feedforward_gain=config.voltage_feedforward_gain, **overrides)
+        voltage_feedforward_gain=config.voltage_feedforward_gain,
+        **{"pitch_bias": config.sensor.pitch_bias, **overrides})
 
 
 def decode_units(space: SearchSpace, units) -> np.ndarray:

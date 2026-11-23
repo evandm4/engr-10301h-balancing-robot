@@ -137,6 +137,11 @@ flowchart TD
 | Literature review | literature/, paper/ | Planned |
 | Physical robot | hardware/ | Stretch |
 | Sim-vs-real comparison | results/, paper/ | Stretch |
+| Robot selection (`--robot`, `ROBOT`; Pololu or LEGO) | config.py (`load_config`, `add_robot_argument`, `results_dir`), legobot_config.py | Built |
+| Voltage-mode driver with back-EMF feedforward | simulation/balance_sim/actuators.py (`VoltageModeActuator`), batch_sim, torch_sim.py | Built (LEGO robot; B1) |
+| Simulated IMU and complementary filter | simulation/balance_sim/sensors.py (`IMUSensor`, `ComplementaryFilter`), batch_sim, torch_sim.py | Built (LEGO robot; B2) |
+| Encoder model (counts, period, transit delay) | simulation/balance_sim/sensors.py (`Encoder`), batch_sim, torch_sim.py | Built (LEGO robot; B3) |
+| Per-scenario pitch offset | simulation/batch_sim/robot.py (`BatchRobot.pitch_bias`), optimization/batch_tuning/robust.py | Built (LEGO robot; B6) |
 
 ## How the pieces work together
 
@@ -151,6 +156,28 @@ flowchart TD
 7. The **tuner** proposes gains, reads the evaluator's score, and iterates. Differential evolution and Bayesian optimization are both available; random search is the baseline either has to beat.
 8. The winning gains are re-scored on noise seeds the search never saw (**validation**) to check for overfitting. Runs are logged to **results/** and feed the **paper**, alongside the literature review.
 9. If the hardware phase happens, the validated gains are loaded onto the **physical robot**, and the gap between simulated and measured behavior becomes a central result of the paper.
+
+## Two robots and the LEGO models (2026-11-22)
+
+**Robot selection.** The project has two robots, chosen once at import (config.py, "ROBOT SELECTION"): `--robot NAME` on the command line, else the `ROBOT` environment variable, else `pololu`. `POLOLU_CONFIG` is config.py's defaults, unchanged. `legobot_config.py` is the LEGO SPIKE build: 2 Large Angular Motors (45602), 69 mm wheels, a Raspberry Pi 3B with a Build HAT, a SparkFun Auto pHAT (ICM-20948 IMU) and a 2S LiPo; its numbers come from `hardware/legobot/DATASHEET.md`. `config.py` provides `load_config(name)`, `add_robot_argument(parser)` and `results_dir(...)`. Pololu results stay in `results/`; LEGO results go to `results/legobot/`. `ProjectConfig.name` is saved in every snapshot. The pivot side project always uses the Pololu robot. The tests run under either robot (`ROBOT=legobot pytest`); tests that check Pololu numbers carry a `pololu_only` skip.
+
+**Models added for the LEGO robot (SOFTWARE_PLAN Phase B).** Each is in all three engines (`balance_sim`, the NumPy `batch_sim`, bit-identical to the reference, and `batch_sim/torch_sim.py`), is selectable in config, and is used by the LEGO robot only. The Pololu robot keeps its earlier models, so its results are unchanged. Derivations: PHYSICS.md 5.4, 5.5, 9.3 and 9.5.
+
+| Step | Component | Where |
+|---|---|---|
+| B1 | Voltage-mode driver with back-EMF feedforward | `VoltageModeActuator` (actuators.py); `ActuatorConfig.model = "voltage"`, `voltage_feedforward`, `voltage_feedforward_gain` |
+| B2 | IMU and the robot code's complementary filter | `IMUSensor`, `ComplementaryFilter`, `accelerometer_tilt` (sensors.py); `SensorConfig.model = "imu"`, `imu_height`, `filter_time_constant` |
+| B3 | Encoder as the Build HAT reports it | `Encoder` (sensors.py); `SensorConfig.encoder_counts`, `encoder_period_s`, `encoder_delay_s` |
+| B4 | Motor L/R folded into the latency, not modeled | PHYSICS.md 10.3 |
+| B6 | Pitch offset drawn per scenario | `BatchRobot.pitch_bias`, `robot_from_eval_config`, `pitch_bias_at`; `randomize_range` entry `("pitch_bias", -0.015, 0.015)` in legobot_config.py |
+
+New tests (run under both robots):
+
+- `simulation/tests/test_voltage_mode.py`: the voltage-mode driver and its feedforward.
+- `simulation/tests/test_imu.py`: the accelerometer tilt, the complementary filter and the IMU sensor.
+- `simulation/tests/test_encoder.py`: the encoder's counts, period, delay and quantization noise.
+
+Results and experiments for these models are in `hardware/legobot/A4_BASELINES.md`. The scenario for the LEGO robot is derived by `hardware/legobot/legobot_scenario.py`, with the method of config.py's `ScenarioConfig` (`--check` reproduces config.py's numbers).
 
 ## Change log
 
@@ -182,3 +209,4 @@ flowchart TD
 - 2026-11-08 (model-based baseline): `balance_sim/pid_design.py` designs the cascaded PID from the linear model alone, by the textbook sequential method (inner pitch poles placed: a critically damped pair at twice the unstable pole plus a slow integral pole; outer bandwidth a third of the RHP zero; `ControllerConfig.design_*`, `ProjectConfig.model_based_gains`; PHYSICS.md 6.5). Gains kp 1.729, ki 2.012, kd 0.148, kv_p 0.314, linearly stable to 23.75 ms. It is a baseline in `run_batch_tuning.py` and `run_lqr_comparison.py`: `results/lqr_comparison/20261108-220417` (other rows identical to 20261108-182234) gives it a median per-scenario cost 1.36x the ML-tuned PID's but 2 falls in 300 robots. `animate.py` now labels the scenario phase and draws pushes as arrows on the robot and markers on the plots; robot.gif shows the ML-tuned against the model-based PID from the 0.30 rad start tilt. Tests: 329.
 - 2026-11-09 (fresh validation set, methods review): An adversarial review found that the robust validation set (seeds 1000-1099 and their robots) had been used while sizing the 20 s scenario's push and blend times. `RobustnessSettings.validation_seeds` is now 2000-2099, fixed after the scenario, search bounds and model-based design were frozen, and used for nothing else. `results/lqr_comparison/20261108-225341` re-validates every controller on it (searches unchanged): ML-tuned PID 2.22 with no falls; model-based PID median 1.36x with 1 fall; tuned LQR gains 1.34x with no falls; hand-tuned 6.2x with 4 falls. The conclusions are unchanged. Earlier results folders keep their old validation numbers.
 - 2026-11-09 (latency range and LQR integral gain): Robust scoring draws latency from 2.5-20 ms (was 5-20, which missed the 1.7-5.6 ms hardware estimate). The direct LQR gain search also searches an integral gain (`LQRConfig.direct_integral_bounds`, log scale 1e-3 to 10), and `tuning.LQRGainScaling` requires a candidate with integral action to keep the nominal spectral radius below `direct_max_spectral_radius` (0.999), which rules out the slow runaway an unguarded integral search once found; the pull-back keeps the candidate's integral gain when that is acceptable on its own. Validation moved to a third held-out set (seeds 3000-3099), since results on 2000-2099 had been seen. Re-tuned: `results/batch_tuning/20261108-234630` (kp 1.615, ki 1.746, kd 0.298, kv_p 0.626). `results/lqr_comparison/20261109-000021`: the directly tuned LQR, now with integral action, is 9% behind the ML-tuned PID (34% without); model-based PID 1.34x with no falls on this set; hand-tuned 5.8x. physics_checks.py and PHYSICS.md stay on the 20261108-153813 gains (within 1.2%). Tests: 330.
+- 2026-11-22: Two robots, and the LEGO robot's models (SOFTWARE_PLAN Phase B). `--robot` / `ROBOT` select `pololu` (config.py's defaults, unchanged) or `legobot` (legobot_config.py, from hardware/legobot/DATASHEET.md); LEGO results go to `results/legobot/`. All three engines gained a voltage-mode driver with back-EMF feedforward (B1), an IMU with the robot code's complementary filter (B2), an encoder with counts, period and transit delay (B3), and a pitch offset drawn per scenario (B6); B4 (motor L/R) is folded into the latency. The Pololu robot keeps its earlier models, so its results are unchanged. New tests: test_voltage_mode.py, test_imu.py, test_encoder.py. PHYSICS.md 5.4, 5.5, 9.3, 9.5 and 10 document them; baselines are in hardware/legobot/A4_BASELINES.md.
