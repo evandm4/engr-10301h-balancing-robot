@@ -28,6 +28,8 @@ from balance_sim import (
 from batch_sim import BatchRobot, build_schedule, lqr_update, noise_table, simulate_batch
 from batch_tuning import BatchEvaluator, decode_units, spec_from_eval_config
 from config import CONFIG, CostConfig, ProjectConfig
+
+pololu_only = pytest.mark.skipif(CONFIG.name != "pololu", reason="checks numbers or gains specific to config.py's Pololu robot")
 from tuning import Evaluator, LQRGainScaling, LQRWeightDesigner, lqr_weights
 
 P = CONFIG.build_robot_params()
@@ -86,6 +88,7 @@ def test_linearize_matches_derivatives(friction):
                                rtol=1e-8)
 
 
+@pololu_only
 def test_linearize_matches_physics_md():
     A, B = linearize(P)
     assert A[1, 2] == pytest.approx(-4.07, abs=0.01)
@@ -170,6 +173,7 @@ def test_weights_are_validated():
 
 # ---- loop stability ---------------------------------------------------------------
 
+@pololu_only
 def test_delay_margins_match_physics_md():
     """PHYSICS.md 7.4: the hand-tuned cascade goes unstable at 16.0 ms, the 2026-11-08 tuned one at 40.75 ms."""
     tuned = (1.5665012042015811, 2.1008133218371503, 0.2849281098561087, 0.6448938913835949)
@@ -195,6 +199,7 @@ def test_loop_matches_the_design_model():
     np.testing.assert_allclose(design, loop, atol=1e-6)   # a double eigenvalue at 0 splits by ~sqrt(rounding)
 
 
+@pololu_only
 def test_ignoring_the_latency_is_unstable_at_10_ms():
     """The textbook design (no latency) on the robot's 10 ms latency: LQR.md's claim.
 
@@ -208,6 +213,7 @@ def test_ignoring_the_latency_is_unstable_at_10_ms():
 
 # ---- the reference controller -------------------------------------------------------
 
+@pololu_only
 def test_balances_and_tracks_a_velocity_step():
     dyn = CONFIG.build_dynamics()
     controller = LQRController(lqr_gain(P, COST_MATCHED, T, 0.010), P.max_torque, goal=step_profile([(1.0, 0.4)]))
@@ -402,6 +408,7 @@ def test_held_off_commands_give_a_stable_design_at_the_configured_latency():
     assert spectral_radius(P, LinearController.lqr(gain), T, CONFIG.timing.latency_s) < 1.0
 
 
+@pololu_only
 def test_gain_scaling_needs_a_stable_reference():
     with pytest.raises(ValueError):
         LQRGainScaling(lqr_gain(P, OLD_COST_WEIGHTS, T, 0.0), P, T, 0.010)   # unstable at 10 ms

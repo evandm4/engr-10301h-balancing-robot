@@ -10,11 +10,12 @@ from balance_sim import (
 from config import CONFIG
 
 ROBOT = CONFIG.build_robot_params()
+FRICTIONLESS = ROBOT.with_changes(wheel_friction=0.0, coulomb_friction=0.0)
 
 
 @pytest.fixture
 def dyn():
-    return CONFIG.build_dynamics(ideal_actuator=True)
+    return Planar2D(FRICTIONLESS, CONFIG.timing.fall_angle_rad)
 
 
 def test_upright_equilibrium_holds(dyn):
@@ -107,7 +108,7 @@ def test_config_robot_has_reflected_rotor_inertia():
 def test_rotor_inertia_enters_the_mass_matrix_as_derived():
     """derivatives() solves M q'' = f with PHYSICS.md 10.3's mass matrix: the rotors spin at
     x'/r - theta' relative to the body, so J sits on a, d and (with -J/r) the coupling."""
-    p = ROBOT
+    p = FRICTIONLESS
     dyn = Planar2D(p, fall_angle=10.0)
     state = np.array([0.0, 0.7, 0.3, -1.1])
     tau = 0.12
@@ -134,7 +135,7 @@ def test_rotor_inertia_is_not_the_same_as_wheel_inertia():
 
 
 def test_energy_is_conserved_with_rotor_inertia():
-    p = ROBOT.with_changes(rotor_inertia=5 * ROBOT.rotor_inertia)
+    p = FRICTIONLESS.with_changes(rotor_inertia=5 * ROBOT.rotor_inertia)
     dyn = Planar2D(p, fall_angle=10.0)
     state = np.array([0.0, 0.3, 0.2, 0.5])
     e0 = dyn.energy(state)

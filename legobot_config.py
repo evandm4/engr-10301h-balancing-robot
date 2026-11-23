@@ -1,0 +1,211 @@
+"""
+=============================================================================
+ LEGO ROBOT CONFIGURATION ("legobot")
+=============================================================================
+The LEGO SPIKE build: two Large Angular Motors (45602) driving 69 mm wheels
+directly, a Raspberry Pi 3B with the Build HAT, the SparkFun Auto pHAT's
+ICM-20948 IMU, and a 2S LiPo. hardware/legobot/DATASHEET.md gives the source
+of every value (section 2) and the spread to randomize until it is measured
+(section 8 says how).
+
+Built from config.py's section classes, the way pivot_config.py builds on
+config.py, but as a complete ProjectConfig of its own: every section whose
+values depend on the robot is written out here, and config.py's Pololu robot
+is not touched. Sections that are not about the robot (controller limits,
+search ranges, LQR search, the robustness test's seeds and chaos penalty)
+are config.py's, and are named below where they are reused on purpose. The
+controller section differs only in its lean cap (A3).
+
+Select it with ROBOT=legobot or --robot legobot (config.py: load_config).
+
+Values tagged Est. or Pyb in DATASHEET 2 are placeholders until the bench
+measurements (SOFTWARE_PLAN C3) replace them; the robustness spreads cover
+them until then.
+"""
+
+from dataclasses import replace
+
+from config import (
+    ActuatorConfig,
+    ControllerConfig,
+    CostConfig,
+    ProjectConfig,
+    RobotConfig,
+    RobustnessSettings,
+    ScenarioConfig,
+    SensorConfig,
+    TimingConfig,
+)
+
+# ----------------------------------------------------------------- ROBOT ---
+# DATASHEET 2.1. The motor housings ride with the body; the motors' output-side
+# inertia is ActuatorConfig.rotor_inertia below, not wheel_inertia.
+ROBOT = RobotConfig(
+    body_mass=0.55,                # kg, Est. (section 4): motors, Pi, both HATs, battery, frame
+    body_com_height=0.09,          # m, Est. (design choice: where the battery sits)
+    body_inertia=0.0035,           # kg m^2 about the body's own COM, Est. (section 4)
+    wheel_mass=0.078,              # kg, both wheels, measured: 39 g each with axle
+    wheel_radius=0.0345,           # m, half the 69 mm diameter
+    wheel_inertia=6.0e-5,          # kg m^2, both wheels, 0.65 m r^2 each (tire at the rim)
+    max_torque=0.50,               # N m total: 2 x LEGO's 0.25 N m stall (Pybricks implies 0.85)
+    wheel_friction=0.0,            # N m s/rad, Est.: no source separates viscous drag
+    coulomb_friction=0.046,        # N m, both motors: Pybricks' 0.023 each (LEGO's no-load current: 0.024-0.031)
+    coulomb_friction_speed=1.0,    # rad/s, as config.py (PHYSICS.md 9.4)
+    gravity=9.81,
+)
+
+# -------------------------------------------------------------- ACTUATOR ---
+# DATASHEET 2.2: a lumped output-side motor (gear_ratio = 1). Every published and
+# measured number is at the output shaft, so DCMotorActuator gives torque = n eta k i
+# and back-EMF = k w directly. Requires the Build HAT at plimit 1 and bias 0
+# (DATASHEET 7.2). Still the current-mode model: the voltage-mode driver with
+# feedforward is SOFTWARE_PLAN B1.
+ACTUATOR = ActuatorConfig(
+    model="dc_motor",
+    gear_ratio=1.0,                # lumped: constants below are output-referred
+    torque_constant=0.411,         # V s/rad, output k_e (Pybricks; LEGO's sheet: 0.355)
+    resistance=4.4,                # ohm incl. driver and wiring: midpoint of 3.73 (Pybricks) and 5.14 (LEGO stall)
+    supply_voltage=7.6,            # V: 2S LiPo (6.8-8.4) x plimit 1
+    current_limit=2.5,             # A: no current control on the HAT; set never to bind (stall <= 2.25 A)
+    n_motors=2,
+    gear_efficiency=0.565,         # net torque per amp / k_e: 0.232 / 0.411 (LEGO's sheet: 0.50)
+    rotor_inertia=1.22e-3,         # kg m^2 per motor, output side (Pybricks estimate); reflected 2.44e-3
+)
+
+# ---------------------------------------------------------------- SENSOR ---
+# DATASHEET 2.3. Gyro and pitch noise kept at config.py's conservative values until
+# measured on the chassis (8.4); the encoder values are for 360 counts per turn at
+# r = 34.5 mm, differenced 10 ms apart (the motors report at 100 Hz).
+SENSOR = SensorConfig(
+    pitch_std=0.005,               # rad
+    pitch_bias=0.015,              # rad: board-level accelerometer offset and LEGO mount play
+    pitch_rate_std=0.02,           # rad/s
+    pitch_rate_bias=0.01,          # rad/s, after calibrating at boot
+    position_std=0.0010,           # m: +/-3 deg including gearbox slack
+    velocity_std=0.025,            # m/s
+)
+
+# ---------------------------------------------------------------- TIMING ---
+# DATASHEET 2.4 and 6: budget about 6-15 ms; the 3 ms L/R is folded into it.
+TIMING = TimingConfig(
+    latency_s=0.010,
+    dt_s=0.0025,
+    demo_dt_s=0.001,
+    control_dt_s=0.005,            # 200 Hz (motor data refresh every 10 ms; DATASHEET 7.4)
+    fall_angle_deg=60.0,
+)
+
+# ------------------------------------------------------------ ROBUSTNESS ---
+# DATASHEET 2: spreads until measured. Seeds, chaos penalty and robot_seed are
+# config.py's. The validation set 3000-3099 is untouched for this robot (its robots
+# are drawn from these spreads, not config.py's), so it is this series' frozen set.
+ROBUSTNESS = replace(
+    RobustnessSettings(),
+    randomize=(
+        ("body_mass", 0.15),
+        ("body_com_height", 0.15),
+        ("body_inertia", 0.30),
+        ("wheel_inertia", 0.20),
+        ("rotor_inertia", 0.50),       # Pybricks derived it from an estimated acceleration
+        ("torque_constant", 0.15),     # covers LEGO's 0.355 (-14%)
+        ("resistance", 0.17),          # covers 3.73-5.14 ohm
+        ("supply_voltage", 0.105),     # 6.8-8.4 V
+        ("gear_efficiency", 0.10),     # covers LEGO's 0.50 (-11%) nearly
+    ),
+    randomize_range=(
+        ("wheel_friction", 0.0, 0.001),       # N m s/rad
+        ("coulomb_friction", 0.03, 0.08),     # N m, both motors
+    ),
+    latency_range_s=(0.005, 0.025),           # 2.5 ms is not reachable on this hardware
+)
+
+# ------------------------------------------- CONTROLLER, SCENARIO, COST ---
+# SOFTWARE_PLAN A3. Every number below is printed, with its derivation, by
+#     python hardware/legobot/legobot_scenario.py          (--check re-derives config.py's)
+# which repeats config.py's ScenarioConfig/CostConfig method on this robot. "Corner" means
+# every corner of ROBUSTNESS above (2048 robots); latency 25 ms, the top of its range.
+#
+# Lean cap and top speed. config.py fixed the lean cap at 25 deg and took the top speed as
+# the highest at which every randomized motor still has the torque that leaning at the cap
+# needs. On this robot that speed is 0.017 m/s at 25 deg: the output-side rotor inertia
+# (2.05 kg of equivalent mass at r = 34.5 mm) doubles the torque per unit acceleration and
+# the motors are slow. So the cap and the speed are chosen together: the cap that maximizes
+# top speed x lean-cap acceleration on the limiting corner (the weakest robot's peak power),
+# 12 deg (0.209 rad: 1.41 m/s^2, 0.132 N m nominal), and its top speed, 0.266 m/s -> 0.26.
+#
+# Baselines (A4). The model-based design (pid_design) keeps config.py's design choices; on
+# this robot it gives (3.64, 3.46, 0.38, 0.36), stable for latencies 0-80 ms. config.py's
+# hand-tuned gains are linearly unstable here at 10 ms, so the LEGO robot has its own,
+# picked by hand in 11 trials (hardware/legobot/A4_BASELINES.md): config.py's scaled by the
+# ratio of critical pitch gains (2.1), then kp down and kd up until the 20 s scenario stopped
+# oscillating, kv_p up for the slower goal, ki up; stable for latencies 0-67 ms.
+CONTROLLER = replace(
+    ControllerConfig(),
+    max_lean_deg=12.0,
+    hand_tuned_gains=(6.0, 2.0, 0.5, 0.3),     # kp, ki, kd, kv_p
+)
+
+# The Pololu scenario's proportions and start times, sized from this robot:
+#   t = 0-2 s       start tilt, goal 0.
+#   t = 2-2.7 s     0 -> 0.26 m/s in 0.7 s: peak 0.81 m/s^2, a 0.125 rad lean (Pololu's
+#                   0.25 / 0.30 of pitch_limit_rad); 58% of the lean-cap acceleration.
+#   t = 2.7-9.5 s   cruise at 0.26 m/s, 41% of the nominal no-load speed (Pololu 53%). Every
+#                   corner still has, after friction, its own lean-cap torque here.
+#   t = 5.5, 7.5 s  pushes, forward then backward: 0.94 N for 50 ms = 0.047 N s, 97.5% of
+#                   the largest forward push a full-torque response catches at 0.26 m/s on
+#                   every corner (0.0482 N s: light, tall, high rotor inertia, weakest motor
+#                   at high speed, most friction; 0.158 nominal at 10 ms). 50 ms is under the
+#                   124 ms fastest unstable time constant (145 ms nominal). Backward: 0.21
+#                   catchable, easy (braking is helped by back-EMF), as on the Pololu robot.
+#   t = 9.5-10.8 s  0.26 -> -0.10 m/s in 1.3 s: 0.61 m/s^2, 0.092 rad (Pololu's share).
+#   t = 10.8-14 s   cruise backward at -0.10 m/s (Pololu's 0.5/1.3 of top speed); 2.9 rad/s
+#                   at the wheels, so Coulomb friction has fully flipped.
+#   t = 14-15.1 s   -0.10 -> 0 in 1.1 s: 0.20 m/s^2, 0.030 rad.
+#   t = 15.1-20 s   standing still.
+# Start tilts 0.025, -0.075, 0.15 rad: Pololu's shares (1/6, -1/2, 1) of pitch_limit_rad,
+# whose 0.15 is 77% of the 0.193 rad a full-torque response catches on every corner (heavy,
+# tall, high rotor inertia, weakest motor; 0.343 nominal at 10 ms), as 0.30 was of 0.39.
+SCENARIO = replace(
+    ScenarioConfig(),
+    goal_steps=(
+        (2.0, 0.26, 0.7),     # aggressive: 0.81 m/s^2, 0.125 rad of lean
+        (9.5, -0.10, 1.3),    # brake and reverse: 0.61 m/s^2
+        (14.0, 0.0, 1.1),     # gentle stop: 0.20 m/s^2
+    ),
+    pushes=(
+        (5.5, 0.05, 0.94),    # from behind at 0.26 m/s
+        (7.5, 0.05, -0.94),   # from the front at 0.26 m/s
+    ),
+    start_pitches_deg=(1.4324, -4.2972, 8.5944),    # 0.025, -0.075, 0.15 rad
+)
+
+# Cost limits (CostConfig's Bryson rule), in the Pololu cost's proportions:
+#   pitch_limit_rad 0.15: 77% of the catchable start tilt; between the 0.125 rad the goal
+#     profile needs and the 0.209 rad lean cap (72% of it; Pololu 69%).
+#   velocity_limit 0.04 m/s: Pololu's 0.2/1.3 of the top speed.
+#   torque_limit 0.10 N m: Pololu's 0.1/0.135 of the nominal lean-cap torque (0.132), so
+#     pitch and effort trade as they do there; 20% of max_torque. Holding the cruise
+#     against the friction the robustness test draws takes 0.03-0.09 N m.
+# Weights: velocity (0.15/0.04)^2 = 14.06, effort (0.15/0.10)^2 = 2.25. Fall penalty: the
+# worst non-fall 20 s run costs 21.9 (pitch) + 11.2 (effort) + 333.8 (velocity, fastest
+# corner's 0.829 m/s no-load speed + 0.26) = 367, under 1000 (PHYSICS.md 8.3).
+COST = replace(
+    CostConfig(),
+    pitch_limit_rad=0.15,
+    velocity_limit=0.04,
+    torque_limit=0.10,
+    fall_penalty=1000.0,
+)
+
+# --------------------------------------------------------- PUT IT TOGETHER -
+LEGOBOT_CONFIG = ProjectConfig(
+    name="legobot",
+    robot=ROBOT,
+    actuator=ACTUATOR,
+    sensor=SENSOR,
+    timing=TIMING,
+    controller=CONTROLLER,
+    cost=COST,
+    scenario=SCENARIO,
+    robustness=ROBUSTNESS,
+)

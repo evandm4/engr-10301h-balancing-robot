@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 
 from config import CONFIG
+
+pololu_only = pytest.mark.skipif(CONFIG.name != "pololu", reason="checks numbers or gains specific to config.py's Pololu robot")
 from batch_tuning import (
     BatchEvaluator,
     RobustnessConfig,
@@ -155,6 +157,7 @@ def test_sensitivity_is_the_gap_to_the_nudged_twin(space):
     assert result.objective[0] == pytest.approx(result.mean_cost[0] + result.sensitivity[0], rel=1e-12)
 
 
+@pololu_only
 def test_penalty_singles_out_chaotic_gains(space):
     """Across random gains, the nudge changes the cost of some far more than well-behaved ones."""
     ev = BatchEvaluator(SHORT, space, robustness=RobustnessConfig(train_seeds=(1, 2), sensitivity_weight=1.0))

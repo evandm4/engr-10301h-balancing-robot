@@ -5,6 +5,8 @@ files); they just guard against config.py drifting out of sync with the
 packages it wires together.
 """
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -130,13 +132,11 @@ def test_snapshot_is_json_serializable_and_complete():
 
 
 def test_dc_motor_respects_the_robot_torque_limit():
-    from config import RobotConfig
-
     # Below the motor's own stall limit, the robot's max_torque is what binds.
-    low = ProjectConfig(robot=RobotConfig(max_torque=0.2)).build_dynamics()
+    low = replace(CONFIG, robot=replace(CONFIG.robot, max_torque=0.2)).build_dynamics()
     assert low.actuator.torque(10.0, 0.0) == pytest.approx(0.2)
     # Above it, the motor physics bind instead.
-    high = ProjectConfig(robot=RobotConfig(max_torque=5.0)).build_dynamics()
+    high = replace(CONFIG, robot=replace(CONFIG.robot, max_torque=5.0)).build_dynamics()
     assert high.actuator.torque(10.0, 0.0) == pytest.approx(CONFIG.actuator.build_motor_params().stall_torque_limit)
 
 

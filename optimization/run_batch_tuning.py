@@ -26,7 +26,7 @@ unseen seeds and unseen robots. Validation runs the held-out validation
 scenario: the training one, run for ScenarioConfig.validation_duration_s
 (the last goal held for the extra time, to expose slow instabilities).
 
-Results are saved under results/batch_tuning/<timestamp>/: the same
+Results are saved under results/batch_tuning/<timestamp>/ (results/legobot/... with --robot legobot): the same
 per-method files run_tuning.py writes, comparison.json, and the same
 tuning_summary.png plot. Robust runs add robustness_summary.png. --no-show
 saves the plots without opening a window; --no-plot skips them.
@@ -45,7 +45,7 @@ sys.path.insert(0, str(ROOT))   # config.py; importing it puts simulation/ and o
 
 import numpy as np
 
-from config import CONFIG
+from config import CONFIG, add_robot_argument, results_dir
 from batch_tuning import (
     BatchEvaluator,
     cma_es_search,
@@ -104,6 +104,7 @@ def plot_robustness(check: BatchEvaluator, validation, names):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    add_robot_argument(parser)
     parser.add_argument("--de-iters", type=int, default=30, help="differential evolution generations")
     parser.add_argument("--de-pop", type=int, default=24, help="DE population multiplier (x 4 gains)")
     parser.add_argument("--cma-iters", type=int, default=30, help="CMA-ES generations")
@@ -216,7 +217,7 @@ def main():
             print(f"\nNote: {name}'s result is at the edge of the search range for "
                   f"{', '.join(c['at_search_bound'])}. Consider widening that range in config.py.")
 
-    folder = ROOT / "results" / "batch_tuning" / time.strftime("%Y%m%d-%H%M%S")
+    folder = results_dir("batch_tuning", time.strftime("%Y%m%d-%H%M%S"))
     snapshot = CONFIG.snapshot()
     robust_snapshot = asdict(robustness) if robustness else None
     for s in searches.values():

@@ -38,9 +38,10 @@ def test_coulomb_torque_opposes_wheel_speed_and_saturates():
     """With no command, the body-joint torque is -tau_c tanh(w / w_eps): read it off the pitch
     acceleration difference against the frictionless robot."""
     tau_c, w_eps = 0.02, 1.0
-    rough = Planar2D(P.with_changes(coulomb_friction=tau_c, coulomb_friction_speed=w_eps), 1.0)
-    smooth = Planar2D(P, 1.0)
-    A, B = linearize(P)
+    base = P.with_changes(coulomb_friction=0.0)   # the robot's own nominal Coulomb friction would add to tau_c
+    rough = Planar2D(base.with_changes(coulomb_friction=tau_c, coulomb_friction_speed=w_eps), 1.0)
+    smooth = Planar2D(base, 1.0)
+    A, B = linearize(base)
     for w in (-50.0, -1.0, 0.3, 50.0):
         state = np.array([0.0, w * P.wheel_radius, 0.0, 0.0])   # relative wheel speed = w
         extra = rough.derivatives(state, 0.0) - smooth.derivatives(state, 0.0)
@@ -49,7 +50,8 @@ def test_coulomb_torque_opposes_wheel_speed_and_saturates():
 
 
 def test_linearize_includes_coulomb_slope():
-    params = P.with_changes(coulomb_friction=0.02, coulomb_friction_speed=2.0, wheel_friction=0.001,
+    base = P.with_changes(coulomb_friction=0.0)
+    params = base.with_changes(coulomb_friction=0.02, coulomb_friction_speed=2.0, wheel_friction=0.001,
                             max_torque=1e9)
     dyn = Planar2D(params, fall_angle=1.0)
     A, _ = linearize(params)
@@ -58,7 +60,7 @@ def test_linearize_includes_coulomb_slope():
                                for e in np.eye(4)])
     np.testing.assert_allclose(A, numeric, atol=1e-5)
     # Same as viscous friction of b + tau_c / w_eps.
-    viscous, _ = linearize(P.with_changes(wheel_friction=0.001 + 0.02 / 2.0))
+    viscous, _ = linearize(base.with_changes(wheel_friction=0.001 + 0.02 / 2.0))
     np.testing.assert_allclose(A, viscous, rtol=1e-12)
 
 

@@ -13,6 +13,8 @@ from balance_sim import (
 )
 from config import CONFIG
 
+pololu_only = pytest.mark.skipif(CONFIG.name != "pololu", reason="checks numbers or gains specific to config.py's Pololu robot")
+
 GAINS = (4.0, 0.5, 0.15)
 MOTOR = CONFIG.actuator.build_motor_params()
 
@@ -152,6 +154,7 @@ def test_invalid_motor_torque_limit_rejected():
 
 # ---- everything together ---------------------------------------------------
 
+@pololu_only
 def test_robot_still_balances_under_combined_moderate_conditions(motor_dyn):
     result = run(motor_dyn, sensor=CONFIG.build_sensor(), latency=CONFIG.timing.latency_s)
     assert not result.fell

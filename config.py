@@ -24,6 +24,7 @@ in radians throughout.
 """
 
 import math
+import os
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -529,6 +530,7 @@ class RobustnessSettings:
 # --------------------------------------------------------- PUT IT TOGETHER -
 @dataclass(frozen=True)
 class ProjectConfig:
+    name: str = "pololu"               # which robot this is (ROBOTS); recorded in every snapshot
     robot: RobotConfig = field(default_factory=RobotConfig)
     actuator: ActuatorConfig = field(default_factory=ActuatorConfig)
     sensor: SensorConfig = field(default_factory=SensorConfig)
@@ -775,4 +777,59 @@ class ProjectConfig:
 #
 #   CONFIG = ProjectConfig(actuator=ActuatorConfig(model="ideal"))
 #
-CONFIG = ProjectConfig()
+POLOLU_CONFIG = ProjectConfig()
+
+
+# ------------------------------------------------------- ROBOT SELECTION -
+# Two robots: "pololu" (the defaults above: Pololu 25D gearmotors, DATASHEET.md)
+# and "legobot" (legobot_config.py: LEGO SPIKE motors, hardware/legobot/DATASHEET.md).
+# CONFIG is the selected one, chosen once at import from, in order:
+#   1. --robot NAME (or --robot=NAME) on the command line,
+#   2. the ROBOT environment variable,
+#   3. "pololu".
+# The command line is read here, before any script parses its arguments, because
+# scripts and tests read CONFIG at import time. Scripts with a parser also call
+# add_robot_argument so --robot shows in --help and is validated.
+ROBOTS = ("pololu", "legobot")
+DEFAULT_ROBOT = "pololu"
+
+
+def load_config(name: str) -> ProjectConfig:
+    """The ProjectConfig for robot `name` (one of ROBOTS)."""
+    if name == "pololu":
+        return POLOLU_CONFIG
+    if name == "legobot":
+        from legobot_config import LEGOBOT_CONFIG   # imports this module's classes, so imported lazily
+        return LEGOBOT_CONFIG
+    raise ValueError(f"Unknown robot {name!r}; use one of {ROBOTS}")
+
+
+def _selected_robot(argv=None, environ=None) -> str:
+    argv = sys.argv[1:] if argv is None else argv
+    environ = os.environ if environ is None else environ
+    for i, arg in enumerate(argv):
+        if arg == "--robot" and i + 1 < len(argv):
+            return argv[i + 1]
+        if arg.startswith("--robot="):
+            return arg.split("=", 1)[1]
+    return environ.get("ROBOT", DEFAULT_ROBOT) or DEFAULT_ROBOT
+
+
+def add_robot_argument(parser) -> None:
+    """Add --robot to an argparse parser. The choice itself was already made when
+    this module was imported (see above); the argument documents and validates it."""
+    parser.add_argument("--robot", choices=ROBOTS, default=CONFIG.name,
+                        help=f"which robot to simulate (default: $ROBOT, else {DEFAULT_ROBOT}; now {CONFIG.name})")
+
+
+def results_dir(*parts: str, robot: Optional[str] = None) -> Path:
+    """Where results for `robot` (default: the selected one) go: results/<...> for
+    the Pololu robot, whose earlier results and the documents citing them live
+    there, and results/<robot>/<...> for any other robot."""
+    robot = CONFIG.name if robot is None else robot
+    base = _ROOT / "results"
+    return base.joinpath(*parts) if robot == "pololu" else base.joinpath(robot, *parts)
+
+
+ROBOT = _selected_robot()
+CONFIG = load_config(ROBOT)
