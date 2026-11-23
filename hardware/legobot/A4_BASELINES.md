@@ -4,7 +4,22 @@ SOFTWARE_PLAN A4, 2026-11-22. The LEGO robot (`legobot_config.py`) on its derive
 `legobot_scenario.py`), with the voltage-mode driver since B1, the simulated IMU since B2 and the encoder model since B3. These are the reference points the
 LEGO tuning runs (E1, E2) are compared against. Re-score with `python hardware/legobot/legobot_baselines.py`.
 
-## Scores with the pitch offset drawn per robot (B6; current)
+## Scores with the measured body (current)
+
+Body measured (DATASHEET 1, as built): mass 0.362 kg (440 g total minus the wheels), COM 0.060 m above
+the axle, pitch inertia 8.8e-4 kg m^2; spreads ±1%, ±8%, ±15%. The sections below used 0.44 kg (the
+total mass, entered by mistake as the body mass) or the 0.55 kg estimate, a 0.09 m COM and 0.0035 kg m^2.
+Scenario re-derived (legobot_scenario.py): lean cap 15°, cruise 0.27 m/s, pushes 0.63 N (97% of the
+0.0325 N s catchable on every corner), tilts 0.03 / −0.09 / 0.18 rad, pitch_limit_rad 0.18, velocity_limit
+0.04 m/s, torque_limit 0.09 N m (weights 20.25 and 4.0). Costs are not comparable with the sections below.
+
+| Baseline | Plain (seeds 1–3, 9 runs) | Robust, train seeds 1–50 (150) | Robust, dev seeds 5000–5049 (150) | Dev chaos |
+|---|---|---|---|---|
+| Hand-tuned PID (6, 2, 0.5, 0.3) | 4.404 (0) | 3.949 (0) | 3.696 (0) | 0.048 |
+| Model-based PID (2.80, 2.94, 0.27, 0.52) | 2.133 (0) | 172.4 (14) | 159.1 (13) | 14 |
+| Cost-matched LQR | 3.010 (0) | 186.4 (15) | 220.9 (18) | 47 |
+
+## Scores with the pitch offset drawn per robot (B6; body estimated, superseded)
 
 Robust scoring now draws each scenario's pitch offset (the accelerometer's) uniformly in ±0.015 rad
 instead of +0.015 rad every time; plain runs keep +0.015. Everything else as below.
@@ -18,9 +33,9 @@ instead of +0.015 rad every time; plain runs keep +0.015. Everything else as bel
 The hand-tuned PID's cost fell (its mean offset is now 0, and its integral handles either sign); the
 model-based PID falls more (13 of 150, from 9), so the sign of the offset matters to it.
 
-## Scores with the measured body mass (superseded by B6)
+## Scores with 0.44 kg body mass (superseded)
 
-Body mass measured at 0.44 kg (was the 0.55 kg estimate; spread now ±1%). The scenario was re-derived
+Body mass set to 0.44 kg (the robot's total mass, entered by mistake for the body; was the 0.55 kg estimate). The scenario was re-derived
 for it: lean cap 13° (was 12°), pushes 0.85 N (was 0.90 N; 98% of the 0.0434 N s catchable on every
 corner), gentle stop 1.2 s. The model-based design follows the robot; the hand-tuned gains don't.
 

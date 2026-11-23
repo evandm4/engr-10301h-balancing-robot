@@ -270,8 +270,8 @@ POLOLU_VELOCITY_LIMIT_SHARE = 0.2 / 1.3       # velocity_limit / top speed
 POLOLU_TORQUE_LIMIT_OF_CAP = 0.1 / 0.135      # torque_limit / nominal lean-cap torque
 POLOLU_PUSH_SHARE = 0.145 / 0.149             # push / largest catchable on every corner
 # What a full run of the catch simulations gives for legobot_config.py as of 2026-11-22
-# (DATASHEET 2 values with the measured 0.44 kg body, voltage-mode driver), for --quick. Re-run without --quick after changing the config.
-RECORDED_CATCH = dict(forward=0.0434, backward=0.1702, tilt=0.184, nominal_forward=0.129, nominal_tilt=0.344)
+# (DATASHEET 2 values with the measured body, voltage-mode driver), for --quick. Re-run without --quick after changing the config.
+RECORDED_CATCH = dict(forward=0.0325, backward=0.1352, tilt=0.233, nominal_forward=0.105, nominal_tilt=0.450)
 
 
 def lean_cap_table(N, R, caps_deg):
