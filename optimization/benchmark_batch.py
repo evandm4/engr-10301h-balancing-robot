@@ -2,7 +2,7 @@
 
 Runs the real tuning scenario from config.py and reports time per simulation
 at each batch size, so you can see where batching pays off. Compares against
-the latest one-at-a-time baseline from benchmark.py (results/benchmarks/cpu_*.json; results/legobot/benchmarks/ with --robot legobot)
+the latest one-at-a-time baseline from benchmark.py (results/pololu/benchmarks/cpu_*.json; results/legobot/benchmarks/ with --robot legobot)
 and saves its own numbers, with machine and library versions, next to it.
 
 From the project folder:

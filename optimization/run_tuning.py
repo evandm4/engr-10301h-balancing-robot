@@ -17,7 +17,7 @@ From the optimization/ folder:
     python run_tuning.py --iters 10               faster, rougher differential evolution
     python run_tuning.py --workers -1              use every CPU core for differential evolution
 
-Results (JSON, CSV history, plot) are saved under ../results/tuning/<timestamp>/ (results/legobot/... with --robot legobot).
+Results (JSON, CSV history, plot) are saved under ../results/pololu/tuning/<timestamp>/ (results/legobot/... with --robot legobot).
 Angles are shown in degrees; all calculations stay in radians.
 """
 

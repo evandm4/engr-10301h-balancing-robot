@@ -668,7 +668,7 @@ class LearningConfig:
     residual_authority: float = 0.25   # 0.5 as an ablation
     residual_setpoint_scale: float = 0.3      # rad
     residual_int_theta_scale: float = 0.05    # rad s
-    reference_pid_file: str = "results/lqr_comparison/20261109-000021/comparison.json"   # tuned at 2.5-20 ms
+    reference_pid_file: str = "results/pololu/lqr_comparison/20261109-000021/comparison.json"   # tuned at 2.5-20 ms
     reference_pid_entry: str = "PID, ML-tuned"
     # Where training runs write (run_neuroevolution.py). Not the repository: a run rewrites its
     # search state every generation, and a synced folder (OneDrive) can lock a file mid-upload and
@@ -930,19 +930,20 @@ class ProjectConfig:
         )
 
     def training_output_root(self) -> Path:
-        """Folder training runs write under: $BALANCEBOT_TRAINING_DIR, else LearningConfig.output_dir
-        if its drive exists here, else results/ in the repository."""
+        """Folder this robot's training runs write under: <base>/<robot name>, where <base> is
+        $BALANCEBOT_TRAINING_DIR, else LearningConfig.output_dir if its drive exists here, else
+        results/ in the repository. One subfolder per robot, so their runs never mix."""
         import os
 
         override = os.environ.get("BALANCEBOT_TRAINING_DIR")
         if override:
-            return Path(override)
+            return Path(override) / self.name
         configured = self.learning.output_dir
         if configured and sys.platform == "win32":
             drive = Path(configured).drive
             if drive and Path(drive + "\\").exists():
-                return Path(configured)
-        return _ROOT / "results"
+                return Path(configured) / self.name
+        return _ROOT / "results" / self.name
 
     def reference_pid_gains(self) -> Tuple[float, ...]:
         """The reference PID's [kp, ki, kd, kv_p], read from LearningConfig.reference_pid_file."""
@@ -1115,12 +1116,11 @@ def add_robot_argument(parser) -> None:
 
 
 def results_dir(*parts: str, robot: Optional[str] = None) -> Path:
-    """Where results for `robot` (default: the selected one) go: results/<...> for
-    the Pololu robot, whose earlier results and the documents citing them live
-    there, and results/<robot>/<...> for any other robot."""
+    """Where results for `robot` (default: the selected one) go: results/<robot>/<...>.
+    Every robot has its own tree, so no script can mix one robot's results into another's
+    (the Pololu robot's moved from results/<...> to results/pololu/<...> on 2026-11-23)."""
     robot = CONFIG.name if robot is None else robot
-    base = _ROOT / "results"
-    return base.joinpath(*parts) if robot == "pololu" else base.joinpath(robot, *parts)
+    return (_ROOT / "results").joinpath(robot, *parts)
 
 
 ROBOT = _selected_robot()

@@ -6,7 +6,7 @@ seeds (0-9, all under the current config), then A and A-warm.
 
 **Config change under the first results (found by the PR #10 review).** Merging `main` (PR #9) widened
 the scored latency to 2.5-20 ms, moved validation to 3000-3099 and re-tuned the PID
-(`results/lqr_comparison/20261109-000021`: kp 1.615, ki 1.746, kd 0.298, kv_p 0.626). Everything in the
+(`results/pololu/lqr_comparison/20261109-000021`: kp 1.615, ki 1.746, kd 0.298, kv_p 0.626). Everything in the
 first-L-run paragraph below was made at 5-20 ms against the earlier PID (`20261108-225341`). Since
 2026-11-23 `reference_pid_file` points at the re-tuned PID, the gate is re-measured against it (+0.63%
 training, -0.66% -> -0.68% 60 s dev), and 2000-2099 are retired. The review re-scored the recorded L on
@@ -14,7 +14,7 @@ dev under the merged config: 0.870 against the earlier PID, and the re-tuned PID
 first result stands; but run seed 0 is NOT pooled with the final runs: all 10 are trained fresh.
 
 First L run (2026-11-09, full profile, run seed 0; a development run, copied to
-`results/neuroevolution/linear/20261109-133801-seed0`, dev comparison in `results/comparison/20261109-dev-L-seed0`): converged by generation about 110 and stopped itself at 468 (CMA-ES
+`results/pololu/neuroevolution/linear/20261109-133801-seed0`, dev comparison in `results/pololu/comparison/20261109-dev-L-seed0`): converged by generation about 110 and stopped itself at 468 (CMA-ES
 tolflatfitness) after 0.72 G robot-seconds, 26 min. Training objective 1.372 against the PID's 1.572.
 On dev (60 s): median per-scenario ratio 0.870 against the ML-tuned PID, no falls, better on 149 of
 150 scenarios; ahead under all 9 cost weightings (0.80-0.90); the smoothest torque of any controller;
@@ -54,10 +54,10 @@ Phase 0 progress (2026-11-09): built, tested, gate passed.
 - TF32: cuDNN's turned off and matmul's checked in `TorchSimulator`.
 - Benchmark (`benchmark_policies.py`, RTX 5070 Ti laptop on AC, float32, full-length runs). With the
   first GPU forward pass (elementwise, about 600 small kernels per tick for A;
-  `results/benchmarks/policies_20261109-130318.json`): A-sized MLP at population 1,332, 32 s per
+  `results/pololu/benchmarks/policies_20261109-130318.json`): A-sized MLP at population 1,332, 32 s per
   generation; B1 39 s. Switched the GPU path to batched matrix products (`baddbmm`, as 3.1 allows;
   NumPy keeps the fixed-order loop and its bit-identity with the reference; GPU float64 still matches
-  NumPy at rtol 1e-9). Now (`results/benchmarks/policies_20261109-131647.json`):
+  NumPy at rtol 1e-9). Now (`results/pololu/benchmarks/policies_20261109-131647.json`):
 
   | Policy | Population | s per generation | hours for the full cap |
   |---|---|---|---|
@@ -230,7 +230,7 @@ comparison.
    - Validation is scored only with `--final`, in every script: `compare_controllers.py`,
      `run_lqr_comparison.py` and `run_batch_tuning.py` check on dev otherwise and record which.
      Disclosed in the paper: the existing PID and LQR controllers were scored on the current
-     validation set (`results/lqr_comparison/20261109-000021`) before the learned controllers were
+     validation set (`results/pololu/lqr_comparison/20261109-000021`) before the learned controllers were
      frozen. No selection used it (each search was chosen by training objective).
    - Smoke inside dev is the one intended overlap; every other pair of sets must be disjoint, and the
      overlap check enforces exactly that.
@@ -491,7 +491,7 @@ It checks the whole Phase 0 pipeline and gives the reference point for reading A
 - Overfitting checks (481 to 1,473 weights can memorize 150 scenarios where 4 gains can't): log the
   training-vs-dev gap at each checkpoint, with dev scored at **20 s** for this purpose so the gap
   isn't confused with the extra 40 s of standstill in the 60 s runs.
-- Outputs: `results/neuroevolution/<timestamp>/` with policies at each checkpoint, history CSV and
+- Outputs: `results/pololu/neuroevolution/<timestamp>/` with policies at each checkpoint, history CSV and
   config snapshot.
 
 ### 4.3 A-warm
@@ -510,7 +510,7 @@ how hard it is to search 481 weights from scratch. Details:
 ## 5. Method B1: residual policy with CMA-ES
 
 - Base: the reference PID, loaded from `LearningConfig.reference_pid_file`
-  (`results/lqr_comparison/20261109-000021/comparison.json` since 2026-11-23; the same gains every
+  (`results/pololu/lqr_comparison/20261109-000021/comparison.json` since 2026-11-23; the same gains every
   ratio in the paper is measured against), recorded in the run snapshot.
 - Torque: `clip(PID + authority * max_torque * tanh(NN(obs)), +-max_torque)`, authority 0.25 and 0.5
   as an ablation. Output weights and bias start at zero, so training starts exactly at the PID, and
@@ -680,7 +680,7 @@ Remaining:
 
 ### 12.1 Why L beats the PID: constrained re-training (noted 2026-11-09, not started)
 
-The first full L run (`results/neuroevolution/linear/20261109-133801-seed0`) beats the
+The first full L run (`results/pololu/neuroevolution/linear/20261109-133801-seed0`) beats the
 ML-tuned PID on dev (median ratio 0.870, no falls, 149 of 150 scenarios better), but with a smaller
 linear delay margin (28 ms against 37.25 ms). Its weights point to two structural differences:
 
@@ -693,7 +693,7 @@ linear delay margin (28 ms against 37.25 ms). Its weights point to two structura
   per tick (0.014 against 0.032 N m).
 
 Knock-outs (one feature set back the PID's way, nothing re-tuned; dev, 60 s;
-`results/comparison/20261109-dev-L-seed0/l_knockouts.py`) show the features are co-adapted, so they can't
+`results/pololu/comparison/20261109-dev-L-seed0/l_knockouts.py`) show the features are co-adapted, so they can't
 attribute the gain:
 
 | Variant | vs PID | Falls | Stable latency up to |

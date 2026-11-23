@@ -13,9 +13,9 @@ the validation and fall-rate tiers are never touched here.
 From the project folder:
     python optimization/run_neuroevolution.py --method linear                    quick profile (default)
     python optimization/run_neuroevolution.py --method mlp --profile full --run-seed 3
-    python optimization/run_neuroevolution.py --method warm --warm-from C:/balancebot_training/neuroevolution/linear/<run>/final.npz
+    python optimization/run_neuroevolution.py --method warm --warm-from C:/balancebot_training/pololu/neuroevolution/linear/<run>/final.npz
     python optimization/run_neuroevolution.py --method residual --authority 0.5
-    python optimization/run_neuroevolution.py --resume C:/balancebot_training/neuroevolution/mlp/<run>
+    python optimization/run_neuroevolution.py --resume C:/balancebot_training/pololu/neuroevolution/mlp/<run>
 
 One run seed per process, so a sweep maps onto a job array (scripts/slurm_neuroevolution.sh).
 State is saved after every generation (state.pkl); --resume continues exactly where it stopped,

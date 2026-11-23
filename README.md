@@ -27,14 +27,17 @@ optimization/
   benchmark_batch.py       speed of the batched code
   benchmark_policies.py    seconds per CMA-ES generation for each learned policy
   tests/                   tuner and config tests
-results/
-  tuning/                  run_tuning.py output
-  batch_tuning/            run_batch_tuning.py output
-  lqr_comparison/          run_lqr_comparison.py output
-  neuroevolution/          finished training runs copied here to keep (they are written to C:/balancebot_training,
-                           LearningConfig.output_dir, outside the synced folder)
-  comparison/              compare_controllers.py output
-  benchmarks/              the benchmarks
+results/                   one tree per robot (config.results_dir), so the robots' results never mix:
+  pololu/                  the Pololu robot (and the pivot side project, which builds on it)
+    tuning/                run_tuning.py output
+    batch_tuning/          run_batch_tuning.py output
+    lqr_comparison/        run_lqr_comparison.py output
+    neuroevolution/        finished training runs copied here to keep (they are written to
+                           C:/balancebot_training/<robot>/, LearningConfig.output_dir, outside the synced folder)
+    comparison/            compare_controllers.py output
+    benchmarks/            the benchmarks
+    pivot_tuning/          run_pivot_tuning.py output
+  legobot/                 the LEGO robot (ROBOT=legobot or --robot legobot), same layout
 scripts/                   cluster wrappers (SLURM) that only call the normal entry points
 docs/                      plans; ml-baselines-plan.md is the learned-controller plan
 archive/                   the superseded original code and its results (unused)
@@ -134,7 +137,7 @@ python optimization/benchmark.py                                     # reference
 python optimization/benchmark_batch.py --backend torch --float32     # batched speed
 python optimization/run_neuroevolution.py --method linear            # learned linear policy, quick profile (GPU if present)
 python optimization/run_neuroevolution.py --method mlp --profile full --run-seed 3   # one of the 10 final runs
-python optimization/compare_controllers.py --tier dev --policies "L=C:/balancebot_training/neuroevolution/linear/*/final.npz"
+python optimization/compare_controllers.py --tier dev --policies "L=C:/balancebot_training/pololu/neuroevolution/linear/*/final.npz"
 python optimization/benchmark_policies.py                            # time one generation of each learned policy
 ```
 
@@ -150,7 +153,7 @@ simulation/pivot_sim/                   3-DOF model, servo, simulator, cascaded 
 simulation/examples/run_pivot_demo.py   held vs level vs LQR vs tuned, plotted or animated
 simulation/tests/test_pivot.py          its tests (run with the rest by python -m pytest)
 optimization/pivot_tuning/              PivotEvaluator for the existing search methods
-optimization/run_pivot_tuning.py        tune its 7 gains; output in results/pivot_tuning/
+optimization/run_pivot_tuning.py        tune its 7 gains; output in results/pololu/pivot_tuning/
 ```
 
 ```

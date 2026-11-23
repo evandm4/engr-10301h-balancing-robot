@@ -1,10 +1,10 @@
 """Compare saved controllers on one evaluation tier, with the statistics of docs/ml-baselines-plan.md 3.4.
 
 Controllers come from three kinds of file:
-    the existing comparison (results/lqr_comparison/<run>/comparison.json): its 7 PID and LQR
+    the existing comparison (results/pololu/lqr_comparison/<run>/comparison.json): its 7 PID and LQR
         controllers, one run each (--existing; default the reference run in config.py);
     learned policies (.npz from run_neuroevolution.py), grouped into methods:
-        --policies "A=C:/balancebot_training/neuroevolution/mlp/*/final.npz"   (one method, one run per file);
+        --policies "A=C:/balancebot_training/pololu/neuroevolution/mlp/*/final.npz"   (one method, one run per file);
     re-runs of a gain search (.json with "gains", and "kind": "lqr" for LQR gains), the same way:
         --gain-runs "PID re-runs=results/pid_reruns/*/pid.json".
 
@@ -53,10 +53,10 @@ refuses them without --final, and nobody inspects per-scenario results there unt
 controller in the comparison is frozen. Use --tier dev (or smoke) while developing.
 
 From the project folder:
-    python optimization/compare_controllers.py --tier dev --policies "L=C:/balancebot_training/neuroevolution/linear/*/final.npz"
+    python optimization/compare_controllers.py --tier dev --policies "L=C:/balancebot_training/pololu/neuroevolution/linear/*/final.npz"
     python optimization/compare_controllers.py --tier fall_rate --final --latency-sweep --policies ...
 
-Results: results/comparison/<timestamp>-<tier>/ with comparison.json, per_scenario.csv and,
+Results: results/pololu/comparison/<timestamp>-<tier>/ with comparison.json, per_scenario.csv and,
 with the sweep, latency_sweep.csv.
 """
 
@@ -78,7 +78,7 @@ sys.path.insert(0, str(ROOT))   # config.py; importing it puts simulation/ and o
 import numpy as np
 from scipy import stats
 
-from config import CONFIG
+from config import CONFIG, results_dir
 from balance_sim import load_policy
 from batch_tuning import BatchEvaluator
 from tuning import provenance
@@ -529,7 +529,7 @@ def main(argv=None) -> Path:
     if args.duration:
         config = replace(config, duration=args.duration)
 
-    folder = Path(args.out) if args.out else ROOT / "results" / "comparison" / f"{time.strftime('%Y%m%d-%H%M%S')}-{args.tier}"
+    folder = Path(args.out) if args.out else results_dir("comparison", f"{time.strftime('%Y%m%d-%H%M%S')}-{args.tier}")
     folder.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     scores = score(entries, config, robust, seeds, args.backend, args.device)

@@ -21,12 +21,12 @@ Options: --seeds N (training seeds), --no-randomize, --sensitivity-weight W (0 =
 
 The searches can run in float32 for speed. Every finalist is re-scored in
 float64 with NumPy, both the reference way (nominal robot, the scenario's
-validation seeds, so comparable with results/tuning/) and the robust way on
+validation seeds, so comparable with results/pololu/tuning/) and the robust way on
 unseen seeds and unseen robots. Validation runs the held-out validation
 scenario: the training one, run for ScenarioConfig.validation_duration_s
 (the last goal held for the extra time, to expose slow instabilities).
 
-Results are saved under results/batch_tuning/<timestamp>/ (results/legobot/... with --robot legobot): the same
+Results are saved under results/pololu/batch_tuning/<timestamp>/ (results/legobot/... with --robot legobot): the same
 per-method files run_tuning.py writes, comparison.json, and the same
 tuning_summary.png plot. Robust runs add robustness_summary.png. --no-show
 saves the plots without opening a window; --no-plot skips them.
