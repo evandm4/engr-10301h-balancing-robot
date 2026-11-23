@@ -1,0 +1,30 @@
+{
+  "method": "linear",
+  "search": "cma_es",
+  "run_seed": 0,
+  "profile": "full",
+  "n_params": 10,
+  "stop_reason": "cma-es stop: {'tolflatfitness': 1}",
+  "generations": 468,
+  "n_evals": 119809,
+  "robot_seconds": 718854000.0,
+  "robot_seconds_total": 718854000.0,
+  "charged_before": 0.0,
+  "elapsed_s": 1567.7550468444824,
+  "selected": {
+    "robot_seconds": 301062000.0,
+    "generation": 196,
+    "which": "best",
+    "train_objective": 1.3722893687089286,
+    "dev20_objective": 1.3085706585009422,
+    "dev20_falls": 0,
+    "dev60_objective": 1.850057273562493,
+    "dev60_falls": 0,
+    "gap20": -0.04643241553924882,
+    "file": "checkpoints/best_3.011e08.npz"
+  },
+  "train_objective_float32": 1.3722893687089286,
+  "train_objective_float64": 1.3722917596816189,
+  "float32_float64_disagree": false,
+  "best_train_objective": 1.3722891334692637
+}

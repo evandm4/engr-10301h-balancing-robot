@@ -26,6 +26,7 @@ import numpy as np
 from .controller import cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
 from .physics import (accelerometer_tilt, derivatives, pdm_update, pwm_steps_per_tick, pwm_tick_offset, rk4_step,
                       voltage_drive)
+from .policy import PolicyMemory, ResidualBase, policy_update, unpack_batch
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule, encoder_steps, per_sim_ring_size
 
@@ -40,6 +41,13 @@ class BatchResult:
     fall_time: np.ndarray       # (B,) s; NaN for robots that stayed up
     final_state: np.ndarray     # (B, 4) state at the end (at the moment of falling, for fallen robots)
     states: Optional[np.ndarray] = None  # (n_steps + 1, B, 4) if record=True; frozen after a fall
+    # How the controller drove the motor, counted over control ticks while the robot was up (none
+    # of these enter the cost; they are for reporting, e.g. torque roughness the cost can't see):
+    torque_variation: Optional[np.ndarray] = None   # (B,) sum of |u_k - u_{k-1}| over commands (N m)
+    torque_rate_sq: Optional[np.ndarray] = None     # (B,) sum of (u_k - u_{k-1})^2 (N^2 m^2)
+    saturated_ticks: Optional[np.ndarray] = None    # (B,) ticks whose command sat at the torque limit
+    alive_ticks: Optional[np.ndarray] = None        # (B,) controller ticks while up
+    peak_pitch: Optional[np.ndarray] = None         # (B,) largest |pitch| while up (rad)
 
 
 def simulate_batch(
@@ -53,6 +61,7 @@ def simulate_batch(
     record: bool = False,
     dtype=np.float64,
     delay_steps: Optional[np.ndarray] = None,
+    scenarios_per_candidate: Optional[int] = None,
 ) -> BatchResult:
     """Simulate B robots, each with its own gains and starting tilt.
 
@@ -73,12 +82,30 @@ def simulate_batch(
                 of spec.latency. A command issued at step k reaches the motor at step
                 k + delay_steps, which is what the CPU simulator does with
                 latency = delay_steps * dt (see per_sim_ring_size).
+
+    spec.controller "policy": gains is (P, n_params), one parameter vector per network, and
+    scenarios_per_candidate S says how many simulations each runs: B = P x S, candidate-major
+    (simulations p*S .. p*S + S - 1 run network p). The (B,) inputs follow that order.
     """
     schedule = build_schedule(spec) if schedule is None else schedule
     lqr = spec.controller == "lqr"
-    gains = (lqr_gain_columns(gains) if lqr else five_gain_columns(gains)).astype(dtype)
-    B = gains.shape[0]
-    columns = tuple(gains.T)
+    policy = spec.controller == "policy"
+    if policy:
+        params = np.atleast_2d(np.asarray(gains, dtype=dtype))
+        if scenarios_per_candidate is None or scenarios_per_candidate < 1:
+            raise ValueError("a policy batch needs scenarios_per_candidate")
+        n_candidates = params.shape[0]
+        B = n_candidates * scenarios_per_candidate
+        weights = unpack_batch(spec.policy, params)
+        memory = PolicyMemory.zeros(B, dtype)
+        base = ResidualBase.build(spec.policy, spec, B, dtype) if spec.policy.residual else None
+        columns = ()
+    else:
+        if scenarios_per_candidate is not None:
+            raise ValueError("scenarios_per_candidate is only for policy batches")
+        gains = (lqr_gain_columns(gains) if lqr else five_gain_columns(gains)).astype(dtype)
+        B = gains.shape[0]
+        columns = tuple(gains.T)
     robot = robot.astype(dtype)
     torque_limit = robot.max_torque
     dt, control_dt, spc = spec.dt, spec.control_dt, schedule.steps_per_control
@@ -119,6 +146,8 @@ def simulate_batch(
     alive = np.ones(B, dtype=bool)
     fall_time = np.full(B, np.nan, dtype=dtype)
     pitch_error, effort, velocity_error = zeros(), zeros(), zeros()
+    last_command, torque_variation, torque_rate_sq = zeros(), zeros(), zeros()
+    saturated_ticks, alive_ticks, peak_pitch = zeros(), zeros(), zeros()
     upright_reference = spec.pitch_reference == "upright"
     history = [np.stack(state, axis=-1)] if record else None
     encoder = spec.encoder_counts > 0
@@ -166,7 +195,12 @@ def simulate_batch(
                 m = (k - n_delay) // n_period if k >= n_delay else -1
                 speed = (counts[m % len(counts)] - counts[(m - 1) % len(counts)]) * speed_per_count if m >= 1 else 0.0
                 x_dot = robot.wheel_radius * (speed + theta_dot)
-            if lqr:
+            if policy:
+                command, _, memory = policy_update(
+                    spec.policy, weights, n_candidates, x_dot, theta, theta_dot, goal_per_tick[j],
+                    control_dt, memory, torque_limit, base=base,
+                )
+            elif lqr:
                 command, velocity_integral = lqr_update(
                     x_dot, theta, theta_dot, goal_per_tick[j], control_dt,
                     columns, velocity_integral, in_flight,
@@ -183,6 +217,12 @@ def simulate_batch(
             ring[j % ring_size] = command
             if voltage:
                 ring_drive[j % ring_size] = voltage_drive(robot, command, x_dot, theta_dot)
+            change = command - last_command
+            torque_variation += np.where(alive, np.abs(change), 0.0)
+            torque_rate_sq += np.where(alive, change * change, 0.0)
+            saturated_ticks += np.where(alive & (np.abs(command) >= torque_limit), 1.0, 0.0)
+            alive_ticks += np.where(alive, 1.0, 0.0)
+            last_command = command
         if per_sim_delay:
             since = k - delay_steps
             slot = np.where(since >= 0, (since // spc) % ring_size, ring_size)
@@ -198,6 +238,7 @@ def simulate_batch(
         # Cost terms at this sample, only for robots still up.
         theta = state[2]
         pitch_err = theta if upright_reference else theta - setpoint
+        peak_pitch = np.maximum(peak_pitch, np.where(alive, np.abs(theta), 0.0))
         pitch_error += np.where(alive, pitch_err**2 * dt, 0.0)
         effort += np.where(alive, torque**2 * dt, 0.0)
         velocity_error += np.where(alive, (state[1] - goal_per_step[k]) ** 2 * dt, 0.0)
@@ -240,4 +281,9 @@ def simulate_batch(
         fall_time=fall_time,
         final_state=np.stack(state, axis=-1),
         states=np.stack(history) if record else None,
+        torque_variation=torque_variation,
+        torque_rate_sq=torque_rate_sq,
+        saturated_ticks=saturated_ticks,
+        alive_ticks=alive_ticks,
+        peak_pitch=peak_pitch,
     )

@@ -3,6 +3,8 @@
     random_search                 same samples as the CPU version, scored in big batches
     differential_evolution_search scipy DE with vectorized=True, updating="deferred"
     cma_es_search                 CMA-ES (the `cma` package), one batch per generation
+    cma_es_policy_search          CMA-ES over a learned policy's weights (unbounded; own result type)
+    PolicySearch                  the same, one generation at a time, saveable and resumable
 
 All return the CPU code's TuningResult, so its reporting (save_result,
 best_cost_at, ...) works unchanged. Bayesian optimization isn't here: it picks
@@ -10,6 +12,7 @@ one point at a time, so batching doesn't help it.
 """
 
 import time
+from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -82,6 +85,142 @@ def differential_evolution_search(evaluator: BatchEvaluator, max_iter: int = 20,
         callback=on_generation,
     )
     return _result("differential_evolution", evaluator, result.x, result.fun, n_evals, start, history)
+
+
+@dataclass
+class PolicySearchResult:
+    """What cma_es_policy_search found. Parameters are flat policy vectors (balance_sim.policy)."""
+
+    best_params: np.ndarray      # best candidate ever scored (the start point counts)
+    best_cost: float             # its training objective
+    mean_params: np.ndarray      # CMA's distribution mean at the end (often generalizes better)
+    n_evals: int                 # candidates scored, the start point included
+    robot_seconds: float         # simulated time charged: candidates x simulations each x run length
+    elapsed_s: float
+    history: List[Tuple[int, float]]   # (n_evals, best objective so far), once per generation
+    method: str
+
+
+class PolicySearch:
+    """CMA-ES over a policy's weights, one generation at a time, with state that can be saved
+    and restored (for checkpoints and resumed runs). cma_es_policy_search runs it to the end.
+
+    Unbounded: no unit cube (see BatchEvaluator.evaluate_policies).
+    x0: start point (n_params,). It is scored first (start()) and kept as the best candidate
+    unless something beats it, so a warm start can't end worse than it began.
+    stds: optional per-parameter initial standard deviations, as multiples of sigma0
+    (cma's CMA_stds), for example small on a warm-started linear path and larger on the MLP.
+    Full covariance up to full_cma_max_params parameters, diagonal (sep-CMA) above.
+
+    `cma` draws its samples from NumPy's global generator, so state() saves that generator's
+    state with the ES, and restore() puts both back: a resumed run continues exactly.
+    """
+
+    def __init__(self, evaluator: BatchEvaluator, x0, sigma0: float, popsize: int, max_iter: int = 10**9,
+                 seed: int = 0, stds: Optional[Sequence[float]] = None, full_cma_max_params: int = 600):
+        import cma
+
+        x0 = np.asarray(x0, dtype=float)
+        self.evaluator = evaluator
+        self.popsize = popsize
+        self.diagonal = x0.size > full_cma_max_params
+        options = {"maxiter": max_iter, "seed": seed + 1, "popsize": popsize, "verbose": -9,
+                   "tolx": 0, "tolfun": 0, "tolfunhist": 0, "tolstagnation": max_iter + 1,
+                   "CMA_diagonal": self.diagonal}
+        if stds is not None:
+            options["CMA_stds"] = list(stds)
+        self.es = cma.CMAEvolutionStrategy(list(x0), sigma0, options)
+        self.x0 = x0.copy()
+        self.best_params, self.best_cost = x0.copy(), np.inf
+        self.n_evals = 0
+        self.generation = 0
+        self.history: List[Tuple[int, float]] = []
+        self.elapsed_s = 0.0
+
+    @property
+    def method(self) -> str:
+        return "sep_cma_es" if self.diagonal else "cma_es"
+
+    @property
+    def per_eval(self) -> float:
+        """Robot-seconds charged per candidate: its simulations x the run length."""
+        return self.evaluator.simulations_per_evaluation() * self.evaluator.config.duration
+
+    @property
+    def robot_seconds(self) -> float:
+        return self.n_evals * self.per_eval
+
+    @property
+    def mean_params(self) -> np.ndarray:
+        return np.array(self.es.result.xfavorite)
+
+    @property
+    def sigma(self) -> float:
+        return float(self.es.sigma)
+
+    def start(self) -> float:
+        """Score x0 (once). Returns its cost."""
+        if self.n_evals == 0:
+            t = time.time()
+            self.best_cost = float(self.evaluator.evaluate_policies(self.x0[None, :]).objective[0])
+            self.n_evals, self.history = 1, [(1, self.best_cost)]
+            self.elapsed_s += time.time() - t
+        return self.best_cost
+
+    def stopped(self) -> bool:
+        return bool(self.es.stop())
+
+    def step(self) -> np.ndarray:
+        """One generation: ask, score, tell. Returns the generation's costs."""
+        self.start()
+        t = time.time()
+        candidates = np.array(self.es.ask())
+        costs = self.evaluator.evaluate_policies(candidates).objective
+        self.es.tell(list(candidates), costs.tolist())
+        self.n_evals += len(candidates)
+        self.generation += 1
+        i = int(np.argmin(costs))
+        if costs[i] < self.best_cost:
+            self.best_params, self.best_cost = candidates[i].copy(), float(costs[i])
+        self.history.append((self.n_evals, self.best_cost))
+        self.elapsed_s += time.time() - t
+        return costs
+
+    def state(self) -> dict:
+        """Everything needed to continue: pickle-able (the ES object pickles)."""
+        return {"es": self.es, "numpy_rng": np.random.get_state(), "x0": self.x0, "popsize": self.popsize,
+                "diagonal": self.diagonal, "best_params": self.best_params, "best_cost": self.best_cost,
+                "n_evals": self.n_evals, "generation": self.generation, "history": list(self.history),
+                "elapsed_s": self.elapsed_s}
+
+    @classmethod
+    def restore(cls, evaluator: BatchEvaluator, state: dict) -> "PolicySearch":
+        self = cls.__new__(cls)
+        self.evaluator = evaluator
+        for key in ("es", "x0", "popsize", "diagonal", "best_params", "best_cost", "n_evals", "generation",
+                    "history", "elapsed_s"):
+            setattr(self, key, state[key])
+        np.random.set_state(state["numpy_rng"])
+        return self
+
+    def result(self) -> PolicySearchResult:
+        return PolicySearchResult(self.best_params, self.best_cost, self.mean_params, self.n_evals,
+                                  self.robot_seconds, self.elapsed_s, list(self.history), self.method)
+
+
+def cma_es_policy_search(evaluator: BatchEvaluator, x0, sigma0: float, popsize: int, max_iter: int,
+                         seed: int = 0, stds: Optional[Sequence[float]] = None,
+                         full_cma_max_params: int = 600,
+                         max_robot_seconds: Optional[float] = None) -> PolicySearchResult:
+    """PolicySearch run to the end: max_iter generations, or until the next generation would
+    take it past max_robot_seconds of simulation."""
+    search = PolicySearch(evaluator, x0, sigma0, popsize, max_iter, seed, stds, full_cma_max_params)
+    search.start()
+    while not search.stopped():
+        if max_robot_seconds is not None and (search.n_evals + popsize) * search.per_eval > max_robot_seconds:
+            break
+        search.step()
+    return search.result()
 
 
 def cma_es_search(evaluator: BatchEvaluator, max_iter: int = 50, popsize: Optional[int] = None,
