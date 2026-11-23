@@ -19,6 +19,11 @@ From the project folder:
                                                                           run_tuning.py-style scoring, huge budgets
 Options: --seeds N (training seeds), --no-randomize, --sensitivity-weight W (0 = no chaos penalty).
 
+The LEGO robot (--robot legobot): leave out --float32. Its pulse-density PWM makes runs bit-chaotic, and
+float32 costs differ from float64 by a median of ~2.6%, too much to rank close candidates (the script warns).
+float64 on the GPU is about 2.7x slower:
+    python optimization/run_batch_tuning.py --robot legobot --backend torch
+
 The searches can run in float32 for speed. Every finalist is re-scored in
 float64 with NumPy, both the reference way (nominal robot, the scenario's
 validation seeds, so comparable with results/pololu/tuning/) and the robust way on
