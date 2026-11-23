@@ -19,6 +19,10 @@ from balance_sim import (LinearController, Planar2D, PolicyController, loop_matr
 from config import CONFIG
 
 ROOT = Path(__file__).resolve().parents[2]
+if CONFIG.learning.reference_pid_file is None:
+    pytest.skip("no tuned reference PID for this robot yet (the LEGO robot's comes from E2; "
+                "optimization/tests/test_legobot_learning.py covers its learned-controller setup)",
+                allow_module_level=True)
 RESULTS = json.loads((ROOT / CONFIG.learning.reference_pid_file).read_text())["results"]
 GAINS = RESULTS["PID, ML-tuned"]["gains"]
 T = CONFIG.timing.control_dt_s

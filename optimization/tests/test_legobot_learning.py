@@ -12,10 +12,11 @@ import pytest
 
 import compare_controllers
 from balance_sim import pid_equivalent_weights, save_policy
-from config import CONFIG, load_config, read_pid_comparison
+from config import load_config, read_pid_comparison
 
 ROOT = Path(__file__).resolve().parents[2]
 LEGO = load_config("legobot")
+CONFIG = load_config("pololu")      # the Pololu robot, whatever ROBOT is set to (these compare the two)
 
 
 def test_lego_has_its_own_learning_scales():

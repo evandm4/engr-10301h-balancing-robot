@@ -14,7 +14,9 @@ import pytest
 from balance_sim import Planar2D, push_profile, simulate, step_profile
 from batch_sim import simulate_batch
 from batch_tuning import BatchEvaluator, decode_units
-from config import CONFIG
+# Push mechanics are robot-independent (they assume no friction, and the pushes are sized for this robot), so
+# this module always uses the Pololu robot; the LEGO robot's pushes run in test_legobot_pipeline.py.
+from config import POLOLU_CONFIG as CONFIG
 from tuning import Evaluator
 
 ROBOT = CONFIG.build_robot_params()

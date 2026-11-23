@@ -92,6 +92,8 @@ def test_frozen_tiers_need_final(tmp_path):
         main(["--tier", "validation", "--out", str(tmp_path)])
 
 
+@pytest.mark.skipif(CONFIG.reference_is_provisional, reason="needs a tuned reference PID (LEGO: after E2); "
+                    "test_legobot_learning.py runs compare_controllers under legobot")
 def test_end_to_end_on_smoke(tmp_path):
     spec = CONFIG.build_policy_spec("linear")
     gains = CONFIG.reference_pid_gains()
