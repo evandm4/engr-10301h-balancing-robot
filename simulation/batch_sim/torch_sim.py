@@ -28,7 +28,7 @@ from typing import Optional
 import numpy as np
 
 from .controller import LQR_STATE_GAINS, cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
-from .physics import rk4_step
+from .physics import rk4_step, voltage_drive
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule, per_sim_ring_size
 from .simulate import BatchResult
@@ -108,6 +108,8 @@ class TorchSimulator:
         n_in_flight = self.n_gains - LQR_STATE_GAINS if self.lqr else 0
         self.in_flight = torch.zeros(n_in_flight, B, dtype=dtype, device=device)   # LQR commands in flight, oldest first
         self.ring = torch.zeros(R + 1, B, dtype=dtype, device=device)
+        self.voltage = bool(robot.voltage_mode)
+        self.ring_drive = torch.zeros(R + 1, B, dtype=dtype, device=device) if self.voltage else None   # drive voltages
         self.alive = zeros(torch.bool)
         self.fall_time = zeros()
         self.pitch_error, self.effort, self.velocity_error = zeros(), zeros(), zeros()
@@ -150,6 +152,9 @@ class TorchSimulator:
             self.pitch_integral.copy_(pitch_integral)
         self.velocity_integral.copy_(velocity_integral)
         self.ring.index_copy_(0, self.write_slot_per_tick[self.tick], command.unsqueeze(0))
+        if self.voltage:
+            drive = voltage_drive(self.robot, command, x_dot, theta_dot, xp)
+            self.ring_drive.index_copy_(0, self.write_slot_per_tick[self.tick], drive.unsqueeze(0))
         self.tick.add_(1)
 
     def _physics_step(self):
@@ -161,8 +166,11 @@ class TorchSimulator:
             slot = torch.where(since >= 0, torch.div(since, self.schedule.steps_per_control, rounding_mode="floor")
                                % self.ring_size, self.ring_size)
             torque = self.ring.gather(0, slot.unsqueeze(0))[0]
+            drive = self.ring_drive.gather(0, slot.unsqueeze(0))[0] if self.voltage else torque
         else:
-            torque = self.ring[self.slot_per_step[self.step]][0]
+            slot = self.slot_per_step[self.step]
+            torque = self.ring[slot][0]
+            drive = self.ring_drive[slot][0] if self.voltage else torque
 
         # Cost terms at this sample, only for robots still up.
         x, x_dot, theta, theta_dot = self.state
@@ -172,7 +180,7 @@ class TorchSimulator:
         self.velocity_error.add_(torch.where(alive, (x_dot - self.goal_per_step[self.step]) ** 2 * dt, 0.0))
 
         force = self.force_per_step[self.step][0] if self.has_push else 0.0   # a lookup, so graphs can replay it
-        stepped = rk4_step(self.robot, self.state, torque, dt, xp, force)
+        stepped = rk4_step(self.robot, self.state, drive, dt, xp, force)
         for buffer, new in zip(self.state, stepped):
             buffer.copy_(torch.where(alive, new, buffer))
         just_fell = alive & (torch.abs(self.state[2]) > spec.fall_angle)
@@ -190,7 +198,7 @@ class TorchSimulator:
 
     def _reset(self):
         for buffer in (*self.state, self.pitch_integral, self.velocity_integral, self.setpoint, self.in_flight,
-                       self.ring, self.pitch_error, self.effort, self.velocity_error, self.step, self.tick):
+                       self.ring, *([self.ring_drive] if self.voltage else []), self.pitch_error, self.effort, self.velocity_error, self.step, self.tick):
             buffer.zero_()
         self.state[2].copy_(self.start_pitch)
         self.alive.fill_(True)

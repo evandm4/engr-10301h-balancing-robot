@@ -88,21 +88,24 @@ def simulate(
         sensor.reset()
 
     ts, states, torques, references = [0.0], [state.copy()], [], []
-    pending = deque()   # (time the command takes effect, torque)
-    torque = 0.0        # torque currently reaching the actuator
+    pending = deque()   # (time the command takes effect, torque command, drive signal)
+    torque = 0.0        # torque command currently reaching the actuator
+    drive = 0.0         # what the actuator gets for it (the same, but a voltage-mode driver's volts)
+    to_drive = getattr(dynamics, "drive", None)
     fell, fall_time = False, None
 
     for k in range(n_steps):
         t = k * dt
         if k % spc == 0:
             measured = state if sensor is None else sensor.measure(state)
-            pending.append((t + latency, controller.update(measured, control_dt)))
+            command = controller.update(measured, control_dt)
+            pending.append((t + latency, command, command if to_drive is None else to_drive(command, measured)))
         while pending and pending[0][0] <= t + 1e-12:
-            torque = pending.popleft()[1]
+            _, torque, drive = pending.popleft()
         torques.append(torque)
         references.append(controller.pitch_reference())
         push = () if disturbance is None else (disturbance(t),)
-        state = _rk4_step(dynamics, state, torque, dt, *push)
+        state = _rk4_step(dynamics, state, drive, dt, *push)
         ts.append((k + 1) * dt)
         states.append(state.copy())
         if dynamics.is_fallen(state):

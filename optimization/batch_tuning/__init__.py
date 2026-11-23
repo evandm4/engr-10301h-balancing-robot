@@ -5,7 +5,7 @@ save_result) in the same folder; see BATCHED.md.
 """
 
 from .robust import RobustnessConfig, robot_at, sample_delay_steps, sample_robots
-from .evaluation import BatchEvalResult, BatchEvaluator, decode_units, spec_from_eval_config
+from .evaluation import BatchEvalResult, BatchEvaluator, decode_units, robot_from_eval_config, spec_from_eval_config
 from .optimizers import cma_es_search, differential_evolution_search, random_search
 
 __all__ = [
@@ -16,6 +16,7 @@ __all__ = [
     "BatchEvaluator",
     "BatchEvalResult",
     "decode_units",
+    "robot_from_eval_config",
     "spec_from_eval_config",
     "random_search",
     "differential_evolution_search",

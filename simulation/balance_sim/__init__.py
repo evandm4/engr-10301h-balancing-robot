@@ -1,7 +1,7 @@
 """balance_sim: simulation core for an ML-tuned two-wheeled balancing robot."""
 
 from .params import RobotParams
-from .actuators import Actuator, DCMotorActuator, IdealActuator, MotorParams
+from .actuators import Actuator, DCMotorActuator, IdealActuator, MotorParams, VoltageModeActuator
 from .sensors import SensorNoise
 from .dynamics import Dynamics
 from .planar2d import Planar2D, critical_pitch_gain, linearize
@@ -18,6 +18,7 @@ __all__ = [
     "Actuator",
     "IdealActuator",
     "DCMotorActuator",
+    "VoltageModeActuator",
     "MotorParams",
     "SensorNoise",
     "Dynamics",

@@ -28,6 +28,14 @@ class Actuator(ABC):
         (rad/s), i.e. how fast the motors are actually spinning.
         """
 
+    def drive(self, command: float, measured_wheel_speed: float) -> float:
+        """What the robot code sends the driver for a torque command, computed
+        once per control tick from what it measures (measured_wheel_speed: the
+        relative wheel speed it sees, rad/s). The simulator delays and holds this
+        value and passes it to torque() as `command`. Drivers that take the
+        torque command itself (all but VoltageModeActuator) pass it through."""
+        return command
+
 
 class IdealActuator(Actuator):
     """Delivers the commanded torque, clipped to a fixed limit."""
@@ -117,5 +125,58 @@ class DCMotorActuator(Actuator):
         v = float(_clip(v_wanted, -m.supply_voltage, m.supply_voltage))
 
         i = (v - m.torque_constant * rotor_speed) / m.resistance
+        i = float(_clip(i, -m.current_limit, m.current_limit))
+        return m.n_motors * m.gear_ratio * m.gear_efficiency * m.torque_constant * i
+
+
+class VoltageModeActuator(Actuator):
+    """A voltage-mode driver (PWM duty, no current control) with the robot code's
+    back-EMF feedforward (SOFTWARE_PLAN B1; PHYSICS.md 9.3).
+
+    Once per control tick the robot code turns the torque command into a voltage
+    with ITS constants (`estimate`: the nominal, measured-on-the-bench motor):
+
+        V = R^ tau_c / (n N eta^ k^) + k^ N w^,   clipped to +-supply_voltage,
+
+    where tau_c is the command clipped to max_torque and w^ is the relative wheel
+    speed it measures (drive()). The simulator delays and holds V like any
+    command. The motor then responds with the TRUE constants (`motor`, which
+    robust scoring randomizes): i = (V - k N w) / R, clipped to the current limit,
+    and torque n N eta k i (torque()). With exact constants and w^ = w this is
+    DCMotorActuator; the differences are the constants' mismatch and w^ being a
+    sampled, noisy, delayed measurement.
+
+    feedforward=False is the plain voltage mode of PHYSICS.md 9.3 (duty
+    proportional to the torque command): extra drag n N^2 eta k^2 / R, and a
+    voltage that only reaches R^ max_torque / (n N eta^ k^).
+
+    supply_voltage is the true supply (the robot code reads the battery voltage,
+    e.g. the Build HAT's vin), so duty = V / supply_voltage is exact. The Build
+    HAT's `bias` dead band is not modeled: the robot sets bias 0 (DATASHEET 7.2).
+    """
+
+    def __init__(self, motor: MotorParams, estimate: Optional[MotorParams] = None,
+                 max_torque: Optional[float] = None, feedforward: bool = True):
+        if max_torque is not None and max_torque <= 0:
+            raise ValueError("max_torque must be positive")
+        self.m = motor
+        self.estimate = motor if estimate is None else estimate
+        self.max_torque = max_torque
+        self.feedforward = feedforward
+
+    def drive(self, command: float, measured_wheel_speed: float) -> float:
+        e = self.estimate
+        if self.max_torque is not None:
+            command = _clip(command, -self.max_torque, self.max_torque)
+        volts = e.resistance * (command / (e.n_motors * e.gear_ratio * e.gear_efficiency * e.torque_constant))
+        if self.feedforward:
+            volts = volts + e.torque_constant * (e.gear_ratio * measured_wheel_speed)
+        return float(_clip(volts, -self.m.supply_voltage, self.m.supply_voltage))
+
+    def torque(self, command: float, relative_wheel_speed: float) -> float:
+        """command: the drive voltage from drive() (V), not a torque."""
+        m = self.m
+        rotor_speed = m.gear_ratio * relative_wheel_speed
+        i = (command - m.torque_constant * rotor_speed) / m.resistance
         i = float(_clip(i, -m.current_limit, m.current_limit))
         return m.n_motors * m.gear_ratio * m.gear_efficiency * m.torque_constant * i

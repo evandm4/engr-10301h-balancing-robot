@@ -119,7 +119,7 @@ def test_motor_matches_ideal_actuator_when_not_saturated():
     ideal = CONFIG.build_dynamics(ideal_actuator=True)
     motor = CONFIG.build_dynamics()
     state = ideal.initial_state(0.1)
-    assert np.allclose(ideal.derivatives(state, 0.2), motor.derivatives(state, 0.2))
+    assert np.allclose(ideal.derivatives(state, 0.2), motor.derivatives(state, motor.drive(0.2, state)))
 
 
 def test_ideal_actuator_clips():

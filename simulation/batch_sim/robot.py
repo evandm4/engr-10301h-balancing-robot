@@ -34,14 +34,26 @@ class BatchRobot:
     current_limit: object = None
     n_motors: object = None
     gear_efficiency: object = None
+    # Voltage-mode driver (VoltageModeActuator): the command is a drive voltage computed by
+    # physics.voltage_drive from the robot code's constants (est_*, never randomized; its
+    # n_motors, gear_ratio and max_torque are the robot's own). Needs dc_motor.
+    voltage_mode: bool = False
+    voltage_feedforward: bool = True
+    est_torque_constant: object = None
+    est_resistance: object = None
+    est_gear_efficiency: object = None
 
     @classmethod
-    def from_params(cls, params, motor=None, **overrides) -> "BatchRobot":
+    def from_params(cls, params, motor=None, voltage_estimate=None, voltage_feedforward=True,
+                    **overrides) -> "BatchRobot":
         """Build from balance_sim's RobotParams and (optional) MotorParams.
 
         motor=None means the ideal actuator, as in the CPU code. Keyword
         overrides replace any field, e.g. body_mass=np.array([...]) to give
         every simulation its own mass.
+
+        voltage_estimate (MotorParams, needs motor): the voltage-mode driver, with these as the
+        robot code's motor constants; voltage_feedforward turns its back-EMF term on or off.
         """
         values = {name: getattr(params, name) for name in (
             "body_mass", "body_com_height", "body_inertia", "wheel_mass", "wheel_radius",
@@ -52,6 +64,13 @@ class BatchRobot:
             values.update({name: getattr(motor, name) for name in (
                 "gear_ratio", "torque_constant", "resistance", "supply_voltage",
                 "current_limit", "n_motors", "gear_efficiency")})
+        if voltage_estimate is not None:
+            if motor is None:
+                raise ValueError("voltage_estimate needs a motor")
+            values.update(voltage_mode=True, voltage_feedforward=voltage_feedforward,
+                          est_torque_constant=voltage_estimate.torque_constant,
+                          est_resistance=voltage_estimate.resistance,
+                          est_gear_efficiency=voltage_estimate.gear_efficiency)
         values.update(overrides)
         return cls(**values)
 

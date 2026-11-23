@@ -56,6 +56,18 @@ def spec_from_eval_config(config: EvalConfig, controller: str = "cascaded") -> S
     )
 
 
+def robot_from_eval_config(config: EvalConfig, **overrides) -> BatchRobot:
+    """The BatchRobot for an EvalConfig: its params, motor and voltage-mode settings.
+
+    An ideal-actuator variant (motor=None) drops any voltage estimate, as the
+    reference Evaluator does. overrides go to BatchRobot.from_params.
+    """
+    return BatchRobot.from_params(
+        config.params, config.motor,
+        voltage_estimate=config.voltage_estimate if config.motor is not None else None,
+        voltage_feedforward=config.voltage_feedforward, **overrides)
+
+
 def decode_units(space: SearchSpace, units) -> np.ndarray:
     """Vectorized SearchSpace.decode: (P, dim) unit-cube points -> (P, dim) gains."""
     units = np.clip(np.asarray(units, dtype=float), 0.0, 1.0)
@@ -134,7 +146,7 @@ class BatchEvaluator:
         self.to_gains = to_gains
         self.spec = spec_from_eval_config(config, controller)
         self.schedule = build_schedule(self.spec)
-        self.robot = BatchRobot.from_params(config.params, config.motor)
+        self.robot = robot_from_eval_config(config)
         self._noise: Dict[Tuple[int, ...], np.ndarray] = {}
         self._scenario_sets: Dict[Tuple[int, ...], _ScenarioSet] = {}
         self._torch_sims: "OrderedDict[Tuple[int, Tuple[int, ...], int], object]" = OrderedDict()

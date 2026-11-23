@@ -50,6 +50,7 @@ from balance_sim import (
     Planar2D,
     RobotParams,
     SensorNoise,
+    VoltageModeActuator,
     cost,
     critical_pitch_gain,
     lqr_gain,
@@ -113,10 +114,18 @@ class ActuatorConfig:
 
     model: "ideal" delivers the commanded torque exactly (clipped to
     RobotConfig.max_torque). "dc_motor" adds back-EMF, a supply voltage, and a
-    current limit, so available torque falls as the wheels spin faster.
+    current limit, so available torque falls as the wheels spin faster: a
+    current-mode driver (or exact back-EMF compensation). "voltage" is a
+    voltage-mode driver (PWM duty, no current control) whose robot code turns
+    the torque command into a voltage with the nominal constants below, plus
+    back-EMF feedforward from the measured wheel speed if voltage_feedforward
+    (balance_sim.VoltageModeActuator; SOFTWARE_PLAN B1). Robust scoring
+    randomizes the true constants only, so the robot code's are off by the
+    randomization spreads.
     """
 
-    model: str = "dc_motor"            # "ideal" or "dc_motor"
+    model: str = "dc_motor"            # "ideal", "dc_motor" or "voltage"
+    voltage_feedforward: bool = True   # "voltage" only: add k N w^ to the drive voltage
 
     # Pololu 20.4:1 Metal Gearmotor 25Dx65L mm HP 6V with 48 CPR encoder (item 4803), run
     # from a 2S LiPo. Constants derived from Pololu's catalogue numbers (DATASHEET.md 3.1, 5.1).
@@ -154,7 +163,15 @@ class ActuatorConfig:
         if self.model == "dc_motor":
             # The robot's torque limit still applies on top of the motor physics.
             return DCMotorActuator(self.build_motor_params(), max_torque=robot.max_torque)
-        raise ValueError(f"Unknown actuator model {self.model!r}; use 'ideal' or 'dc_motor'")
+        if self.model == "voltage":
+            motor = self.build_motor_params()
+            return VoltageModeActuator(motor, motor, max_torque=robot.max_torque, feedforward=self.voltage_feedforward)
+        raise ValueError(f"Unknown actuator model {self.model!r}; use 'ideal', 'dc_motor' or 'voltage'")
+
+    @property
+    def has_motor(self) -> bool:
+        """True for the models with motor physics (a supply voltage and back-EMF)."""
+        return self.model in ("dc_motor", "voltage")
 
 
 # ---------------------------------------------------------------- SENSOR ---
@@ -631,7 +648,7 @@ class ProjectConfig:
 
         return EvalConfig(
             params=self.build_robot_params(),
-            motor=self.actuator.build_motor_params() if self.actuator.model == "dc_motor" else None,
+            motor=self.actuator.build_motor_params() if self.actuator.has_motor else None,
             sensor=self.build_sensor(),
             latency=self.timing.latency_s,
             duration=self.scenario.validation_duration_s if validation else self.scenario.duration_s,
@@ -650,6 +667,8 @@ class ProjectConfig:
             max_pitch_command=self.controller.max_lean_rad,
             pitch_integral_limit=self.controller.pitch_integral_limit,
             velocity_integral_limit=self.controller.velocity_integral_limit,
+            voltage_estimate=self.actuator.build_motor_params() if self.actuator.model == "voltage" else None,
+            voltage_feedforward=self.actuator.voltage_feedforward,
         )
 
     def snapshot(self) -> dict:
@@ -678,7 +697,7 @@ class ProjectConfig:
                 for p in space.parameters
             },
         }
-        if self.actuator.model == "dc_motor":
+        if self.actuator.has_motor:
             motor = self.actuator.build_motor_params()
             derived["motor_stall_torque_limit"] = float(motor.stall_torque_limit)   # N m, total
             derived["motor_no_load_speed_rad_s"] = float(motor.no_load_speed)       # output shaft

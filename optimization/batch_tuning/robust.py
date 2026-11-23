@@ -43,8 +43,11 @@ import numpy as np
 from batch_sim import BatchRobot
 
 # BatchRobot fields that can be randomized: everything numeric except the
-# gravity constant and the (integer) motor count.
-RANDOMIZABLE = tuple(f.name for f in fields(BatchRobot) if f.name not in ("dc_motor", "n_motors", "gravity"))
+# gravity constant, the (integer) motor count and the voltage-mode driver's settings
+# (the robot code's fixed constants: the mismatch comes from randomizing the true ones).
+RANDOMIZABLE = tuple(f.name for f in fields(BatchRobot) if f.name not in (
+    "dc_motor", "n_motors", "gravity", "voltage_mode", "voltage_feedforward",
+    "est_torque_constant", "est_resistance", "est_gear_efficiency"))
 ROBOT_PARAM_FIELDS = ("body_mass", "body_com_height", "body_inertia", "wheel_mass", "wheel_radius",
                       "wheel_inertia", "rotor_inertia", "max_torque", "wheel_friction", "coulomb_friction",
                       "coulomb_friction_speed", "gravity")

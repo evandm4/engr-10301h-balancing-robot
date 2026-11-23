@@ -13,7 +13,7 @@ import pytest
 
 from balance_sim import SensorNoise
 from batch_sim import BatchRobot, simulate_batch
-from batch_tuning import BatchEvaluator, decode_units
+from batch_tuning import BatchEvaluator, decode_units, robot_from_eval_config
 from config import CONFIG
 from tuning import Evaluator
 
@@ -43,6 +43,22 @@ CONFIGS = {
 }
 
 
+def _voltage_config(feedforward=True, base=SHORT):
+    """Voltage-mode driver whose constants (resistance x 0.9, torque constant x 1.1) differ from the true motor."""
+    estimate = replace(base.motor, resistance=base.motor.resistance * 0.9,
+                       torque_constant=base.motor.torque_constant * 1.1)
+    return replace(base, voltage_estimate=estimate, voltage_feedforward=feedforward)
+
+
+VOLTAGE_CONFIGS = {
+    "feedforward": _voltage_config(True),
+    "no_feedforward": _voltage_config(False),
+    "exact_constants": replace(SHORT, voltage_estimate=SHORT.motor),
+    "latency_between_steps": _voltage_config(True, replace(SHORT, latency=0.0037)),
+    "current_limited": _voltage_config(True, replace(SHORT, motor=replace(SHORT.motor, current_limit=0.8))),
+}
+
+
 def _candidates(n=24, seed=0):
     """Random gains plus corner cases: every gain at its lower / upper bound, the hand-tuned set,
     and one too weak to balance (Kp below the critical gain), so the falling path is always covered."""
@@ -67,6 +83,86 @@ def test_costs_and_falls_match_reference(name):
         assert result.n_fell[i] == expected.n_fell
     # The candidates should cover both outcomes, or the test isn't checking much.
     assert 0 < result.n_fell.sum() < result.costs.size
+
+
+@pytest.mark.parametrize("name", list(VOLTAGE_CONFIGS))
+def test_voltage_mode_costs_and_falls_match_reference(name):
+    config = VOLTAGE_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    assert batched.robot.voltage_mode
+    gains = _candidates()
+
+    result = batched.evaluate_population(gains)
+    for i, g in enumerate(gains):
+        expected = ref.evaluate_gains(g)
+        np.testing.assert_allclose(result.costs[i], expected.costs, rtol=COST_RTOL)
+        assert result.n_fell[i] == expected.n_fell
+    assert 0 < result.n_fell.sum() < result.costs.size
+
+
+@pytest.mark.parametrize("name", ["feedforward", "no_feedforward", "latency_between_steps"])
+def test_voltage_mode_trajectories_match_reference_exactly(name):
+    config = VOLTAGE_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    gains = _candidates(n=12, seed=1)
+    pitch, seed = ref.scenarios()[1]
+
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), schedule=batched.schedule, record=True)
+    for i, g in enumerate(gains):
+        expected = ref.run(g, pitch, seed)
+        n = len(expected.t)
+        np.testing.assert_array_equal(run.states[:n, i], expected.states)
+        assert run.fell[i] == expected.fell
+
+
+def test_voltage_mode_differs_from_current_mode():
+    """The new path actually runs: voltage mode with mismatched constants scores differently."""
+    gains = _candidates(n=6, seed=5)
+    current = BatchEvaluator(SHORT, SPACE).evaluate_population(gains).costs
+    voltage = BatchEvaluator(VOLTAGE_CONFIGS["no_feedforward"], SPACE).evaluate_population(gains).costs
+    assert not np.allclose(current, voltage, rtol=1e-6)
+
+
+@pytest.mark.parametrize("feedforward", [True, False])
+def test_voltage_mode_per_robot_parameters_match_separate_reference_runs(feedforward):
+    """True motor constants, mass and supply voltage differ per robot; the robot code's constants don't."""
+    config = _voltage_config(feedforward)
+    rng = np.random.default_rng(6)
+    n = 10
+    masses = rng.uniform(0.6, 1.0, n)
+    resistance = config.motor.resistance * rng.uniform(0.85, 1.15, n)
+    constant = config.motor.torque_constant * rng.uniform(0.9, 1.1, n)
+    supply = config.motor.supply_voltage * rng.uniform(0.8, 1.0, n)
+    batched = BatchEvaluator(config, SPACE)
+    robot = BatchRobot.from_params(config.params, config.motor, voltage_estimate=config.voltage_estimate,
+                                   voltage_feedforward=feedforward, body_mass=masses, resistance=resistance,
+                                   torque_constant=constant, supply_voltage=supply)
+    pitch, seed = batched.scenarios()[0]
+    run = simulate_batch(batched.spec, robot, np.tile(HAND_TUNED, (n, 1)), pitch,
+                         noise=batched.noise_for((seed,)), seed_index=np.zeros(n, dtype=int),
+                         schedule=batched.schedule)
+    for i in range(n):
+        motor = replace(config.motor, resistance=resistance[i], torque_constant=constant[i],
+                        supply_voltage=supply[i])
+        ref = Evaluator(replace(config, params=config.params.with_changes(body_mass=masses[i]), motor=motor), SPACE)
+        expected = ref.run(HAND_TUNED, pitch, seed)
+        np.testing.assert_allclose(run.cost[i], ref.score(expected), rtol=COST_RTOL)
+        np.testing.assert_array_equal(run.final_state[i], expected.states[-1])
+
+
+def test_voltage_mode_per_simulation_latency_matches_shared_latency():
+    config = VOLTAGE_CONFIGS["feedforward"]
+    batched = BatchEvaluator(config, SPACE)
+    gains = _candidates(n=8, seed=9)
+    pitch, seed = batched.scenarios()[0]
+    steps = int(round(config.latency / config.dt))
+    kwargs = dict(noise=batched.noise_for((seed,)), seed_index=np.zeros(len(gains), dtype=int))
+    shared = simulate_batch(batched.spec, batched.robot, gains, pitch, schedule=batched.schedule, **kwargs)
+    per_sim = simulate_batch(batched.spec, batched.robot, gains, pitch, delay_steps=np.full(len(gains), steps),
+                             **kwargs)
+    np.testing.assert_array_equal(shared.cost, per_sim.cost)
+    np.testing.assert_array_equal(shared.final_state, per_sim.final_state)
 
 
 def test_five_gain_sets_with_a_velocity_integral_still_match():
@@ -113,7 +209,7 @@ def test_per_robot_parameters_match_separate_reference_runs():
     n = 10
     masses, heights = rng.uniform(0.6, 1.0, n), rng.uniform(0.07, 0.13, n)
     batched = BatchEvaluator(config, SPACE)
-    robot = BatchRobot.from_params(config.params, config.motor, body_mass=masses, body_com_height=heights)
+    robot = robot_from_eval_config(config, body_mass=masses, body_com_height=heights)
     pitch, seed = batched.scenarios()[0]
     run = simulate_batch(batched.spec, robot, np.tile(HAND_TUNED, (n, 1)), pitch,
                          noise=batched.noise_for((seed,)), seed_index=np.zeros(n, dtype=int),

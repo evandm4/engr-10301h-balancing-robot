@@ -56,12 +56,16 @@ ROBOT = RobotConfig(
 
 # -------------------------------------------------------------- ACTUATOR ---
 # DATASHEET 2.2: a lumped output-side motor (gear_ratio = 1). Every published and
-# measured number is at the output shaft, so DCMotorActuator gives torque = n eta k i
+# measured number is at the output shaft, so the motor model gives torque = n eta k i
 # and back-EMF = k w directly. Requires the Build HAT at plimit 1 and bias 0
-# (DATASHEET 7.2). Still the current-mode model: the voltage-mode driver with
-# feedforward is SOFTWARE_PLAN B1.
+# (DATASHEET 7.2). The Build HAT is a voltage-mode driver (PWM duty, no current
+# sensing), so the model is "voltage" with back-EMF feedforward (SOFTWARE_PLAN B1):
+# the robot code computes the drive voltage from the nominal constants below and the
+# measured wheel speed; robust scoring randomizes the true ones. Without feedforward
+# every baseline falls in every run (drag 0.051 N m s/rad and a 4.7 V ceiling).
 ACTUATOR = ActuatorConfig(
-    model="dc_motor",
+    model="voltage",
+    voltage_feedforward=True,
     gear_ratio=1.0,                # lumped: constants below are output-referred
     torque_constant=0.411,         # V s/rad, output k_e (Pybricks; LEGO's sheet: 0.355)
     resistance=4.4,                # ohm incl. driver and wiring: midpoint of 3.73 (Pybricks) and 5.14 (LEGO stall)
@@ -145,53 +149,55 @@ CONTROLLER = replace(
     hand_tuned_gains=(6.0, 2.0, 0.5, 0.3),     # kp, ki, kd, kv_p
 )
 
-# The Pololu scenario's proportions and start times, sized from this robot:
-#   t = 0-2 s       start tilt, goal 0.
-#   t = 2-2.7 s     0 -> 0.26 m/s in 0.7 s: peak 0.81 m/s^2, a 0.125 rad lean (Pololu's
-#                   0.25 / 0.30 of pitch_limit_rad); 58% of the lean-cap acceleration.
-#   t = 2.7-9.5 s   cruise at 0.26 m/s, 41% of the nominal no-load speed (Pololu 53%). Every
-#                   corner still has, after friction, its own lean-cap torque here.
-#   t = 5.5, 7.5 s  pushes, forward then backward: 0.94 N for 50 ms = 0.047 N s, 97.5% of
-#                   the largest forward push a full-torque response catches at 0.26 m/s on
-#                   every corner (0.0482 N s: light, tall, high rotor inertia, weakest motor
-#                   at high speed, most friction; 0.158 nominal at 10 ms). 50 ms is under the
-#                   124 ms fastest unstable time constant (145 ms nominal). Backward: 0.21
-#                   catchable, easy (braking is helped by back-EMF), as on the Pololu robot.
-#   t = 9.5-10.8 s  0.26 -> -0.10 m/s in 1.3 s: 0.61 m/s^2, 0.092 rad (Pololu's share).
-#   t = 10.8-14 s   cruise backward at -0.10 m/s (Pololu's 0.5/1.3 of top speed); 2.9 rad/s
-#                   at the wheels, so Coulomb friction has fully flipped.
-#   t = 14-15.1 s   -0.10 -> 0 in 1.1 s: 0.20 m/s^2, 0.030 rad.
-#   t = 15.1-20 s   standing still.
-# Start tilts 0.025, -0.075, 0.15 rad: Pololu's shares (1/6, -1/2, 1) of pitch_limit_rad,
-# whose 0.15 is 77% of the 0.193 rad a full-torque response catches on every corner (heavy,
+# The Pololu scenario's proportions and start times, sized from this robot with its
+# voltage-mode driver (the robot code's constants nominal, the true ones at the corner;
+# with current mode the push and tilt were 0.0482 N s and 0.193 rad, 4% and 8% more):
+#   t = 0-2 s        start tilt, goal 0.
+#   t = 2-2.75 s     0 -> 0.26 m/s in 0.75 s: peak 0.76 m/s^2, a 0.117 rad lean (Pololu's
+#                    0.25 / 0.30 of pitch_limit_rad); 54% of the lean-cap acceleration.
+#   t = 2.75-9.5 s   cruise at 0.26 m/s, 41% of the nominal no-load speed (Pololu 53%). Every
+#                    corner still has, after friction, its own lean-cap torque here.
+#   t = 5.5, 7.5 s   pushes, forward then backward: 0.90 N for 50 ms = 0.045 N s, 97% of the
+#                    largest forward push a full-torque response catches at 0.26 m/s on every
+#                    corner (0.0462 N s: light, tall, high rotor inertia, weakest motor at high
+#                    speed, most friction; 0.158 nominal at 10 ms). 50 ms is under the 124 ms
+#                    fastest unstable time constant (145 ms nominal). Backward: 0.18 catchable,
+#                    easy (braking is helped by back-EMF), as on the Pololu robot.
+#   t = 9.5-10.9 s   0.26 -> -0.10 m/s in 1.4 s: 0.56 m/s^2, 0.086 rad (Pololu's share).
+#   t = 10.9-14 s    cruise backward at -0.10 m/s (Pololu's 0.5/1.3 of top speed); 2.9 rad/s
+#                    at the wheels, so Coulomb friction has fully flipped.
+#   t = 14-15.15 s   -0.10 -> 0 in 1.15 s: 0.19 m/s^2, 0.028 rad.
+#   t = 15.15-20 s   standing still.
+# Start tilts 0.0233, -0.07, 0.14 rad: Pololu's shares (1/6, -1/2, 1) of pitch_limit_rad,
+# whose 0.14 is 77% of the 0.178 rad a full-torque response catches on every corner (heavy,
 # tall, high rotor inertia, weakest motor; 0.343 nominal at 10 ms), as 0.30 was of 0.39.
 SCENARIO = replace(
     ScenarioConfig(),
     goal_steps=(
-        (2.0, 0.26, 0.7),     # aggressive: 0.81 m/s^2, 0.125 rad of lean
-        (9.5, -0.10, 1.3),    # brake and reverse: 0.61 m/s^2
-        (14.0, 0.0, 1.1),     # gentle stop: 0.20 m/s^2
+        (2.0, 0.26, 0.75),    # aggressive: 0.76 m/s^2, 0.117 rad of lean
+        (9.5, -0.10, 1.4),    # brake and reverse: 0.56 m/s^2
+        (14.0, 0.0, 1.15),    # gentle stop: 0.19 m/s^2
     ),
     pushes=(
-        (5.5, 0.05, 0.94),    # from behind at 0.26 m/s
-        (7.5, 0.05, -0.94),   # from the front at 0.26 m/s
+        (5.5, 0.05, 0.90),    # from behind at 0.26 m/s
+        (7.5, 0.05, -0.90),   # from the front at 0.26 m/s
     ),
-    start_pitches_deg=(1.4324, -4.2972, 8.5944),    # 0.025, -0.075, 0.15 rad
+    start_pitches_deg=(1.335, -4.0107, 8.0214),    # 0.0233, -0.07, 0.14 rad
 )
 
 # Cost limits (CostConfig's Bryson rule), in the Pololu cost's proportions:
-#   pitch_limit_rad 0.15: 77% of the catchable start tilt; between the 0.125 rad the goal
-#     profile needs and the 0.209 rad lean cap (72% of it; Pololu 69%).
+#   pitch_limit_rad 0.14: 77% of the catchable start tilt; between the 0.117 rad the goal
+#     profile needs and the 0.209 rad lean cap (67% of it; Pololu 69%).
 #   velocity_limit 0.04 m/s: Pololu's 0.2/1.3 of the top speed.
 #   torque_limit 0.10 N m: Pololu's 0.1/0.135 of the nominal lean-cap torque (0.132), so
 #     pitch and effort trade as they do there; 20% of max_torque. Holding the cruise
 #     against the friction the robustness test draws takes 0.03-0.09 N m.
-# Weights: velocity (0.15/0.04)^2 = 14.06, effort (0.15/0.10)^2 = 2.25. Fall penalty: the
-# worst non-fall 20 s run costs 21.9 (pitch) + 11.2 (effort) + 333.8 (velocity, fastest
-# corner's 0.829 m/s no-load speed + 0.26) = 367, under 1000 (PHYSICS.md 8.3).
+# Weights: velocity (0.14/0.04)^2 = 12.25, effort (0.14/0.10)^2 = 1.96. Fall penalty: the
+# worst non-fall 20 s run costs 21.9 (pitch) + 9.8 (effort) + 290.7 (velocity, fastest
+# corner's 0.829 m/s no-load speed + 0.26) = 322, under 1000 (PHYSICS.md 8.3).
 COST = replace(
     CostConfig(),
-    pitch_limit_rad=0.15,
+    pitch_limit_rad=0.14,
     velocity_limit=0.04,
     torque_limit=0.10,
     fall_penalty=1000.0,

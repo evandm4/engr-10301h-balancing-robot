@@ -18,7 +18,7 @@ torch = pytest.importorskip("torch")
 
 from batch_sim import BatchRobot, cascaded_update, derivatives, limited_integral, simulate_batch, torch_ops
 from batch_sim.torch_sim import TorchSimulator
-from batch_tuning import BatchEvaluator, decode_units, differential_evolution_search
+from batch_tuning import BatchEvaluator, decode_units, differential_evolution_search, robot_from_eval_config
 from config import CONFIG
 
 HAS_CUDA = torch.cuda.is_available()
@@ -48,6 +48,11 @@ def _flat(evaluator, gains, seeds=None):
 
 def _near_hand_tuned(n, spread=0.2, seed=4):
     return HAND_TUNED * np.random.default_rng(seed).uniform(1 - spread, 1 + spread, (n, len(HAND_TUNED)))
+
+
+def _estimate(motor):
+    """The robot code's constants, a little off the true motor, so the mismatch path runs."""
+    return replace(motor, resistance=motor.resistance * 0.9, torque_constant=motor.torque_constant * 1.1)
 
 
 @pytest.fixture(scope="module")
@@ -94,9 +99,10 @@ def test_cascaded_update_matches_numpy_exactly(device):
 
 
 @pytest.mark.parametrize("device", DEVICES)
-@pytest.mark.parametrize("dc_motor", [False, True])
+@pytest.mark.parametrize("dc_motor", [False, True, "voltage"])
 def test_derivatives_match_numpy_to_the_last_bit(device, dc_motor, short_eval):
-    robot = BatchRobot.from_params(SHORT.params, SHORT.motor if dc_motor else None)
+    robot = BatchRobot.from_params(SHORT.params, SHORT.motor if dc_motor else None,
+                                   voltage_estimate=_estimate(SHORT.motor) if dc_motor == "voltage" else None)
     n = 5000
     state = [RNG.normal(0, 1, n), RNG.normal(0, 1, n), RNG.uniform(-1, 1, n), RNG.normal(0, 3, n)]
     torque = RNG.normal(0, 0.5, n)
@@ -144,6 +150,24 @@ def test_float64_matches_numpy_for_well_behaved_gains(device, reference):
     # With the rotor inertia modelled a few of these perturbations fall; compare the ones that stay up.
     up = ~ref.fell
     assert up.sum() >= 0.75 * len(G)
+    assert not got.fell[up].any()
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
+    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
+
+
+@pytest.mark.parametrize("feedforward", [True, False])
+@pytest.mark.parametrize("device", DEVICES)
+def test_voltage_mode_float64_matches_numpy(device, feedforward):
+    evaluator = BatchEvaluator(replace(SHORT, voltage_estimate=_estimate(SHORT.motor),
+                                       voltage_feedforward=feedforward), SPACE)
+    assert evaluator.robot.voltage_mode
+    G, pitch, seed_index, noise = _flat(evaluator, _near_hand_tuned(32))
+    ref = simulate_batch(evaluator.spec, evaluator.robot, G, pitch, noise, seed_index, evaluator.schedule,
+                         record=True)
+    got = TorchSimulator(evaluator.spec, evaluator.robot, len(G), noise, evaluator.schedule, device=device,
+                         dtype=torch.float64, record=True).run(G, pitch, seed_index)
+    up = ~ref.fell
+    assert up.sum() >= 0.5 * len(G)
     assert not got.fell[up].any()
     np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
     np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
@@ -217,8 +241,7 @@ def test_no_noise_zero_latency_and_per_robot_parameters(device):
     ev = BatchEvaluator(config, SPACE)
     spec = replace(ev.spec, pitch_std=0.0)
     n = 16
-    robot = BatchRobot.from_params(config.params, config.motor,
-                                   body_mass=np.random.default_rng(1).uniform(0.6, 1.0, n))
+    robot = robot_from_eval_config(config, body_mass=np.random.default_rng(1).uniform(0.6, 1.0, n))
     gains = _near_hand_tuned(n)
     ref = simulate_batch(spec, robot, gains, 0.05, schedule=ev.schedule)
     got = TorchSimulator(spec, robot, n, None, ev.schedule, device=device, dtype=torch.float64).run(gains, 0.05)

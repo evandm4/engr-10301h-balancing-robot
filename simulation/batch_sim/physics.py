@@ -24,11 +24,17 @@ def _is_zero(value) -> bool:
 
 
 def actuator_torque(robot: BatchRobot, command, relative_wheel_speed, xp=np):
-    """Applied torque for a torque command. See Actuator.torque in the CPU code."""
+    """Applied torque for a torque command. See Actuator.torque in the CPU code.
+
+    In voltage mode `command` is the drive voltage from voltage_drive (VoltageModeActuator.torque)."""
     if not robot.dc_motor:
         return xp.clip(command, -robot.max_torque, robot.max_torque)
-    command = xp.clip(command, -robot.max_torque, robot.max_torque)
     rotor_speed = robot.gear_ratio * relative_wheel_speed
+    if robot.voltage_mode:
+        i = xp.divide(command - robot.torque_constant * rotor_speed, robot.resistance)
+        i = xp.clip(i, -robot.current_limit, robot.current_limit)
+        return robot.n_motors * robot.gear_ratio * robot.gear_efficiency * robot.torque_constant * i
+    command = xp.clip(command, -robot.max_torque, robot.max_torque)
     per_motor_shaft_torque = xp.divide(command, robot.n_motors * robot.gear_ratio * robot.gear_efficiency)
     i_wanted = xp.divide(per_motor_shaft_torque, robot.torque_constant)
     v_wanted = robot.resistance * i_wanted + robot.torque_constant * rotor_speed
@@ -36,6 +42,19 @@ def actuator_torque(robot: BatchRobot, command, relative_wheel_speed, xp=np):
     i = xp.divide(v - robot.torque_constant * rotor_speed, robot.resistance)
     i = xp.clip(i, -robot.current_limit, robot.current_limit)
     return robot.n_motors * robot.gear_ratio * robot.gear_efficiency * robot.torque_constant * i
+
+
+def voltage_drive(robot: BatchRobot, command, x_dot, theta_dot, xp=np):
+    """The drive voltage the robot code sends for a torque command (VoltageModeActuator.drive).
+
+    x_dot and theta_dot are the MEASURED values (after sensor noise and bias)."""
+    w_hat = xp.divide(x_dot, robot.wheel_radius) - theta_dot
+    c = xp.clip(command, -robot.max_torque, robot.max_torque)
+    volts = robot.est_resistance * xp.divide(
+        c, robot.n_motors * robot.gear_ratio * robot.est_gear_efficiency * robot.est_torque_constant)
+    if robot.voltage_feedforward:
+        volts = volts + robot.est_torque_constant * (robot.gear_ratio * w_hat)
+    return xp.clip(volts, -robot.supply_voltage, robot.supply_voltage)
 
 
 def derivatives(robot: BatchRobot, state, torque, xp=np, force=0.0):

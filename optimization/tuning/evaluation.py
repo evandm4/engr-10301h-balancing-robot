@@ -19,6 +19,7 @@ import numpy as np
 from balance_sim import (
     CascadedPIDController,
     DCMotorActuator,
+    VoltageModeActuator,
     MotorParams,
     Planar2D,
     RobotParams,
@@ -61,6 +62,10 @@ class EvalConfig:
     max_pitch_command: float                   # rad; cap on the outer loop's commanded lean
     pitch_integral_limit: float                # rad s; cap on the pitch loop's integral
     velocity_integral_limit: float             # m; cap on the velocity loop's integral
+    # Voltage-mode driver (balance_sim.VoltageModeActuator) in place of the current-mode
+    # DC motor: the robot code's motor constants (its estimate of `motor`); None = current mode.
+    voltage_estimate: Optional[MotorParams] = None
+    voltage_feedforward: bool = True           # back-EMF feedforward on (voltage mode only)
 
 
 @dataclass
@@ -83,8 +88,13 @@ class Evaluator:
 
     def dynamics(self) -> Planar2D:
         c = self.config
-        actuator = (DCMotorActuator(c.motor, max_torque=c.params.max_torque)
-                    if c.motor is not None else None)
+        if c.motor is None:
+            actuator = None
+        elif c.voltage_estimate is not None:
+            actuator = VoltageModeActuator(c.motor, c.voltage_estimate, max_torque=c.params.max_torque,
+                                           feedforward=c.voltage_feedforward)
+        else:
+            actuator = DCMotorActuator(c.motor, max_torque=c.params.max_torque)
         return Planar2D(c.params, fall_angle=c.fall_angle, actuator=actuator)
 
     def controller(self, gains: Sequence[float]) -> CascadedPIDController:

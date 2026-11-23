@@ -40,20 +40,31 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from config import POLOLU_CONFIG, ProjectConfig  # noqa: E402  (also puts simulation/ on the path)
-from batch_sim.physics import actuator_torque, rk4_step  # noqa: E402
+from batch_sim.physics import actuator_torque, rk4_step, voltage_drive  # noqa: E402
 from batch_sim.robot import BatchRobot  # noqa: E402
 
 BLEND_PEAK = 2.1875   # step_profile: peak acceleration = 2.1875 x change / blend time
 
 
 # ------------------------------------------------------------- robots ---
-def nominal_robot(cfg: ProjectConfig) -> BatchRobot:
-    return BatchRobot.from_params(cfg.build_robot_params(), cfg.actuator.build_motor_params())
+def nominal_robot(cfg: ProjectConfig, driver: str = None) -> BatchRobot:
+    """driver: "voltage" or "current" (default: the config's actuator model). In voltage mode
+    the robot code's constants stay nominal while corner_robots varies the true ones."""
+    motor = cfg.actuator.build_motor_params()
+    voltage = (cfg.actuator.model == "voltage") if driver is None else driver == "voltage"
+    return BatchRobot.from_params(cfg.build_robot_params(), motor, voltage_estimate=motor if voltage else None,
+                                  voltage_feedforward=cfg.actuator.voltage_feedforward)
 
 
-def corner_robots(cfg: ProjectConfig) -> BatchRobot:
+def drive(R: BatchRobot, command, x_dot, theta_dot):
+    """What the actuator gets for a torque command: the command itself, or in voltage mode the
+    robot code's drive voltage from the wheel speed (taken as measured exactly, every step)."""
+    return voltage_drive(R, command, x_dot, theta_dot) if R.voltage_mode else command
+
+
+def corner_robots(cfg: ProjectConfig, driver: str = None) -> BatchRobot:
     """Every corner of the robust-scoring box, as one batch."""
-    base = nominal_robot(cfg)
+    base = nominal_robot(cfg, driver)
     r = cfg.robustness
     n_rel, n_rng = len(r.randomize), len(r.randomize_range)
     signs = np.array(list(itertools.product((-1.0, 1.0), repeat=n_rel + n_rng)))
@@ -103,7 +114,8 @@ def unstable_pole(R: BatchRobot):
 def net_forward_torque(R: BatchRobot, v):
     """Forward torque left after friction, upright at speed v (m/s)."""
     w = v / R.wheel_radius
-    full = actuator_torque(R, np.full(size(R), 1e6) if size(R) > 1 else 1e6, w)
+    command = np.full(size(R), 1e6) if size(R) > 1 else 1e6
+    full = actuator_torque(R, drive(R, command, v, 0.0 * w), w)
     return full - friction(R, w)
 
 
@@ -141,7 +153,7 @@ def caught(R: BatchRobot, *, speed, impulse=0.0, start_pitch=0.0, push_duration=
     while t < horizon and not done.all():
         torque = hold if t < latency else direction * 1e6
         f = force if t < push_duration else 0.0
-        state = _step_with_force(R, state, torque, dt, f)
+        state = _step_with_force(R, state, drive(R, torque, state[1], state[3]), dt, f)
         t += dt
         theta = state[2]
         fell = np.abs(theta) > fall_angle
@@ -203,7 +215,7 @@ def _tilt_batch(R, tilts, latency, dt=0.0005, horizon=3.0, fall_angle=math.radia
     t = 0.0
     while t < horizon and not done.all():
         torque = np.zeros(n) if t < latency else np.full(n, 1e6)
-        state = rk4_step(R, state, torque, dt)
+        state = rk4_step(R, state, drive(R, torque, state[1], state[3]), dt)
         t += dt
         fell = np.abs(state[2]) > fall_angle
         back = (t > latency) & (state[2] <= 0)
@@ -257,8 +269,8 @@ POLOLU_VELOCITY_LIMIT_SHARE = 0.2 / 1.3       # velocity_limit / top speed
 POLOLU_TORQUE_LIMIT_OF_CAP = 0.1 / 0.135      # torque_limit / nominal lean-cap torque
 POLOLU_PUSH_SHARE = 0.145 / 0.149             # push / largest catchable on every corner
 # What a full run of the catch simulations gives for legobot_config.py as of 2026-11-22
-# (DATASHEET 2 values), for --quick. Re-run without --quick after changing the config.
-RECORDED_CATCH = dict(forward=0.0482, backward=0.2122, tilt=0.193, nominal_forward=0.158, nominal_tilt=0.343)
+# (DATASHEET 2 values, voltage-mode driver), for --quick. Re-run without --quick after changing the config.
+RECORDED_CATCH = dict(forward=0.0462, backward=0.1805, tilt=0.178, nominal_forward=0.158, nominal_tilt=0.343)
 
 
 def lean_cap_table(N, R, caps_deg):

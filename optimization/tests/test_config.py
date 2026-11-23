@@ -10,14 +10,15 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from balance_sim import DCMotorActuator, IdealActuator, Planar2D
+from balance_sim import DCMotorActuator, IdealActuator, Planar2D, VoltageModeActuator
 from config import CONFIG, ActuatorConfig, ProjectConfig
 
 
 def test_default_config_builds_a_working_dynamics_model():
     dyn = CONFIG.build_dynamics()
     assert isinstance(dyn, Planar2D)
-    assert isinstance(dyn.actuator, DCMotorActuator)   # default actuator.model is "dc_motor"
+    expected = {"dc_motor": DCMotorActuator, "voltage": VoltageModeActuator}[CONFIG.actuator.model]
+    assert isinstance(dyn.actuator, expected)
     assert dyn.fall_angle == pytest.approx(CONFIG.timing.fall_angle_rad)
 
 
@@ -134,10 +135,10 @@ def test_snapshot_is_json_serializable_and_complete():
 def test_dc_motor_respects_the_robot_torque_limit():
     # Below the motor's own stall limit, the robot's max_torque is what binds.
     low = replace(CONFIG, robot=replace(CONFIG.robot, max_torque=0.2)).build_dynamics()
-    assert low.actuator.torque(10.0, 0.0) == pytest.approx(0.2)
+    assert low.actuator.torque(low.actuator.drive(10.0, 0.0), 0.0) == pytest.approx(0.2)
     # Above it, the motor physics bind instead.
     high = replace(CONFIG, robot=replace(CONFIG.robot, max_torque=5.0)).build_dynamics()
-    assert high.actuator.torque(10.0, 0.0) == pytest.approx(CONFIG.actuator.build_motor_params().stall_torque_limit)
+    assert high.actuator.torque(high.actuator.drive(10.0, 0.0), 0.0) == pytest.approx(CONFIG.actuator.build_motor_params().stall_torque_limit)
 
 
 def test_eval_config_carries_pitch_reference():
@@ -243,7 +244,7 @@ def test_fall_penalty_exceeds_any_non_fall_cost():
     bound = (CONFIG.timing.fall_angle_rad**2 * T
              + c.effort_weight * CONFIG.robot.max_torque**2 * T
              + c.velocity_weight * (v_max + goal_max) ** 2 * T)
-    assert CONFIG.actuator.model == "dc_motor", "with the ideal actuator nothing bounds the speed"
+    assert CONFIG.actuator.has_motor, "with the ideal actuator nothing bounds the speed"
     assert bound < c.fall_penalty, f"a non-fall run could cost up to {bound:.0f}, over the fall penalty"
 
 

@@ -1,10 +1,38 @@
 # A4: baselines on the LEGO robot
 
 SOFTWARE_PLAN A4, 2026-11-22. The LEGO robot (`legobot_config.py`) on its derived scenario (A3,
-`legobot_scenario.py`), with the current-mode DC motor model. These are the reference points the
+`legobot_scenario.py`), with the voltage-mode driver since B1. These are the reference points the
 LEGO tuning runs (E1, E2) are compared against. Re-score with `python hardware/legobot/legobot_baselines.py`.
 
-## Scores
+## Scores with the voltage-mode driver (B1; current)
+
+Since B1 the LEGO robot uses the voltage-mode driver with back-EMF feedforward, and the scenario was
+re-derived for it (pushes 0.90 N, tilts up to 0.14 rad, pitch_limit_rad 0.14; legobot_config.py).
+Gains unchanged.
+
+| Baseline | Plain (seeds 1–3, 9 runs) | Robust, train seeds 1–50 (150) | Robust, dev seeds 5000–5049 (150) | Dev worst |
+|---|---|---|---|---|
+| Hand-tuned PID | 1.584 (0) | 14.81 (1) | 1.858 (0) | 7.10 |
+| Model-based PID | 1.196 (0) | 14.77 (1) | 36.54 (3) | 1881 |
+| Cost-matched LQR | 1.408 (0) | 97.08 (8) | 100.0 (8) | 1958 |
+
+What makes them fall, on the dev seeds (same robots, latencies and noise):
+
+| Baseline | Robot code's constants nominal (as scored) | Constants exact for each robot | Current-mode driver |
+|---|---|---|---|
+| Hand-tuned PID | 1.858 (0/150) | 1.776 (0/150) | 1.753 (0/150) |
+| Model-based PID | 36.54 (3/150) | 1.465 (0/150) | 1.253 (0/150) |
+| Cost-matched LQR | 100.0 (8/150) | 35.86 (3/150) | 1.616 (0/150) |
+
+The falls are robots whose true R is 14–17% above the robot code's value and/or whose k is 9–14%
+below it (the torque delivered is about 0.8 of the command and the feedforward over-cancels the
+back-EMF), with 1.3–1.5x rotor inertia and 17.5–25 ms latency, mostly from the 0.14 rad tilt. The
+LQR also falls with exact constants: the feedforward uses a wheel speed sampled one latency earlier,
+which acts as a delayed drag (c_m = 0.051 N m s/rad) that its design doesn't know about. Both are
+effects the real robot has. Measuring R and k on the bench (C3) narrows the first; tuning on the
+robust scenario (E1) has to handle what remains, including R rising as the winding warms.
+
+## Scores with the current-mode driver (A4, superseded)
 
 None of these are tuned by search. Mean cost per run (lower is better), falls in brackets.
 

@@ -26,7 +26,7 @@ from balance_sim import (
     step_profile,
 )
 from batch_sim import BatchRobot, build_schedule, lqr_update, noise_table, simulate_batch
-from batch_tuning import BatchEvaluator, decode_units, spec_from_eval_config
+from batch_tuning import BatchEvaluator, decode_units, robot_from_eval_config, spec_from_eval_config
 from config import CONFIG, CostConfig, ProjectConfig
 
 pololu_only = pytest.mark.skipif(CONFIG.name != "pololu", reason="checks numbers or gains specific to config.py's Pololu robot")
@@ -263,7 +263,7 @@ def test_batched_trajectories_match_reference_exactly(name):
     config = CONFIGS[name]
     ref = Evaluator(config, CONFIG.build_search_space())
     spec = spec_from_eval_config(config, controller="lqr")
-    robot = BatchRobot.from_params(config.params, config.motor)
+    robot = robot_from_eval_config(config)
     gains = _gain_sets(config)[:2]
     pitch, seed = config.start_pitches[0], config.train_seeds[0]
     schedule = build_schedule(spec)
@@ -290,7 +290,7 @@ def test_spec_rejects_unknown_controller():
 def test_wrong_gain_width_rejected():
     spec = spec_from_eval_config(SHORT, controller="lqr")
     with pytest.raises(ValueError):
-        simulate_batch(spec, BatchRobot.from_params(SHORT.params, SHORT.motor), np.zeros((2, 3)), 0.1)
+        simulate_batch(spec, robot_from_eval_config(SHORT), np.zeros((2, 3)), 0.1)
 
 
 def test_cost_terms_add_up():

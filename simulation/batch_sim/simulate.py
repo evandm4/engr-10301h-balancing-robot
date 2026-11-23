@@ -22,7 +22,7 @@ from typing import Optional
 import numpy as np
 
 from .controller import cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
-from .physics import rk4_step
+from .physics import rk4_step, voltage_drive
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule, per_sim_ring_size
 
@@ -98,6 +98,9 @@ def simulate_batch(
         ring_size = schedule.ring_size
     ring = np.zeros((ring_size + 1, B), dtype=dtype)   # the extra last row stays 0: no command yet
     torque, active = zeros(), -1
+    voltage = robot.voltage_mode
+    ring_drive = np.zeros_like(ring) if voltage else None   # drive voltages, same slots as ring
+    drive = zeros() if voltage else None
     alive = np.ones(B, dtype=bool)
     fall_time = np.full(B, np.nan, dtype=dtype)
     pitch_error, effort, velocity_error = zeros(), zeros(), zeros()
@@ -131,12 +134,19 @@ def simulate_batch(
                     spec.pitch_integral_limit, spec.velocity_integral_limit,
                 )
             ring[j % ring_size] = command
+            if voltage:
+                ring_drive[j % ring_size] = voltage_drive(robot, command, x_dot, theta_dot)
         if per_sim_delay:
             since = k - delay_steps
-            torque = ring[np.where(since >= 0, (since // spc) % ring_size, ring_size), columns_b]
+            slot = np.where(since >= 0, (since // spc) % ring_size, ring_size)
+            torque = ring[slot, columns_b]
+            if voltage:
+                drive = ring_drive[slot, columns_b]
         elif schedule.active_command[k] != active:
             active = schedule.active_command[k]
             torque = ring[active % ring_size].copy()
+            if voltage:
+                drive = ring_drive[active % ring_size].copy()
 
         # Cost terms at this sample, only for robots still up.
         theta = state[2]
@@ -145,7 +155,7 @@ def simulate_batch(
         effort += np.where(alive, torque**2 * dt, 0.0)
         velocity_error += np.where(alive, (state[1] - goal_per_step[k]) ** 2 * dt, 0.0)
 
-        stepped = rk4_step(robot, state, torque, dt, np, float(schedule.force_per_step[k]))
+        stepped = rk4_step(robot, state, drive if voltage else torque, dt, np, float(schedule.force_per_step[k]))
         state = tuple(np.where(alive, new, old) for new, old in zip(stepped, state))
         just_fell = alive & (np.abs(state[2]) > spec.fall_angle)
         fall_time[just_fell] = (k + 1) * dt
