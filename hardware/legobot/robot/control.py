@@ -18,6 +18,7 @@ Robot code on the Pi imports config.py and legobot_config.py from ~/legobot and 
 ~/legobot/simulation (hardware/legobot/deploy.sh copies them); in the repo they are found from here.
 """
 import json
+from collections import deque
 import math
 import sys
 from dataclasses import replace
@@ -297,7 +298,8 @@ class Safety:
         self.stall_duty = stall_duty
         self.tilt_limit = tilt_limit
         self.vin_cutoff = vin_cutoff
-        self.stall_ticks = [0, 0]
+        n = max(1, int(round(lc.STALL_S / dt)))
+        self._stall = [deque(maxlen=n), deque(maxlen=n)]   # speed in the duty's direction, while |duty| is high
         self.wrong_way_ticks = [0, 0]
         self.vin_low = 0
         self._last_vin_t = None
@@ -327,10 +329,19 @@ class Safety:
             return f"tilt {theta:+.2f} rad past {self.tilt_limit} rad"
         for i, side in enumerate(("left", "right")):
             d, w = duties[i], speeds[i]
-            self.stall_ticks[i] = (self.stall_ticks[i] + 1
-                                   if abs(d) >= self.stall_duty and abs(w) < lc.STALL_SPEED else 0)
-            if self.stall_ticks[i] * self.dt >= lc.STALL_S:
-                return f"{side} wheel stalled (duty {d:+.2f}, {w:+.2f} rad/s for {lc.STALL_S} s)"
+            # Stall: |duty| high on every tick of the last STALL_S, and the wheel's MEAN speed in the duty's
+            # direction under STALL_SPEED. A mean, because a held wheel still creeps or is back-driven by single
+            # encoder counts (1.75 rad/s each), which reset any per-tick test (bench, 2026-11-23).
+            q = self._stall[i]
+            if abs(d) >= self.stall_duty:
+                q.append(w if d > 0 else -w)
+                if len(q) == q.maxlen:
+                    mean = sum(q) / len(q)
+                    if mean < lc.STALL_SPEED:
+                        return (f"{side} wheel stalled (duty {d:+.2f}, mean {mean:+.2f} rad/s in its direction "
+                                f"over {lc.STALL_S} s)")
+            else:
+                q.clear()
             # Encoder against drive: a strong duty and the wheel turning fast the other way means a sign
             # error, which makes the feedforward positive feedback (D4's sign check, at run time).
             self.wrong_way_ticks[i] = (self.wrong_way_ticks[i] + 1

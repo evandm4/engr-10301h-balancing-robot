@@ -193,9 +193,29 @@ log records.
   - **Tests:** 21 pass. They cover the tracker on synthetic arrivals with jitter, dropped lines, late lines and
     two-line reads (period within 60 ppm, phase within 0.3 ms), the pacer, and a locked closed loop against the
     simulator. In the simulator the HAT's lines run on their own 9.9912 ms clock with arrival jitter.
-- **Still to do on hardware (needs hands):** the tilt trip (tilt past 40°), the stall trip (hold a wheel with
-  `--bench` and a pitch offset), and `robot.calibrate signs --wheels-off --save` (asks whether each wheel turned
-  forward).
+- **Hands-on checks, 2026-11-23** (robot held in hand, wheels clear, `--bench` duty cap 0.3, lock on).
+  Phase D's trips and calibrations are now all tested on hardware.
+  - **Wheel signs:** `robot.calibrate signs` read +377° (left) and +302° (right), and both wheels turned forward
+    by eye. The confirmed `PORT_SIGN` is saved in `calibration.json` beside the pitch zero.
+  - **Tilt trip:** armed at +0.025 rad, fired at +0.70 rad, both wheels at 0 deg/s 1 s later.
+  - **Stall trip:** the first try failed. A hand-held wheel at duty +0.3 doesn't read 0: it creeps or is
+    back-driven a single count (1.75 rad/s) at a time, which reset the per-tick test (under 1 rad/s on every tick
+    for 1 s); its longest stretch was 0.1 s. Now: |duty| ≥ the threshold on every tick of the last 1 s, and the
+    wheel's MEAN speed in the duty's direction under 3 rad/s. A free wheel at the cap does 15–18 rad/s. Retest:
+    "left wheel stalled (duty +0.30, mean −0.03 rad/s)", both wheels at 0 a second later.
+  - **Startup changes:**
+    - Gyro calibration retries 2 s windows for up to 20 s instead of failing on the first motion.
+    - While waiting to arm, the loop prints the pitch it sees once a second. The ±0.05 rad window is narrow by
+      hand: by feel, "upright" sat 4–5° behind the balance point.
+    - Logs are synced to the SD card when written: a battery swap cuts the Pi's power, and one run's log was
+      lost that way.
+  - **Line period:** −14 to −21 ppm before a battery swap, +226 to +404 ppm after the next power-ups, as
+    estimated over each run. The HAT's line timing is evidently not crystal-fixed; the lock tracks it, and every
+    tick of every run was locked.
+- **Open:**
+  - When the SSH terminal running `calibrate signs` closed at its prompt, the process hung (futex wait), and
+    SIGINT and SIGTERM didn't stop it; only SIGKILL did. The motors were already coasting.
+  - One tick per run takes 11–12 ms of compute (the rest about 1.3 ms); not yet traced.
 
 ### Phase E: Retune and compare
 

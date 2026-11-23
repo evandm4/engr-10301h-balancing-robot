@@ -112,17 +112,25 @@ class Watchdog(threading.Thread):
 
 
 # ------------------------------------------------------------------------------------ the run ---
-def calibrate_gyro(imu, clock, dt):
-    """D4: the robot still for GYRO_CAL_S; returns (bias, sd, g ratio)."""
-    samples = []
-    t_end = clock.now() + lc.GYRO_CAL_S
-    deadline = clock.now()
-    while clock.now() < t_end:
-        deadline += dt
-        clock.wait_until(deadline)
-        r = imu.read()
-        samples.append((r.pitch_rate, r.acc_fwd, r.acc_up))
-    return control.gyro_bias_from(samples)
+def calibrate_gyro(imu, clock, dt, say=lambda m: print(m, flush=True)):
+    """D4: the robot still for GYRO_CAL_S; returns (bias, sd, g ratio). Retries each GYRO_CAL_S window that
+    shows motion until GYRO_CAL_TIMEOUT_S, then raises the last ValueError."""
+    t_give_up = clock.now() + lc.GYRO_CAL_TIMEOUT_S
+    while True:
+        samples = []
+        t_end = clock.now() + lc.GYRO_CAL_S
+        deadline = clock.now()
+        while clock.now() < t_end:
+            deadline += dt
+            clock.wait_until(deadline)
+            r = imu.read()
+            samples.append((r.pitch_rate, r.acc_fwd, r.acc_up))
+        try:
+            return control.gyro_bias_from(samples)
+        except ValueError as e:
+            if clock.now() >= t_give_up:
+                raise
+            say(f"  {e}: keep it still, trying again")
 
 
 def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, drive=True, inject=None,
@@ -217,6 +225,9 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
                     say(f"armed at {t - t0:.2f} s (pitch {theta:+.3f} rad)")
             else:
                 still_since = None
+            if phase == 0 and tick % 200 == 0:     # once a second: how far from the arming window
+                say(f"  waiting to arm: pitch {theta:+.3f} rad (need |pitch| < {lc.ARM_TILT}), "
+                    f"rate {gyro:+.2f} rad/s (need < {lc.ARM_RATE})")
             if phase == 0 and t - t0 > lc.ARM_TIMEOUT_S:
                 reason = f"not armed within {lc.ARM_TIMEOUT_S:.0f} s"
         t_cmd = None
@@ -305,6 +316,8 @@ def write_logs(base, rows, reason, t_arm, meta, notes):
         ]
     with open(base + "_summary.txt", "w") as f:
         f.write("\n".join(lines) + "\n")
+    if hasattr(os, "sync"):
+        os.sync()             # to the SD card now: a battery swap cuts the Pi's power
     return lines
 
 
@@ -438,7 +451,7 @@ def main(argv=None):
         write_phase = lc.LINE_WRITE_PHASE_S if a.line_phase is None else a.line_phase
         pacer = control.Pacer(dt, line_clock, (write_phase - lc.COMPUTE_LEAD_S) % (0.5 * hat_period))
         if line_clock.update(hat.line_times(LEFT)):
-            notes["line period"] = f"{line_clock.period * 1e3:.5f} ms ({(line_clock.period / hat_period - 1) * 1e6:+.0f} ppm vs nominal)"
+            notes["line period at start"] = f"{line_clock.period * 1e3:.5f} ms ({(line_clock.period / hat_period - 1) * 1e6:+.0f} ppm vs nominal)"
             notes["line lock"] = f"command write phase {write_phase * 1e3:.2f} ms, tick offset {pacer.offset * 1e3:.2f} ms"
             print(f"locked to the HAT's lines: period {line_clock.period * 1e3:.4f} ms; {notes['line lock']}")
         else:
@@ -465,6 +478,9 @@ def main(argv=None):
                 hat.close()
                 imu.close()
     print(f"stopped: {reason}")
+    if line_clock is not None and line_clock.t_ref is not None:
+        notes["line period at end"] = (f"{line_clock.period * 1e3:.5f} ms "
+                                       f"({(line_clock.period / hat_period - 1) * 1e6:+.0f} ppm vs nominal)")
 
     stamp = time.strftime("%Y%m%d_%H%M%S")
     base = os.path.join(a.outdir, f"{stamp}_{a.label}")
