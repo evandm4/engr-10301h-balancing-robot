@@ -480,6 +480,8 @@ def main(argv=None):
         if line_clock.update(hat.line_times(LEFT)):
             notes["line period at start"] = f"{line_clock.period * 1e3:.5f} ms ({(line_clock.period / hat_period - 1) * 1e6:+.0f} ppm vs nominal)"
             notes["line lock"] = f"command write phase {write_phase * 1e3:.2f} ms, tick offset {pacer.offset * 1e3:.2f} ms"
+            lag = control.port_lag(hat.line_times(LEFT), hat.line_times(RIGHT), hat_period)
+            notes["right lines lag left"] = "unknown" if lag is None else f"{lag * 1e3:.2f} ms"
             print(f"locked to the HAT's lines: period {line_clock.period * 1e3:.4f} ms; {notes['line lock']}")
         else:
             notes["line lock"] = "no lock at start (too few lines); ticks on the Pi's clock until it locks"

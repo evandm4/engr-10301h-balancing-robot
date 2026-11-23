@@ -1,0 +1,13 @@
+lock sweep left (grid: left port's lines), duty 1.0, pwmparams (1.0, 0.01), vin 7.74 V, line period 9.9974 ms, other port's lines lag the grid by 7.00 ms (at start)
+offset ms   n   t_d mean   sd    (ms)
+    0.0    8     17.82   4.01
+    1.0    8     16.34   4.36
+    2.0    8     17.25   6.61
+    3.0    8     16.85   8.38
+    4.0    8     26.66   5.19
+    5.0    8     23.95   3.49
+    6.0    8     20.53   3.53
+    7.0    8     21.07   3.12
+    8.0    8     19.69   3.96
+    9.0    8     21.77   4.09
+least delay at a write phase of 1.0 ms (16.34 ms): set loop_config.LINE_WRITE_PHASE_S = 0.0010

@@ -312,3 +312,14 @@ def test_every_robot_module_compiles():
     for path in glob.glob(os.path.join(here, "*.py")) + glob.glob(os.path.join(here, "measure", "*.py")):
         with open(path, encoding="utf-8") as f:
             compile(f.read(), path, "exec")
+
+
+def test_port_lag_reads_the_offset_between_the_two_ports_line_grids():
+    """B1 (2026-11-23): each port streams on its own grid, and the lag between them changes per run."""
+    rng = np.random.default_rng(1)
+    period = 0.0099984
+    left = 3.0 + period * np.arange(300) + rng.exponential(0.0006, 300)
+    right = 3.0 + 0.0042 + period * np.arange(300) + rng.exponential(0.0006, 300)
+    lag = control.port_lag(list(left), list(right), 0.010)
+    assert abs(lag - 0.0042) < 0.0005
+    assert control.port_lag(list(left[:10]), list(right), 0.010) is None

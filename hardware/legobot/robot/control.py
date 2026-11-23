@@ -265,6 +265,19 @@ class LineClock:
         return (t - self.t_ref) % self.period
 
 
+def port_lag(ref_times, other_times, nominal_period):
+    """How far the other port's line grid lags the reference port's, in [0, period) s; None if too few lines.
+
+    Each port streams on its own grid, started by configure(), so the lag changes from run to run (1.5-8 ms
+    in the 2026-11-23 logs). Logged as a diagnostic only: the pulse ticks don't follow their own port's grid,
+    and neither port's tick holds a fixed phase between runs (B1 follow-up and cable-swap sweeps, 2026-11-23:
+    port A 8.8 ms, port B 7.2 / 4.3 ms, then both 3.2 ms after re-plugging the motors, one power-up)."""
+    a, b = LineClock(nominal_period), LineClock(nominal_period)
+    if not (a.update(ref_times) and b.update(other_times)):
+        return None
+    return (b.t_ref - a.t_ref) % a.period
+
+
 class Pacer:
     """The loop's tick times. Locked: two ticks per HAT line period, at `offset` s after each half-period
     point of the LineClock grid, so every command lands at the same phase of the HAT's pulse ticks.
