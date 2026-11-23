@@ -53,12 +53,13 @@ Order is by expected effect. Each starts in the reference engine with a short ex
 
 | # | Task | Size | Done when |
 |---|---|---|---|
-| B1 | **Voltage-mode actuator with feedforward.** In `actuators.py`: duty = clip((R̂ i_cmd + k̂_e ω̂)/(plimit V), ±1), applied voltage = duty × plimit × V, current from the true R and k_e. ω̂ is the motor speed the robot code sees (B3), R̂ and k̂_e are the robot code's constants. Options: feedforward off (plain voltage mode), and a `bias` dead-band jump. Robustness draws the mismatch R̂/R and k̂_e/k_e per robot (±17%, ±15%, the datasheet spreads). Replaces the current-mode `DCMotorActuator` for the LEGO robot; the Pololu robot keeps its model | M (reference) + M (port) | Reproduces PHYSICS.md 9.3's numbers with feedforward off on the Pololu robot; equivalence and torch tests pass |
+| B1 | **Voltage-mode actuator with feedforward.** In `actuators.py`: duty = clip((R̂ i_cmd + k̂_e ω̂)/(plimit V), ±1), applied voltage = duty × plimit × V, current from the true R and k_e. ω̂ is the motor speed the robot code sees (B3), R̂ and k̂_e are the robot code's constants. Options: feedforward off (plain voltage mode), and a dead-band jump if the bench shows one (current firmware dropped `bias`; `pwmparams` may set a minimum PWM instead, to be checked in C1). Robustness draws the mismatch R̂/R and k̂_e/k_e per robot (±17%, ±15%, the datasheet spreads). Replaces the current-mode `DCMotorActuator` for the LEGO robot; the Pololu robot keeps its model | M (reference) + M (port) | Reproduces PHYSICS.md 9.3's numbers with feedforward off on the Pololu robot; equivalence and torch tests pass |
 | B2 | **Simulated IMU and filter.** Sensor model outputs gyro rate (noise, bias, DLPF modeled as a first-order lag at the chosen bandwidth) and accelerometer tilt from ẍ, θ̈ and the mount height d (plus noise and offset). A complementary filter, the same code the robot will run (section 4), turns them into the pitch estimate the controller sees. ẍ and θ̈ come from the dynamics at the sample time | M (reference) + M–L (port: the filter adds state to every simulation) | With noise off and the robot still, the estimate converges to the truth; during the scenario's accelerations the error has the size DATASHEET 3.4 predicts |
 | B3 | **Encoder model.** Wheel angle quantized to 1°, updated every 10 ms and held between updates, read with a configurable delay; velocity from counts 10 ms apart. Gearbox slack as a ±3° position error, then (B5) as a real dead zone if needed | S–M | Velocity noise matches DATASHEET 5.4 (0.025 m/s at 69 mm) |
 | B4 | **Timing.** Latency range 5–25 ms; the motor's L/R (3 ms) either folded into latency or as a first-order current lag in the actuator. Decide by experiment in the reference engine | S | Decision recorded in PHYSICS.md |
 | B5 | Optional, only if B1–B4 tuning shows sensitivity: gearbox backlash as a dead zone, and different sensor delays for IMU and encoder | M | — |
-| B6 | Update PHYSICS.md (9.3, 9.5, 10) and ARCHITECTURE.md for what was built | S | — |
+| B6 | Low priority, before the final validation runs. **Pitch offset drawn per robot.** `pitch_bias` is one positive constant in every run (0.015 rad in `legobot_config.py`), so the tuner sees one offset size and one sign. Draw it per scenario, uniform in ±b (b = 0.015 rad, the residual after balance-point calibration, DATASHEET 8.4). This also covers a fore-aft COM offset e: that is exactly a pitch offset of atan(e/l), about 0.017 rad per mm at the measured l = 60 mm, with a negligible second-order change in COM distance. The batched engines need the bias as a per-scenario array instead of a scalar in the spec | S (reference) + S (port) | Equivalence and torch tests pass with a nonzero per-scenario bias; PHYSICS.md 10's "pitch offset per robot" gap is closed |
+| B7 | Update PHYSICS.md (9.3, 9.5, 10) and ARCHITECTURE.md for what was built | S | — |
 
 ### Phase C: Bench tools and measurements (needs the assembled robot; parallel with B)
 
@@ -66,7 +67,7 @@ All of this runs on the Pi. The first two are also the robot code's drivers (pha
 
 | # | Task | Size | Done when |
 |---|---|---|---|
-| C1 | **Build HAT driver** over raw serial (`/dev/serial0`, 115200): firmware load at boot, `plimit 1`, `bias 0`, a combi mode with speed, position and absolute position for both ports, a background reader that timestamps each data line, abbreviated motor commands (`po 0;set .421;po 1;set -.421`, 2.5 ms). The `buildhat` Python library is simpler but adds overhead we can't see; measure both | M | Both motors commanded and read at 100 Hz; timestamps logged |
+| C1 | **Build HAT driver** over raw serial with pyserial (`/dev/serial0`, 115200). Firmware load by the `buildhat` library in a short separate process, which exits and leaves the firmware running (DATASHEET 3.5); then `version` check, `port_plimit` and `pwmparams` per port (current firmware; `bias` is gone), a combi mode with speed, position and absolute position for both ports, a background reader that timestamps each data line, abbreviated motor commands (`po 0;pwm;set .421;po 1;pwm;set -.421`; time the exact string) | M | Both motors commanded and read at 100 Hz; timestamps logged |
 | C2 | **IMU driver** for the ICM-20948 over I²C at 400 kHz (raise the Pi's default 100 kHz): gyro and accelerometer at a fixed rate, DLPF set, axis mapping applied | S–M | 200 Hz reads with timing logged |
 | C3 | **Measurement scripts for DATASHEET section 8**: motor rail vs `vin`; stall current (R); no-load speed and current vs duty (k_e, friction); string-and-mass torque (efficiency, stall); spin-up fit (output inertia, with and without wheel); backlash; gyro noise and bias with motors off and on; accelerometer offset; balance point; battery discharge log; loop timing (latency). Each writes a CSV and prints the fitted constant with its uncertainty | M–L | Every Est./Pyb value in DATASHEET section 2 replaced by a measurement or confirmed |
 | C4 | Fill in `legobot_config.py` from C3 and shrink the robustness spreads to the measurement uncertainty; update DATASHEET | S | — |
@@ -94,7 +95,7 @@ All of this runs on the Pi. The first two are also the robot code's drivers (pha
 
 ```
 A1 → A2 → A3 → A4 ─┐
-                   ├→ B1 → B2 → B3 → B4 ─┐
+                   ├→ B1 → B2 → B3 → B4 ─┐    (B6 any time before E2's final tuning)
 C1, C2 → C3 → C4 ──┼─────────────────────┼→ E1 → E2 → E3 → E4
                    └→ D1 → D2 → D3 → D4 → D5 ─┘
 ```
@@ -114,6 +115,6 @@ C1, C2 → C3 → C4 ──┼────────────────�
 |---|---|---|
 | Feedforward or plain voltage mode on the robot | Feedforward, simulated with its errors | Plain voltage mode was the case that failed for the Pololu robot, with 3.5× less drag |
 | How to select the robot | `--robot` flag plus a `ROBOT` environment variable in config.py | Leaves every existing command working for the Pololu robot |
-| Build HAT library or raw serial | Raw serial, after measuring both | Latency is visible and controllable; the protocol is short (DATASHEET 3.3) |
+| Build HAT library or raw serial | **Decided 2026-11-22:** library for firmware load only, then raw serial with pyserial | Latency is visible and controllable; the protocol is short (DATASHEET 3.3) |
 | Filter | Complementary filter first; Kalman only if the error budget needs it | Simple to run identically in sim and on the robot |
 | Fold L/R into latency or model it | Decide in B4 by experiment | 3 ms against a 10 ms nominal latency may not matter |

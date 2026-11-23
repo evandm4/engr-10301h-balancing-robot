@@ -62,6 +62,33 @@ All parts are owned.
 4. **In the controller, set `plimit 1` and `bias 0` on the Build HAT** (or simulate their effect; section 7.2). The
    HAT's defaults scale and offset every motor command.
 
+**As built (prototype, measured 2026-11-22):**
+
+| Item | Value | How |
+|---|---|---|
+| Total mass, everything on | 440 g | Gram scale |
+| Body mass (total minus both wheels with axles) | **362 g** | 440 − 2 × 39 g; below the 0.45–0.65 kg budget of section 4 |
+| Motor ports | A = left wheel, B = right wheel | One motor is mirrored: check signs at startup (SOFTWARE_PLAN D4) |
+| IMU position | 100 mm above the axle, about 11 mm forward of the vertical line through it | Ruler |
+| IMU board | Vertical, square to the chassis, component side facing forward, mounted upside down (header at the bottom); one in-plane axis along the axle | Which axis and sign: rotate about the axle and watch the gyro (3.4) |
+| Power switch | None; barrel jack only. A GPIO switch is available for arm/stop | — |
+| Height | About 175 mm, wheels on the floor (top of the tower about 140 mm above the axle) | Ruler |
+| COM height, whole robot | 49 mm above the axle | Balance test |
+| COM height, body (`body_com_height`) | **0.060 m** (0.440 × 49 / 0.362; the 49 mm was measured with the wheels on) | Derived |
+| Balance point | About 1° from the chassis's upright, toward the front (eyeballed); 1° is a 1 mm fore-aft COM offset | Calibrate with the IMU (8.4) |
+| Battery | 2S LiPo, about 30–50 g (light; the low COM comes from the motors, whose housings sit at the axle) | Est. |
+| Body pitch inertia (`body_inertia`) | **8.8e-4 kg m²**, ±0.15 | Compound pendulum, wheels off: pivot 136 mm above the axle (76 mm above the body COM), 10 swings in 6.6 s from 120 fps video (T = 0.66 s). Spread: ±0.05 s on the 6.6 s is ±5%; ±5 mm on the COM height is ±9%. A string-hung test (T 1.72 s) was discarded: it measures the string |
+
+The 11 mm forward offset adds an accelerometer term −e θ̇²/g to the tilt error (3.4): 0.001 rad at 1 rad/s,
+negligible next to the ẍ and d θ̈ terms. It needs no model or correction.
+
+**Effect of the lighter body (362 g against 0.55 kg).** The motors' output-side inertia cancels out of the lean gain,
+G = m l g / (m l + (m + m_w) r + J_w / r), so a lighter body changes it little: at l = 0.09 m, 6.46 against
+6.66 m/s² per rad (−3%). The unstable pole barely moves either (6.71 against 6.89 1/s; p × 10 ms ≈ 0.07), because
+the motors' inertia, not the body, sets how fast the robot falls: with no rotor inertia it would be 9.5 1/s. What
+does change is torque margin: stall torque over the gravity torque m g l rises from 1.03 to 1.56. Lighter is
+better here; adding mass high costs margin and gains nothing. COM height (8.1) matters more than mass now.
+
 ## 2. Proposed simulation values
 
 How to represent this robot with the existing `config.py` classes. "Spread" is the `RobustnessSettings.randomize`
@@ -72,9 +99,9 @@ measurement brings it down to. Values marked Est. are placeholders to replace wi
 
 | Field | Value | Spread until measured | Tag | Notes |
 |---|---|---|---|---|
-| `body_mass` | 0.55 kg | ±0.15 | Est. | Everything except the wheels: motors (their housings ride with the body), Pi, both HATs, battery, LEGO frame. Section 4. A gram scale makes the spread ±0.01 |
-| `body_com_height` | 0.09 m | ±0.15 | Est. (design choice) | Set by where the battery sits. Measured to ±5 mm, the spread becomes about ±0.06 |
-| `body_inertia` | 0.0035 kg m² | ±0.30 | Est. | Pitch inertia about the body's own COM. Section 4. A pendulum test brings it to about ±0.05 |
+| `body_mass` | **0.362 kg** (was 0.55 Est.) | ±0.01 | Measured | Everything except the wheels: motors (their housings ride with the body), Pi, both HATs, battery, LEGO frame. 440 g total minus two 39 g wheels (section 1, as built). Not yet in `legobot_config.py` |
+| `body_com_height` | **0.060 m** (was 0.09 Est.) | ±0.08 | Measured (balance test) | Body only: the whole robot's 49 mm (wheels on) scaled by 440/362. ±5 mm measuring error. Not yet in `legobot_config.py` |
+| `body_inertia` | **8.8e-4 kg m²** (was 0.0035 Est.) | ±0.15 | Measured (compound pendulum, section 1) | Pitch inertia about the body's own COM. Most of the uncertainty is the COM height (±5 mm → ±9%); exact video frame counts would bring the timing share from ±5% to about ±1%. Not yet in `legobot_config.py` |
 | `wheel_mass` | 0.078 kg | — | Measured | Pair: 39 g per wheel including its axle |
 | `wheel_radius` | 0.0345 m | — | From diameter | Half the 69 mm diameter (0.044 m for the 88 mm wheel). Approximation for now; the loaded rolling radius (roll ten turns, divide the distance by 20π) can replace it later |
 | `wheel_inertia` | 6.0e-5 kg m² | ±0.20 | Measured mass / Est. | Pair, 0.65 m r² each (tire at the rim), as in the main datasheet. Slightly high, since the axle's few grams sit at the centre. The motor's output-side inertia is separate (`rotor_inertia` below) |
@@ -183,6 +210,7 @@ outer end of the axle if the chassis allows, so the wheel doesn't toe in under l
 | Drive | PWM of either polarity. **Direct PWM mode (default): setpoint −1 to +1 directly sets the output power.** No current sensing or current control | DS |
 | On-board PID | Optional, per port, on a motor's speed or position; not usable for torque control | DS |
 | `plimit` | Global limit on motor drive power, all ports. **Default 0.1** at the serial level; must be raised. (.NET library default 0.7) | DS |
+| Current firmware (buildhat 0.6.0 library) | Uses a per-port `port_plimit` instead of the global `plimit`, and `pwmparams` (the library sends `0.65 0.01`); `bias` is deprecated (the library raises "Bias no longer available"). The protocol PDF above predates this. Confirm on the bench with `version` and `help` | Library source |
 | `bias` | Added to positive and subtracted from negative drive values, to overcome static friction. .NET default 0.3; the protocol's own SPIKE example uses 0.4 | DS |
 | Pi link | UART, 115200 baud 8N1, no flow control, plain text; commands can be abbreviated and chained with `;` | DS |
 | Motor data | Streamed after `select`/`combi`; the SPIKE motors' modes include SPEED (%), POS (°), APOS (°); a combi of modes 1, 2, 3 gives all three in one line | DS |
@@ -246,6 +274,20 @@ Mount the board rigidly: LEGO joints have play.
 
 Runs Linux, so the control loop has scheduling jitter (section 6). On the Pi 3B the full UART is normally assigned to
 Bluetooth, and `/dev/serial0` maps to the mini UART; the Build HAT works on either at 115200 baud.
+
+**This robot's Pi (checked 2026-11-22):** Raspberry Pi OS Bookworm, 64-bit (aarch64), Python 3.11.2, `buildhat`
+0.6.0, git 2.39.5; no SparkFun libraries installed yet. `/dev/serial0 → ttyS0` (the mini UART; Bluetooth holds
+the PL011). `config.txt` has `enable_uart=1` and `dtparam=i2c_arm=on`, I²C at the default 100 kHz. `get_throttled`
+0x0 (checked idle, not under motor load). I²C devices: 0x69 (ICM-20948), 0x5D and 0x73 (the pHAT's motor driver
+and encoder reader at SparkFun's default addresses; both unused).
+
+**How the Build HAT is driven (decided):** the `buildhat` library only initializes: it loads the firmware into the
+HAT's RAM when the HAT reports its bootloader, and on exit it coasts and switches off every port and stops the data
+streams, without resetting the HAT or closing anything that unloads the firmware. Running it in a short separate
+process (`python3 -c "from buildhat import Hat; Hat()"`) therefore leaves the firmware running and the HAT idle. The
+robot code then opens `/dev/serial0` with pyserial and sends commands itself (`version` first: a reply starting
+`Firmware version:` means ready, `BuildHAT bootloader version` means run the init again). The firmware stays loaded
+until the HAT loses power.
 
 ### 3.6 Power options
 
