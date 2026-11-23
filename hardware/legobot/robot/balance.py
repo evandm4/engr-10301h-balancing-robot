@@ -35,7 +35,7 @@ from . import loop_config as lc
 LEFT, RIGHT = hc.LEFT_PORT, hc.RIGHT_PORT
 RAW_COLUMNS = ("tick", "t", "late", "compute", "phase", "imu_t", "imu_read", "pitch_rate_raw", "acc_fwd", "acc_up",
                "tilt", "theta", "gyro", "x", "v", "w_left", "w_right", "pos_left", "pos_right", "age_left",
-               "age_right", "torque", "duty_left", "duty_right", "pitch_ref", "goal", "vin")
+               "age_right", "torque", "duty_left", "duty_right", "pitch_ref", "goal", "vin", "locked", "cmd_phase")
 
 
 # ------------------------------------------------------------------------------- real time (D2) ---
@@ -126,8 +126,13 @@ def calibrate_gyro(imu, clock, dt):
 
 
 def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, drive=True, inject=None,
-        inject_at=1.0, say=print):
-    """The loop. Returns (raw rows, stop reason, arm time from the start or None)."""
+        inject_at=1.0, say=print, line_clock=None, pacer=None):
+    """The loop. Returns (raw rows, stop reason, arm time from the start or None).
+
+    pacer (control.Pacer) sets the tick times: locked to line_clock's HAT data-line grid when it has a lock,
+    else every dt. line_clock is re-estimated from the left port's line arrivals every LINE_UPDATE_TICKS
+    ticks, after that tick's command is out. cmd_phase in the log is when the command write started,
+    in s after the grid's latest line (lower envelope of arrivals)."""
     dt = brain.dt
     c = brain.controller
     rows = []
@@ -143,10 +148,12 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
     t0 = clock.now()
     deadline = t0
     tick = 0
+    pacer = pacer or control.Pacer(dt)
+    locked = False
     say(f"hold the robot upright at its balance point to arm (|pitch| < {lc.ARM_TILT} rad, still for "
         f"{lc.ARM_HOLD_S} s)")
     while True:
-        deadline += dt
+        deadline, locked = pacer.next(deadline, clock.now())
         late = clock.wait_until(deadline)
         t = clock.now()
         if late > dt:             # missed whole periods: re-phase rather than run catch-up ticks
@@ -212,10 +219,12 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
                 still_since = None
             if phase == 0 and t - t0 > lc.ARM_TIMEOUT_S:
                 reason = f"not armed within {lc.ARM_TIMEOUT_S:.0f} s"
+        t_cmd = None
         if phase == 1 and not reason:
             torque, dl, dr = brain.act(state, ex["w_left"], ex["w_right"])
             duties = (dl, dr)
             if drive:
+                t_cmd = clock.now()
                 hat.set_pwm(dl, dr)
             if watchdog is not None:
                 watchdog.kick()
@@ -226,7 +235,11 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
                      None if pl[1] is None else pl[1].pos, None if pr[1] is None else pr[1].pos,
                      ages[0], ages[1], torque if phase else 0.0, duties[0] if phase else 0.0,
                      duties[1] if phase else 0.0, c.pitch_reference() if phase else 0.0,
-                     c.goal_velocity(rel) if phase else 0.0, None if vr is None else vr[1]))
+                     c.goal_velocity(rel) if phase else 0.0, None if vr is None else vr[1], int(locked),
+                     None if t_cmd is None or line_clock is None or line_clock.t_ref is None
+                     else line_clock.phase(t_cmd)))
+        if line_clock is not None and tick % lc.LINE_UPDATE_TICKS == 0:
+            line_clock.update(hat.line_times(LEFT))
         if reason:
             break
         if phase == 1 and t - t_arm >= seconds:
@@ -282,6 +295,9 @@ def write_logs(base, rows, reason, t_arm, meta, notes):
             f"overruns (> {lc.OVERRUN_S * 1e3:.1f} ms late): {sum(1 for x in lates if x > lc.OVERRUN_S)}",
             f"compute (IMU read to command sent): {stats_ms([r[i['compute']] for r in run_rows])}",
             f"IMU read: {stats_ms([r[i['imu_read']] for r in run_rows])}",
+            f"ticks locked to the HAT's lines: {sum(r[i['locked']] for r in run_rows)} of {len(run_rows)}",
+            f"command write phase after the line grid, mod 5 ms: "
+            f"{stats_ms([None if r[i['cmd_phase']] is None else r[i['cmd_phase']] % 0.005 for r in run_rows])}",
             f"motor data age at the tick, left: {stats_ms([r[i['age_left']] for r in run_rows])}",
             f"motor data age at the tick, right: {stats_ms([r[i['age_right']] for r in run_rows])}",
             f"pitch: mean {st.fmean(states[:, 2]):+.4f} sd {st.pstdev(states[:, 2]):.4f} rad; "
@@ -323,6 +339,9 @@ def main(argv=None):
     ap.add_argument("--calibration", default=lc.CALIBRATION_FILE)
     ap.add_argument("--no-calibration", action="store_true", help="pitch zero 0 (no calibration.json)")
     ap.add_argument("--pitch-zero", type=float, help="override the pitch zero (rad), e.g. the tilt on a bench stand")
+    ap.add_argument("--no-line-lock", action="store_true", help="tick on the Pi's clock, not the HAT's line grid")
+    ap.add_argument("--line-phase", type=float, help=f"command write phase after the line grid, s "
+                    f"(default loop_config.LINE_WRITE_PHASE_S = {lc.LINE_WRITE_PHASE_S})")
     ap.add_argument("--inject", choices=("loop", "hang", "stale", "vin", "fault"))
     ap.add_argument("--inject-at", type=float, default=1.0, help="s after arming")
     ap.add_argument("--sim", action="store_true", help="closed loop with the simulator instead of hardware")
@@ -411,6 +430,21 @@ def main(argv=None):
         raise SystemExit(f"gyro calibration failed: {e}")
     brain.estimator.gyro_bias = bias
     notes.update({"gyro bias": bias, "gyro sd at rest": sd, "accel |g| ratio": g})
+
+    # D2: lock the ticks to the HAT's data-line grid (lines have been arriving through the gyro calibration)
+    line_clock = pacer = None
+    if lc.LINE_LOCK and not a.no_line_lock:
+        line_clock = control.LineClock(nominal_period=hat_period)
+        write_phase = lc.LINE_WRITE_PHASE_S if a.line_phase is None else a.line_phase
+        pacer = control.Pacer(dt, line_clock, (write_phase - lc.COMPUTE_LEAD_S) % (0.5 * hat_period))
+        if line_clock.update(hat.line_times(LEFT)):
+            notes["line period"] = f"{line_clock.period * 1e3:.5f} ms ({(line_clock.period / hat_period - 1) * 1e6:+.0f} ppm vs nominal)"
+            notes["line lock"] = f"command write phase {write_phase * 1e3:.2f} ms, tick offset {pacer.offset * 1e3:.2f} ms"
+            print(f"locked to the HAT's lines: period {line_clock.period * 1e3:.4f} ms; {notes['line lock']}")
+        else:
+            notes["line lock"] = "no lock at start (too few lines); ticks on the Pi's clock until it locks"
+    else:
+        notes["line lock"] = "off"
     print(f"gyro bias {bias:+.5f} rad/s (sd {sd:.4f}); |a| = {g:.3f} g")
 
     gc.collect()
@@ -418,7 +452,8 @@ def main(argv=None):
     gc.disable()
     try:
         rows, reason, t_arm = run(hat, imu, clock, brain, safety, a.seconds, watchdog, on_arm,
-                                  drive=not a.no_drive, inject=a.inject, inject_at=a.inject_at)
+                                  drive=not a.no_drive, inject=a.inject, inject_at=a.inject_at,
+                                  line_clock=line_clock, pacer=pacer)
     finally:
         gc.enable()
         if watchdog is not None:

@@ -56,6 +56,7 @@ class BuildHat:
         self._lock = threading.Lock()          # serialises writes
         self._latest = {p: None for p in MOTOR_PORTS}
         self._pair = {p: (None, None) for p in MOTOR_PORTS}   # (previous, latest), replaced in one assignment
+        self._line_times = {p: deque(maxlen=512) for p in MOTOR_PORTS}   # arrival times, for control.LineClock
         self._counts = {p: 0 for p in MOTOR_PORTS}
         self.messages = deque(maxlen=200)      # (t, text) for every non-data line
         self.data_log = [] if log_lines else None   # (t, port, speed, pos, apos) raw HAT signs
@@ -146,6 +147,7 @@ class BuildHat:
                 s = cfg.PORT_SIGN[p]
                 reading = MotorReading(t, s * speed, s * pos, s * apos)
                 self._pair[p] = (self._latest[p], reading)
+                self._line_times[p].append(t)
                 self._latest[p] = reading
                 self._counts[p] += 1
                 if self.data_log is not None:
@@ -164,6 +166,10 @@ class BuildHat:
     # ---- I/O used by the control loop ----
     def latest(self, port):
         return self._latest[port]
+
+    def line_times(self, port):
+        """Arrival times (perf_counter) of the port's last 512 data lines, oldest first (a copy)."""
+        return list(self._line_times[port])
 
     def pair(self, port):
         """(previous, latest) readings of a port, consistent with each other (either may be None)."""

@@ -18,6 +18,7 @@ from . import control
 
 # Same fields as buildhat_serial.MotorReading and imu.ImuReading (not imported: they need pyserial, smbus2, fcntl)
 MotorReading = namedtuple("MotorReading", "t speed pos apos")
+HAT_LINE_PERIOD = 0.0099912     # s by the Pi's clock: the HAT's lines arrive at 100.09 Hz (C3, tick_lock.py)
 ImuReading = namedtuple("ImuReading", "t pitch_rate acc_fwd acc_up acc gyro read_s")
 
 
@@ -35,7 +36,9 @@ class SimWorld:
         self.per_volt = cfg.actuator.model == "voltage"
         self.supply = cfg.actuator.supply_voltage
         self.latency, self.encoder_delay = latency, encoder_delay
-        self.period = 0.010
+        self.period = HAT_LINE_PERIOD          # the HAT's own clock: data lines (and slow-PWM ticks) on it
+        self.now = 0.0                        # the loop's clock (continuous); physics steps on the h grid
+        self._line_times = deque(maxlen=512)
         self.held = True                      # the robot is held still until the loop arms
         self.noise = noise
         self.rng = np.random.default_rng(seed)
@@ -53,18 +56,25 @@ class SimWorld:
         return math.degrees(self.state[0] / self.cfg.robot.wheel_radius - self.state[2])
 
     def advance(self, target):
+        """Physics up to `target` on the loop's clock; encoder lines that have arrived by then are visible.
+        A line is sampled on the HAT's grid and arrives encoder_delay later, plus jitter with --sim-noise
+        (exponential, mean 0.65 ms, as the Pi's reader thread shows)."""
+        self.now = max(self.now, target)
         while self.t + 0.5 * self.h <= target:
             while self._pending and self._pending[0][0] <= self.t + 1e-12:
                 self.drive = self._pending.popleft()[1]
-            if self.t >= self._next_sample - 1e-12:
-                self._encoder.append((self.t + self.encoder_delay, math.floor(self._relative_deg())))
+            while self.t >= self._next_sample - 1e-12:
+                jitter = self.rng.exponential(0.00065) if self.noise else 0.0
+                self._encoder.append((self._next_sample + self.encoder_delay + jitter,
+                                      math.floor(self._relative_deg())))
                 self._next_sample += self.period
-            while self._encoder and self._encoder[0][0] <= self.t + 1e-12:
-                t_arr, pos = self._encoder.popleft()
-                self._pair = (self._pair[1], MotorReading(t_arr, 0, pos, pos))
             if not self.held and abs(self.state[2]) < 1.4:
                 self.state = self._rk4(self.dyn, self.state, self.drive, self.h)
             self.t += self.h
+        while self._encoder and self._encoder[0][0] <= self.now + 1e-12:
+            t_arr, pos = self._encoder.popleft()
+            self._pair = (self._pair[1], MotorReading(t_arr, 0, pos, pos))
+            self._line_times.append(t_arr)
 
     def specific_force(self):
         """(forward, up) specific force at the IMU, as balance_sim.accelerometer_tilt computes it."""
@@ -86,11 +96,12 @@ class SimClock:
         self.w = world
 
     def now(self):
-        return self.w.t
+        return self.w.now
 
     def wait_until(self, deadline):
+        late = max(0.0, self.w.now - deadline)
         self.w.advance(deadline)
-        return max(0.0, self.w.t - deadline)
+        return late
 
 
 class SimImu:
@@ -107,7 +118,7 @@ class SimImu:
             tilt = math.atan2(-f_fwd, f_up) + w.s.pitch_std * n[1] + w.s.pitch_bias
             mag = math.hypot(f_fwd, f_up)
             f_fwd, f_up = -mag * math.sin(tilt), mag * math.cos(tilt)
-        return ImuReading(w.t, rate, f_fwd, f_up, (0.0, f_up, f_fwd), (rate, 0.0, 0.0), 0.0005)
+        return ImuReading(w.now, rate, f_fwd, f_up, (0.0, f_up, f_fwd), (rate, 0.0, 0.0), 0.0005)
 
     def close(self):
         pass
@@ -126,13 +137,16 @@ class SimHat:
     def pair(self, port):
         return self.w._pair
 
+    def line_times(self, port):
+        return list(self.w._line_times)
+
     def latest(self, port):
         return self.w._pair[1]
 
     def set_pwm(self, left, right, drain=False):
         w = self.w
         d = 0.5 * (left + right)
-        w._pending.append((w.t + w.latency, d * w.supply if w.per_volt else d))
+        w._pending.append((w.now + w.latency, d * w.supply if w.per_volt else d))
 
     def coast(self):
         self.w._pending.clear()
@@ -141,7 +155,7 @@ class SimHat:
     emergency_coast = coast
 
     def request_vin(self):
-        self.vin_reading = (self.w.t, self.w.supply)
+        self.vin_reading = (self.w.now, self.w.supply)
 
     def vin(self):
         return self.w.supply

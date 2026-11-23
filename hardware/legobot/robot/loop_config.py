@@ -12,6 +12,19 @@ STALL_LOOP_S = 0.025       # a tick this late trips the loop-stall guard (5 peri
 RT_PRIORITY = 50           # SCHED_FIFO priority asked for; falls back to nice -10, then to normal (logged)
 CPU = 3                    # pin the loop (and the threads it starts) to this core; None to leave it
 
+# ---- lock to the Build HAT's data-line grid (D2) ----
+# In slow PWM the HAT's 10 ms pulse ticks are locked to its 100 Hz data lines (C3, measure/tick_lock.py),
+# so the loop runs two ticks per line period at a fixed phase of that grid (control.LineClock, Pacer) and
+# each command reaches the HAT at the same point before a pulse tick. --no-line-lock runs on the Pi's clock.
+LINE_LOCK = True
+LINE_WRITE_PHASE_S = 0.0065  # s after the grid's line (lower envelope of the left port's arrivals) at which the
+                           # command write starts. robot.lock_sweep, 2026-11-23 (duty 1.0 steps, sawtooth fits): the
+                           # left motor's tick cliff is at 8.3 ms (90% 7.2-8.3), the right's at 10.3 ms (10.2-11.3).
+                           # 6.5 ms is before the earlier one with margin: waits of about 1.8 ms (left) and 3.8 ms
+                           # (right) for the tick, against 0-10 ms each at a random phase. Used mod half a period
+COMPUTE_LEAD_S = 0.0012    # tick start to command write: IMU read + control (1.07-1.30 ms mean, bench 2026-11-23)
+LINE_UPDATE_TICKS = 20     # re-estimate the line grid every 20 ticks (100 ms)
+
 # ---- startup and calibration (D4) ----
 CALIBRATION_FILE = "calibration.json"   # in ~/legobot; written by robot.calibrate
 GYRO_CAL_S = 2.0           # robot still for this long at startup: gyro bias = mean pitch rate

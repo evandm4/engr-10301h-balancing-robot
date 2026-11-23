@@ -148,6 +148,63 @@ def test_too_weak_to_balance_falls_and_trips(tmp_path):
     assert reason.startswith("tilt")
 
 
+def _arrivals(seed, n=900, period=0.0099912, delay=0.0018):
+    """HAT line arrivals as the Pi sees them: jitter (exp, mean 0.65 ms), 2% dropped lines, 1% late by
+    5-20 ms (reader thread), and 5% stamped with the next line's arrival (two lines in one read)."""
+    import random
+    rng = random.Random(seed)
+    arr = []
+    for k in range(n):
+        if rng.random() < 0.02:
+            continue
+        j = rng.expovariate(1 / 0.00065) + (rng.uniform(0.005, 0.02) if rng.random() < 0.01 else 0.0)
+        arr.append(100.0 + k * period + delay + j)
+    for i in range(1, len(arr)):
+        if rng.random() < 0.05:
+            arr[i - 1] = arr[i]
+    return sorted(arr), period, delay
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_line_clock_finds_the_hat_grid(seed):
+    arr, period, delay = _arrivals(seed)
+    clock = control.LineClock()
+    for n in range(60, len(arr) + 1, 20):       # updated every 20 lines, as the loop does (every 100 ms)
+        clock.update(arr[:n])
+    assert abs(clock.period / period - 1) < 60e-6
+    envelope_delay = (clock.t_ref - 100.0) % period
+    assert delay < envelope_delay < delay + 0.0003       # the lower envelope, not the mean (0.65 ms later)
+    assert clock.locked(arr[-1] + 0.01) and not clock.locked(arr[-1] + 1.0)
+
+
+def test_pacer_ticks_twice_per_line_at_the_offset():
+    arr, period, _ = _arrivals(4)
+    clock = control.LineClock()
+    clock.update(arr)
+    pacer = control.Pacer(0.005, clock, offset=0.003)
+    now = prev = arr[-1]
+    ticks = []
+    for _ in range(8):
+        prev, locked = pacer.next(prev, now)
+        ticks.append(prev)
+        assert locked
+    assert all(abs((b - a) - clock.period / 2) < 1e-9 for a, b in zip(ticks, ticks[1:]))
+    assert all(abs(clock.phase(t) % (clock.period / 2) - 0.003) < 1e-6 for t in ticks)
+    assert control.Pacer(0.005).next(1.0, 1.0) == (1.005, False)              # no line clock: free-running
+    assert control.Pacer(0.005, clock).next(prev, prev + 1.0) == (prev + 0.005, False)   # lock stale
+
+
+def test_closed_loop_ticks_are_locked(tmp_path):
+    import csv
+    balance.main(["--sim", "--sim-noise", "--seconds", "5", "--line-phase", "0.004", "--outdir", str(tmp_path)])
+    (raw,) = tmp_path.glob("*_raw.csv")
+    rows = [r for r in csv.DictReader(open(raw)) if r["phase"] == "1"]
+    assert all(r["locked"] == "1" for r in rows)
+    phases = [float(r["cmd_phase"]) % 0.0049956 for r in rows]      # the sim's control takes no time
+    target = (0.004 - lc.COMPUTE_LEAD_S) % 0.0049956
+    assert max(abs(p - target) for p in phases) < 0.0003
+
+
 def test_every_robot_module_compiles():
     """The Pi-only modules (pyserial, smbus2, fcntl) are not imported by the tests above; compile them."""
     import glob

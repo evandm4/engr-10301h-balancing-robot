@@ -173,6 +173,26 @@ log records.
       ±0.087); motion is still caught by the sd check.
   - **Calibration:** the pitch zero in `~/legobot/calibration.json` (−0.010 ± 0.010 rad) came from C3's
     release test, not `calibrate balance`.
+- **Locked to the HAT's line grid (D2), 2026-11-23.** In slow PWM the HAT's pulse ticks are locked to its
+  100 Hz data lines (C3, `measure/tick_lock.py`), so the loop now ticks on the HAT's clock.
+  - **How:** `control.LineClock` estimates the line grid from the left port's arrival times (period from a
+    least-squares fit over 256 lines, smoothed across updates; phase from the lower 10% envelope, since arrivals
+    only ever come late). The driver keeps the last 512 arrivals. `control.Pacer` puts two ticks per line period
+    at a fixed offset. The grid is re-estimated every 20 ticks, after that tick's command is out. Without a
+    lock the loop falls back to the Pi's clock; `--no-line-lock` forces that.
+  - **Lock on the bench:** every tick locked. The data age at each tick of the pair stayed fixed (3.3 and
+    8.1 ms, sd 1.2) over 10 s, with no drift. The line period is 9.9997–9.9999 ms by the Pi's clock
+    (−14 to −21 ppm).
+  - **Choosing the phase (`robot.lock_sweep`):** one wheel stepped to duty 1.0, with the first write at 0–9 ms
+    after the line, 8 trials per offset for the left wheel and 6 for the right, then a sawtooth fit to the
+    delay to motion. The left motor's tick (the cliff) is at 8.3 ms (90% 7.2–8.3), with a base delay of
+    13.3 ms. The right motor's is about 2 ms later, at 10.3 ms (90% 10.2–11.3), with a base of 12.7 ms.
+    `LINE_WRITE_PHASE_S` = 6.5 ms, before the earlier cliff with margin. Each command then waits about 1.8 ms
+    (left) and 3.8 ms (right) for its tick, against 0–10 ms each, 5 ms on average, at a random phase.
+  - **Measured in the loop:** writes start at 6.33 ms (sd 0.06 ms); 0 overruns.
+  - **Tests:** 21 pass. They cover the tracker on synthetic arrivals with jitter, dropped lines, late lines and
+    two-line reads (period within 60 ppm, phase within 0.3 ms), the pacer, and a locked closed loop against the
+    simulator. In the simulator the HAT's lines run on their own 9.9912 ms clock with arrival jitter.
 - **Still to do on hardware (needs hands):** the tilt trip (tilt past 40°), the stall trip (hold a wheel with
   `--bench` and a pitch offset), and `robot.calibrate signs --wheels-off --save` (asks whether each wheel turned
   forward).

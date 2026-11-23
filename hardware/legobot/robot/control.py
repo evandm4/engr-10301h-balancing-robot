@@ -208,6 +208,85 @@ class Brain:
         return torque, max(-cap, min(cap, dl)), max(-cap, min(cap, dr))
 
 
+# ------------------------------------------------------------------------- HAT line clock (D2) ---
+class LineClock:
+    """The Build HAT's 100 Hz data-line grid, estimated from line arrival times (perf_counter s).
+
+    The HAT samples and sends a port's line on its own clock (about 880 ppm off the Pi's), and in slow PWM
+    its pulse ticks are locked to the same grid (C3, tick_lock.py). Each arrival is the grid time plus a
+    transit delay plus non-negative jitter (sd about 0.65 ms; up to 20 ms when the reader thread is late),
+    so the grid is the LOWER envelope of the arrivals:
+
+        period  = least-squares slope of arrival time against line index (index by rounding to the
+                  previous period estimate, so dropped lines don't shift it);
+        t_ref   = the `envelope` quantile of arrival - period x index, placed at the newest line's index.
+
+    locked() is true once `min_lines` lines are in and the newest line at the last update is under `stale` s
+    old: longer than the loop's update interval (100 ms), since stale motor data trips the run at 50 ms anyway
+    (Safety). Pure Python
+    and cheap enough (about 0.2 ms for 256 lines on the Pi 3B) to update every few ticks."""
+
+    def __init__(self, nominal_period=0.010, window=256, min_lines=50, envelope=0.10, stale=0.25):
+        self.period = nominal_period
+        self.window, self.min_lines, self.envelope, self.stale = window, min_lines, envelope, stale
+        self.smoothing = 0.1                  # each window's slope is good to about +-55 ppm (jitter sd 0.65 ms)
+        self.t_ref = None
+        self.newest = None
+        self.n = 0
+
+    def update(self, arrivals):
+        a = arrivals[-self.window:]
+        if len(a) < self.min_lines:
+            return False
+        p = self.period
+        ref = a[0] if self.t_ref is None else self.t_ref
+        # index each line by rounding against the median residual, so one late line can't shift the indices
+        k0 = [round((t - ref) / p) for t in a]
+        r0 = sorted(t - ref - p * k for k, t in zip(k0, a))
+        ref += r0[len(r0) // 2]
+        ks = [round((t - ref) / p) for t in a]
+        n = len(a)
+        km = sum(ks) / n
+        tm = sum(a) / n
+        skk = sum((k - km) ** 2 for k in ks)
+        if skk <= 0:
+            return False
+        period = sum((k - km) * (t - tm) for k, t in zip(ks, a)) / skk
+        if not (0.98 * p < period < 1.02 * p):
+            return False                      # nonsense (e.g. a stream restart): keep the old estimate
+        if self.t_ref is not None:            # after the first lock, smooth the period across updates
+            period = p + self.smoothing * (period - p)
+        resid = sorted(t - period * k for k, t in zip(ks, a))
+        base = resid[min(n - 1, int(self.envelope * n))]
+        self.period, self.t_ref, self.newest, self.n = period, base + period * ks[-1], a[-1], n
+        return True
+
+    def locked(self, now):
+        return self.t_ref is not None and now - self.newest < self.stale
+
+    def phase(self, t):
+        """Time since the latest grid point at or before t (0 <= phase < period)."""
+        return (t - self.t_ref) % self.period
+
+
+class Pacer:
+    """The loop's tick times. Locked: two ticks per HAT line period, at `offset` s after each half-period
+    point of the LineClock grid, so every command lands at the same phase of the HAT's pulse ticks.
+    Unlocked (no lock yet, or lines stale): ticks every dt, as before."""
+
+    def __init__(self, dt, line_clock=None, offset=0.0):
+        self.dt, self.lc, self.offset = dt, line_clock, offset
+
+    def next(self, prev, now):
+        lc = self.lc
+        if lc is None or not lc.locked(now):
+            return prev + self.dt, False
+        half = 0.5 * lc.period
+        base = lc.t_ref + self.offset
+        m = math.ceil((prev + 0.5 * half - base) / half)   # the first grid tick more than half a tick after prev
+        return base + m * half, True
+
+
 # --------------------------------------------------------------------------------------- safety ---
 class Safety:
     """The per-tick trips of D3 that need no clock of their own. check() returns a reason string or None.
