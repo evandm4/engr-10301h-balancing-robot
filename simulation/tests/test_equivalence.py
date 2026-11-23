@@ -555,3 +555,43 @@ def test_slow_pwm_per_robot_parameters_match_separate_reference_runs():
         expected = ref.run(HAND_TUNED, pitch, seed)
         np.testing.assert_allclose(run.cost[i], ref.score(expected), rtol=COST_RTOL)
         np.testing.assert_array_equal(run.final_state[i], expected.states[-1])
+
+
+# ---- Slow PWM with the HAT's pulse-density modulation (pwm_tick) ----
+PDM_CONFIGS = {
+    "pdm_10ms": replace(SLOW_PWM_CONFIGS["feedforward"], pwm_tick=0.01),
+    "pdm_10ms_latency_between_steps": replace(SLOW_PWM_CONFIGS["latency_between_steps"], pwm_tick=0.01),
+    "pdm_one_step_ticks": replace(SLOW_PWM_CONFIGS["no_feedforward"], pwm_tick=SHORT.dt),
+}
+
+
+@pytest.mark.parametrize("name", list(PDM_CONFIGS))
+def test_pdm_costs_and_trajectories_match_reference(name):
+    config = PDM_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    assert batched.robot.pwm_tick == config.pwm_tick > 0
+    gains = _candidates(n=12, seed=3)
+    result = batched.evaluate_population(gains)
+    for i, g in enumerate(gains):
+        expected = ref.evaluate_gains(g)
+        np.testing.assert_allclose(result.costs[i], expected.costs, rtol=COST_RTOL)
+        assert result.n_fell[i] == expected.n_fell
+    pitch, seed = ref.scenarios()[1]
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), schedule=batched.schedule, record=True)
+    for i, g in enumerate(gains):
+        expected = ref.run(g, pitch, seed)
+        np.testing.assert_array_equal(run.states[:len(expected.t), i], expected.states)
+
+
+def test_pdm_differs_from_averaged_slow_pwm():
+    gains = _candidates(n=6, seed=5)
+    averaged = BatchEvaluator(SLOW_PWM_CONFIGS["feedforward"], SPACE).evaluate_population(gains).costs
+    pulsed = BatchEvaluator(PDM_CONFIGS["pdm_10ms"], SPACE).evaluate_population(gains).costs
+    assert not np.allclose(averaged, pulsed, rtol=1e-6)
+
+
+def test_pdm_tick_must_be_whole_steps():
+    with pytest.raises(ValueError):
+        BatchEvaluator(replace(PDM_CONFIGS["pdm_10ms"], pwm_tick=SHORT.dt * 1.5), SPACE).evaluate_population(
+            _candidates(n=4))

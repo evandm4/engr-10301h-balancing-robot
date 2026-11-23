@@ -47,7 +47,7 @@ from batch_sim import BatchRobot
 # (the robot code's fixed constants: the mismatch comes from randomizing the true ones).
 RANDOMIZABLE = tuple(f.name for f in fields(BatchRobot) if f.name not in (
     "dc_motor", "n_motors", "gravity", "voltage_mode", "voltage_feedforward",
-    "voltage_feedforward_gain", "slow_pwm",
+    "voltage_feedforward_gain", "slow_pwm", "pwm_tick",
     "est_torque_constant", "est_resistance", "est_gear_efficiency"))
 ROBOT_PARAM_FIELDS = ("body_mass", "body_com_height", "body_inertia", "wheel_mass", "wheel_radius",
                       "wheel_inertia", "rotor_inertia", "max_torque", "wheel_friction", "coulomb_friction",

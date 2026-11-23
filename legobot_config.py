@@ -71,12 +71,13 @@ ROBOT = RobotConfig(
 # on a scale, within 4%) with back-EMF damping proportional to duty (spin-up tau = J / (d a k + b) at every
 # duty). Model "slow_pwm" (balance_sim.SlowPwmActuator, SOFTWARE_PLAN B1b) is that mode; the robot code
 # sends the duty from its inverse. It reproduces the bench's steady no-load speeds within 1% at duty >= 0.2
-# (the right wheel's extra friction shows below that) and the spin-up curves (DATASHEET 8.7). Open: at duty
-# 0.1-0.15 the bench speed ripples at about 10 Hz, which suggests a long PWM period the averaged model
-# leaves out (robot/measure/pwm_probe.py checks whether each new command restarts it). The HAT can't measure current, so only a = eta k / R is
+# (the right wheel's extra friction shows below that) and the spin-up curves (DATASHEET 8.7). Slow PWM is
+# pulse-density modulation: 10 ms full-voltage pulses at about 100 x duty per second, with a running sum
+# (pulse_imu: one pulse per 199 ms at duty 0.05), modelled by pwm_tick_s. The HAT can't measure current, so only a = eta k / R is
 # identified, not R and eta separately: R stays at 4.4 ohm (the current limit never binds) and eta carries a.
 ACTUATOR = ActuatorConfig(
     model="slow_pwm",
+    pwm_tick_s=0.010,              # s: the HAT's pulse-density tick (DATASHEET 8.7); a whole number of dt steps
     voltage_feedforward=True,
     gear_ratio=1.0,                # lumped: constants below are output-referred
     torque_constant=0.348,         # V s/rad, output k_e, measured: 0.352 / 0.344 left / right (LEGO's sheet 0.355;

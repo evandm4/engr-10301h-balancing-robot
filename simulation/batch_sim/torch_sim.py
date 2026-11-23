@@ -29,7 +29,7 @@ from typing import Optional
 import numpy as np
 
 from .controller import LQR_STATE_GAINS, cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
-from .physics import accelerometer_tilt, derivatives, rk4_step, voltage_drive
+from .physics import accelerometer_tilt, derivatives, pdm_update, pwm_steps_per_tick, rk4_step, voltage_drive
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule, encoder_steps, per_sim_ring_size
 from .simulate import BatchResult
@@ -114,6 +114,11 @@ class TorchSimulator:
         self.ring = torch.zeros(R + 1, B, dtype=dtype, device=device)
         self.voltage = bool(robot.voltage_mode)
         self.ring_drive = torch.zeros(R + 1, B, dtype=dtype, device=device) if self.voltage else None   # drive voltages
+        # Slow PWM's pulse-density ticks (simulate_batch): the running sum and this tick's duty, per simulation.
+        self.pdm_steps = pwm_steps_per_tick(robot.pwm_tick, spec.dt)
+        self.pdm_total = zeros() if self.pdm_steps else None
+        self.pdm_out = zeros() if self.pdm_steps else None
+        self.pdm_offset = self.schedule.steps_per_control // 2   # as simulate_batch
         # IMU mode: the complementary filter's estimate, and the drive/torque applied during the previous step.
         self.estimate, self.applied = zeros(), zeros()
         tau = spec.filter_time_constant
@@ -235,6 +240,14 @@ class TorchSimulator:
         self.velocity_error.add_(torch.where(alive, (x_dot - self.goal_per_step[self.step]) ** 2 * dt, 0.0))
 
         force = self.force_per_step[self.step][0] if self.has_push else 0.0   # a lookup, so graphs can replay it
+        if self.pdm_steps:
+            # Branch-free so CUDA graphs can replay it: compute the tick update every step, keep it on ticks.
+            since = self.step - self.pdm_offset
+            is_tick = (since >= 0) & (since % self.pdm_steps == 0)
+            total, out = pdm_update(self.pdm_total, drive, xp)
+            self.pdm_total.copy_(torch.where(is_tick, total, self.pdm_total))
+            self.pdm_out.copy_(torch.where(is_tick, out, self.pdm_out))
+            drive = self.pdm_out
         if spec.imu:
             self.applied.copy_(drive)
         stepped = rk4_step(self.robot, self.state, drive, dt, xp, force)
@@ -255,7 +268,7 @@ class TorchSimulator:
 
     def _reset(self):
         for buffer in (*self.state, self.pitch_integral, self.velocity_integral, self.setpoint, self.in_flight,
-                       self.estimate, self.applied, self.ring, *([self.counts] if self.encoder else []), *([self.ring_drive] if self.voltage else []), self.pitch_error, self.effort, self.velocity_error, self.step, self.tick):
+                       self.estimate, self.applied, self.ring, *([self.counts] if self.encoder else []), *([self.ring_drive] if self.voltage else []), *([self.pdm_total, self.pdm_out] if self.pdm_steps else []), self.pitch_error, self.effort, self.velocity_error, self.step, self.tick):
             buffer.zero_()
         self.state[2].copy_(self.start_pitch)
         self.alive.fill_(True)

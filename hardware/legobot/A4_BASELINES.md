@@ -245,3 +245,28 @@ The same measured robot and unchanged scenario, with the actuator model switched
 No baseline falls. With constant errors the slow-PWM driver's torque error scales with the command and adds no
 drag at zero command, so the robust scores are steadier: the model-based PID's worst dev run falls from 8.2
 to 3.5, and the LQR goes from 3 falls to none. The hand-tuned gains still need redoing for the measured robot.
+
+## Slow PWM with pulse-density modulation (B1b, 2026-11-23)
+
+`legobot_config` now models the HAT's measured pulse-density modulation (`pwm_tick_s` = 10 ms; DATASHEET 8.7),
+with the ticks starting half a control period after the control samples. Same robot and scenario:
+
+| Baseline | Plain (seeds 1–3, 9 runs) | Robust, train seeds 1–50 (150) | Robust, dev seeds 5000–5049 (150) | Dev worst | Dev chaos |
+|---|---|---|---|---|---|
+| Hand-tuned PID (6, 2, 0.5, 0.3) | 39.94 (0) | 72.63 (3) | 98.41 (6) | 1812 | 62 |
+| Model-based PID (1.55, 1.75, 0.14, 0.52) | 3.755 (0) | 3.625 (0) | 3.587 (0) | 4.84 | 0.13 |
+| Cost-matched LQR | 241.2 (1) | 244.3 (18) | 304.2 (23) | 1860 | 180 |
+
+The model-based PID barely notices the pulses: its cost goes from 2.05 to 3.6, with no falls. The LQR and the
+hand-tuned PID now fall. The LQR is also very sensitive to the **phase** of the HAT's ticks relative to the
+control loop, which is not synchronized on the robot. Nine plain runs, with the ticks starting 0 / 2.5 / 5 /
+7.5 ms after a control sample (reference engine), cost (falls):
+
+| Baseline | Averaged | 0 ms | 2.5 ms (configured) | 5 ms | 7.5 ms |
+|---|---|---|---|---|---|
+| Model-based PID | 2.2 (0) | 3.8 (0) | 3.8 (0) | 3.7 (0) | 3.7 (0) |
+| Cost-matched LQR | 28.1 (0) | 445 (2) | 241 (1) | 29.1 (0) | 26.5 (0) |
+| Hand-tuned PID | 27.6 (0) | 38.4 (0) | 39.9 (0) | 32.5 (0) | 31.9 (0) |
+
+So the tick phase should be drawn per scenario in robust scoring (SOFTWARE_PLAN B1b, next step) before
+any final tuning. Until then, gains tuned with this config are tuned for one phase.

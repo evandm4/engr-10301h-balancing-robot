@@ -137,6 +137,9 @@ class ActuatorConfig:
     # than 1 helped some controllers and hurt others (hardware/legobot/A4_BASELINES.md), so it
     # is a robot-code setting to tune with each controller's gains.
     voltage_feedforward_gain: float = 1.0
+    # "slow_pwm" only: the Build HAT's pulse-density tick (SlowPwmActuator.pwm_tick); 0 = the averaged
+    # model. Must be a whole number of physics steps.
+    pwm_tick_s: float = 0.0
 
     # Pololu 20.4:1 Metal Gearmotor 25Dx65L mm HP 6V with 48 CPR encoder (item 4803), run
     # from a 2S LiPo. Constants derived from Pololu's catalogue numbers (DATASHEET.md 3.1, 5.1).
@@ -181,7 +184,7 @@ class ActuatorConfig:
         if self.model == "slow_pwm":
             motor = self.build_motor_params()
             return SlowPwmActuator(motor, motor, max_torque=robot.max_torque, feedforward=self.voltage_feedforward,
-                                   feedforward_gain=self.voltage_feedforward_gain)
+                                   feedforward_gain=self.voltage_feedforward_gain, pwm_tick=self.pwm_tick_s)
         raise ValueError(f"Unknown actuator model {self.model!r}; use 'ideal', 'dc_motor', 'voltage' or 'slow_pwm'")
 
     @property
@@ -709,6 +712,7 @@ class ProjectConfig:
             voltage_feedforward=self.actuator.voltage_feedforward,
             voltage_feedforward_gain=self.actuator.voltage_feedforward_gain,
             slow_pwm=self.actuator.model == "slow_pwm",
+            pwm_tick=self.actuator.pwm_tick_s if self.actuator.model == "slow_pwm" else 0.0,
         )
 
     def snapshot(self) -> dict:

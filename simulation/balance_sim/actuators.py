@@ -214,10 +214,25 @@ class SlowPwmActuator(VoltageModeActuator):
     linear voltage mode, a mismatch in the constants gives a torque error proportional
     to the command, not a drag at zero command.
 
-    Not modeled: the PWM ripple itself (the period is short against the robot's
-    dynamics), regeneration through the diodes above the no-load speed, and the
+    pwm_tick > 0 turns on the HAT's pulse-density modulation (measured, DATASHEET 8.7):
+    the simulation loop (balance_sim.simulate; batch_sim) cuts time into ticks of
+    pwm_tick, and at each tick a running sum adds the duty in effect; the tick is a
+    full-voltage pulse (duty +-1) when |sum| >= 0.5, and the sum moves 1 toward zero;
+    otherwise the motor coasts (duty 0). The quantized duty then goes to torque() (see
+    pdm_update). pwm_tick = 0 is the averaged model.
+
+    Not modeled: regeneration through the diodes above the no-load speed, and the
     `minpwm` 0.01 cut-off.
     """
+
+    def __init__(self, motor: MotorParams, estimate: Optional[MotorParams] = None,
+                 max_torque: Optional[float] = None, feedforward: bool = True, feedforward_gain: float = 1.0,
+                 pwm_tick: float = 0.0):
+        super().__init__(motor, estimate, max_torque=max_torque, feedforward=feedforward,
+                         feedforward_gain=feedforward_gain)
+        if pwm_tick < 0:
+            raise ValueError("pwm_tick must be non-negative")
+        self.pwm_tick = pwm_tick
 
     def drive(self, command: float, measured_wheel_speed: float) -> float:
         e = self.estimate
@@ -242,3 +257,23 @@ class SlowPwmActuator(VoltageModeActuator):
         i = (math.copysign(m.supply_voltage, command) - m.torque_constant * rotor_speed) / m.resistance
         i = float(_clip(i, -m.current_limit, m.current_limit))
         return m.n_motors * m.gear_ratio * m.gear_efficiency * m.torque_constant * abs(command) * i
+
+
+def pdm_update(total: float, duty: float):
+    """One tick of the Build HAT's pulse-density modulation (SlowPwmActuator.pwm_tick).
+
+    Returns (new running sum, this tick's duty: -1, 0 or +1). batch_sim.physics.pdm_update
+    does the same arithmetic on arrays."""
+    total = total + _clip(duty, -1.0, 1.0)
+    out = (1.0 if total >= 0.5 else 0.0) - (1.0 if total <= -0.5 else 0.0)
+    return total - out, out
+
+
+def pwm_steps_per_tick(pwm_tick: float, dt: float) -> int:
+    """Physics steps per PDM tick; the tick must be a whole number of steps (0 when off)."""
+    if pwm_tick <= 0:
+        return 0
+    n = int(round(pwm_tick / dt))
+    if n < 1 or abs(n * dt - pwm_tick) > 1e-9:
+        raise ValueError(f"pwm_tick {pwm_tick} s is not a whole number of physics steps of {dt} s")
+    return n

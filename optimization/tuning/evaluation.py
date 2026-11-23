@@ -71,6 +71,7 @@ class EvalConfig:
     # With voltage_estimate: the Build HAT's slow-PWM mode (balance_sim.SlowPwmActuator; the robot code
     # sends a duty) instead of the linear voltage mode.
     slow_pwm: bool = False
+    pwm_tick: float = 0.0                      # slow PWM's pulse-density tick, s; 0 = averaged
 
 
 @dataclass
@@ -96,9 +97,12 @@ class Evaluator:
         if c.motor is None:
             actuator = None
         elif c.voltage_estimate is not None:
-            cls = SlowPwmActuator if c.slow_pwm else VoltageModeActuator
-            actuator = cls(c.motor, c.voltage_estimate, max_torque=c.params.max_torque,
-                           feedforward=c.voltage_feedforward, feedforward_gain=c.voltage_feedforward_gain)
+            kwargs = dict(max_torque=c.params.max_torque, feedforward=c.voltage_feedforward,
+                          feedforward_gain=c.voltage_feedforward_gain)
+            if c.slow_pwm:
+                actuator = SlowPwmActuator(c.motor, c.voltage_estimate, pwm_tick=c.pwm_tick, **kwargs)
+            else:
+                actuator = VoltageModeActuator(c.motor, c.voltage_estimate, **kwargs)
         else:
             actuator = DCMotorActuator(c.motor, max_torque=c.params.max_torque)
         return Planar2D(c.params, fall_angle=c.fall_angle, actuator=actuator)

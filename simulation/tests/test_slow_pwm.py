@@ -70,3 +70,36 @@ def test_constant_mismatch_gives_an_error_proportional_to_the_command():
     r1 = act.torque(act.drive(0.1, 0.0), 0.0) / 0.1
     r2 = act.torque(act.drive(0.2, 0.0), 0.0) / 0.2
     assert r1 == pytest.approx(r2, rel=1e-12)
+
+
+
+# ---- pulse-density modulation (pwm_tick) ----
+from balance_sim import pdm_update, pwm_steps_per_tick  # noqa: E402
+
+
+@pytest.mark.parametrize("duty", [0.05, 0.1, 0.37, -0.2, 1.0, -1.0, 0.0])
+def test_pdm_delivers_the_duty_on_average_within_one_pulse(duty):
+    total, delivered = 0.0, 0.0
+    for n in range(1, 401):
+        total, out = pdm_update(total, duty)
+        assert out in (-1.0, 0.0, 1.0)
+        delivered += out
+        assert abs(delivered - n * duty) <= 0.5 + 1e-9
+    assert delivered / 400 == pytest.approx(duty, abs=1 / 400)
+
+
+def test_pdm_pulse_rate_is_100_times_duty_at_10_ms_ticks():
+    """The measured pattern (DATASHEET 8.7): duty 0.05 gives one 10 ms pulse every 200 ms."""
+    total, outs = 0.0, []
+    for _ in range(100):
+        total, out = pdm_update(total, 0.05)
+        outs.append(out)
+    starts = [i for i, o in enumerate(outs) if o]
+    assert all(b - a == 20 for a, b in zip(starts, starts[1:]))
+
+
+def test_pwm_steps_per_tick():
+    assert pwm_steps_per_tick(0.0, 0.0025) == 0
+    assert pwm_steps_per_tick(0.01, 0.0025) == 4
+    with pytest.raises(ValueError):
+        pwm_steps_per_tick(0.01, 0.003)

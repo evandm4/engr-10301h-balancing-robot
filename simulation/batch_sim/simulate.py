@@ -24,7 +24,7 @@ import math
 import numpy as np
 
 from .controller import cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
-from .physics import accelerometer_tilt, derivatives, rk4_step, voltage_drive
+from .physics import accelerometer_tilt, derivatives, pdm_update, pwm_steps_per_tick, rk4_step, voltage_drive
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule, encoder_steps, per_sim_ring_size
 
@@ -107,6 +107,10 @@ def simulate_batch(
     has_bias = bool(np.any(pitch_bias))
     ring_drive = np.zeros_like(ring) if voltage else None   # drive voltages, same slots as ring
     drive = zeros() if voltage else None
+    pdm_steps = pwm_steps_per_tick(robot.pwm_tick, dt)   # slow PWM's pulse-density ticks; 0 = averaged
+    pdm_total = zeros() if pdm_steps else None
+    pdm_offset = spc // 2   # ticks start half a control period after the samples (balance_sim.simulate)
+    applied = zeros()      # what reached the motor during the last step (drive or torque, or its PDM pulse)
     estimate = None   # the IMU complementary filter's pitch estimate; set on the first tick
     alpha = spec.filter_time_constant / (spec.filter_time_constant + control_dt)   # as ComplementaryFilter
     one_minus_alpha = 1.0 - alpha
@@ -136,7 +140,7 @@ def simulate_batch(
                 x_dot = x_dot + spec.velocity_std * n[0]
             if spec.imu:
                 # Accelerations at the sample: the drive in effect just before this tick, the push now.
-                derivs = derivatives(robot, state, drive if voltage else torque, np, float(schedule.force_per_step[k]))
+                derivs = derivatives(robot, state, applied, np, float(schedule.force_per_step[k]))
                 if noise is not None:
                     gyro = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
                     tilt_offset = spec.pitch_std * n[1] + pitch_bias
@@ -196,7 +200,11 @@ def simulate_batch(
         effort += np.where(alive, torque**2 * dt, 0.0)
         velocity_error += np.where(alive, (state[1] - goal_per_step[k]) ** 2 * dt, 0.0)
 
-        stepped = rk4_step(robot, state, drive if voltage else torque, dt, np, float(schedule.force_per_step[k]))
+        if not pdm_steps:
+            applied = drive if voltage else torque
+        elif k >= pdm_offset and (k - pdm_offset) % pdm_steps == 0:
+            pdm_total, applied = pdm_update(pdm_total, drive)
+        stepped = rk4_step(robot, state, applied, dt, np, float(schedule.force_per_step[k]))
         state = tuple(np.where(alive, new, old) for new, old in zip(stepped, state))
         just_fell = alive & (np.abs(state[2]) > spec.fall_angle)
         fall_time[just_fell] = (k + 1) * dt

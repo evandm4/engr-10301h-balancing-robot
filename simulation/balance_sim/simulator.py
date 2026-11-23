@@ -6,6 +6,7 @@ from typing import Callable, Optional
 
 import numpy as np
 
+from .actuators import pdm_update, pwm_steps_per_tick
 from .controllers import Controller
 from .dynamics import Dynamics
 from .sensors import SensorNoise
@@ -91,6 +92,14 @@ def simulate(
     pending = deque()   # (time the command takes effect, torque command, drive signal)
     torque = 0.0        # torque command currently reaching the actuator
     drive = 0.0         # what the actuator gets for it (the same, but a voltage-mode driver's volts)
+    applied = 0.0       # what reaches the motor this step: drive, or its pulse-density quantization
+    pdm_steps = pwm_steps_per_tick(getattr(getattr(dynamics, "actuator", None), "pwm_tick", 0.0), dt)
+    pdm_total = 0.0
+    # The HAT's ticks are not synchronized with the robot's loop. Starting them half a control period
+    # after the control samples keeps every sample off a pulse edge (a tick at the sample itself would
+    # make the IMU see either the ending or the starting pulse, and that choice alone moves the scores).
+    pdm_offset = getattr(getattr(dynamics, "actuator", None), "pwm_tick_offset_steps", None)
+    pdm_offset = spc // 2 if pdm_offset is None else pdm_offset   # the attribute: a reference-only sensitivity knob
     to_drive = getattr(dynamics, "drive", None)
     imu = sensor is not None and getattr(sensor, "needs_accelerations", False)
     encoder = sensor is not None and getattr(sensor, "has_encoder", False)
@@ -107,7 +116,7 @@ def simulate(
             if sensor is None:
                 measured = state
             elif imu:   # accelerations at the sample: the drive in effect just before t, the push at t
-                derivs = dynamics.derivatives(state, drive, *push)
+                derivs = dynamics.derivatives(state, applied, *push)
                 measured = sensor.measure(state, (derivs[1], derivs[3]))
             else:
                 measured = sensor.measure(state)
@@ -115,9 +124,13 @@ def simulate(
             pending.append((t + latency, command, command if to_drive is None else to_drive(command, measured)))
         while pending and pending[0][0] <= t + 1e-12:
             _, torque, drive = pending.popleft()
+        if not pdm_steps:
+            applied = drive
+        elif k >= pdm_offset and (k - pdm_offset) % pdm_steps == 0:
+            pdm_total, applied = pdm_update(pdm_total, drive)
         torques.append(torque)
         references.append(controller.pitch_reference())
-        state = _rk4_step(dynamics, state, drive, dt, *push)
+        state = _rk4_step(dynamics, state, applied, dt, *push)
         ts.append((k + 1) * dt)
         states.append(state.copy())
         if dynamics.is_fallen(state):

@@ -46,13 +46,15 @@ class BatchRobot:
     # Slow PWM (SlowPwmActuator; needs voltage_mode): the command is a duty in [-1, 1] from
     # physics.voltage_drive, and the motor drives only in the on-time. A plain bool.
     slow_pwm: bool = False
+    # Slow PWM's pulse-density tick, s (SlowPwmActuator.pwm_tick); 0 = averaged. A plain number.
+    pwm_tick: float = 0.0
     # Constant pitch-estimate offset, rad. None: the SimSpec's scalar. A (B,) array gives each simulation
     # its own (drawn per scenario by robust.sample_robots through randomize_range).
     pitch_bias: object = None
 
     @classmethod
     def from_params(cls, params, motor=None, voltage_estimate=None, voltage_feedforward=True,
-                    voltage_feedforward_gain=1.0, slow_pwm=False, **overrides) -> "BatchRobot":
+                    voltage_feedforward_gain=1.0, slow_pwm=False, pwm_tick=0.0, **overrides) -> "BatchRobot":
         """Build from balance_sim's RobotParams and (optional) MotorParams.
 
         motor=None means the ideal actuator, as in the CPU code. Keyword
@@ -79,9 +81,12 @@ class BatchRobot:
                           voltage_feedforward_gain=voltage_feedforward_gain,
                           est_torque_constant=voltage_estimate.torque_constant,
                           est_resistance=voltage_estimate.resistance,
-                          est_gear_efficiency=voltage_estimate.gear_efficiency, slow_pwm=bool(slow_pwm))
+                          est_gear_efficiency=voltage_estimate.gear_efficiency, slow_pwm=bool(slow_pwm),
+                          pwm_tick=float(pwm_tick) if slow_pwm else 0.0)
         elif slow_pwm:
             raise ValueError("slow_pwm needs a voltage_estimate")
+        if pwm_tick and not slow_pwm:
+            raise ValueError("pwm_tick needs slow_pwm")
         values.update(overrides)
         return cls(**values)
 

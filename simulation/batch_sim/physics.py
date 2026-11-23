@@ -137,3 +137,25 @@ def rk4_step(robot: BatchRobot, state, torque, dt: float, xp=np, force=0.0):
     k4 = derivatives(robot, _axpy(state, dt, k3), torque, xp, force)
     h = dt / 6.0
     return tuple(s + h * (a + 2 * b + 2 * c + d) for s, a, b, c, d in zip(state, k1, k2, k3, k4))
+
+
+def pdm_update(total, duty, xp=np):
+    """One tick of the HAT's pulse-density modulation over (B,) arrays (balance_sim.pdm_update):
+    returns (new running sum, this tick's duty: -1, 0 or +1). Both comparisons are exact, so the
+    result is bit-identical to the reference for any backend."""
+    total = total + xp.clip(duty, -1.0, 1.0)
+    if xp is np:
+        out = (total >= 0.5).astype(total.dtype) - (total <= -0.5).astype(total.dtype)
+    else:
+        out = (total >= 0.5).to(total.dtype) - (total <= -0.5).to(total.dtype)
+    return total - out, out
+
+
+def pwm_steps_per_tick(pwm_tick: float, dt: float) -> int:
+    """Physics steps per PDM tick (balance_sim.pwm_steps_per_tick); 0 when off."""
+    if pwm_tick <= 0:
+        return 0
+    n = int(round(pwm_tick / dt))
+    if n < 1 or abs(n * dt - pwm_tick) > 1e-9:
+        raise ValueError(f"pwm_tick {pwm_tick} s is not a whole number of physics steps of {dt} s")
+    return n
