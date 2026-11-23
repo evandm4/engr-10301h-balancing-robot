@@ -226,13 +226,18 @@ class BuildHat:
     PWM_CMD = "po {l};set {a};po {r};set {b}"
 
     def coast(self):
-        self._write(b"port 0 ; coast ; port 1 ; coast\r")
+        """Both motors coast. Doesn't wait for the UART to drain: tcdrain would block the caller 10-14 ms
+        (DATASHEET 6) after the bytes are already on their way, as it did the loop's trip tick."""
+        self._write(b"port 0 ; coast ; port 1 ; coast\r", drain=False)
 
     def emergency_coast(self):
-        """Coast from another thread (the loop's watchdog) without taking the write lock, which a stuck
-        loop may hold. The leading CR ends any half-written command first."""
+        """Coast without taking the write lock, which a stuck loop or an interrupted write may hold: from the
+        watchdog thread and from signal handlers. The leading CR ends any half-written command first."""
         import os
-        os.write(self.ser.fileno(), b"\rport 0 ; coast ; port 1 ; coast\r")
+        try:
+            os.write(self.ser.fileno(), b"\rport 0 ; coast ; port 1 ; coast\r")
+        except (OSError, ValueError, AttributeError, serial.SerialException):
+            pass                               # port already closed
 
     def vin(self):
         lines = self.command("vin", 0.2)
@@ -242,11 +247,17 @@ class BuildHat:
         return None
 
     def close(self):
+        """Coast, stop the data streams, and close. Waits at most 0.5 s for the write lock (a stuck write may
+        hold it), then coasts with the lock-free write instead."""
         if self.ser is None or not self.ser.is_open:
             return
         try:
-            self.coast()
-            self._write(b"port 0 ; select ; port 1 ; select\r")
+            if self._lock.acquire(timeout=0.5):
+                self._lock.release()
+                self.coast()
+                self._write(b"port 0 ; select ; port 1 ; select\r")
+            else:
+                self.emergency_coast()
         finally:
             self._stop.set()
             if self._reader is not None:
@@ -255,7 +266,13 @@ class BuildHat:
 
 
 def install_safety(hat):
-    """Coast both motors on normal exit, uncaught exception, SIGINT and SIGTERM."""
+    """Coast both motors on normal exit, uncaught exception, SIGINT, SIGTERM and SIGHUP.
+
+    The signal handler coasts with the lock-free write and exits; the full close (lock, stream stop) runs at
+    exit, after the exception has unwound out of any `with self._lock`. A handler must never take the write
+    lock: Python runs it in the main thread between bytecodes, possibly inside _write, or inside an earlier
+    handler that holds the lock, and a threading.Lock taken twice by one thread waits forever. That is how a
+    closed SSH terminal hung a run (SIGHUP, then run_safe.sh's SIGTERM 5 ms later; 2026-11-23)."""
     def _coast_quietly():
         try:
             hat.close()
@@ -263,9 +280,12 @@ def install_safety(hat):
             pass
 
     atexit.register(_coast_quietly)
+    stopping = []
 
     def _on_signal(signum, frame):
-        _coast_quietly()
+        if not stopping:                       # a second signal while handling the first: just exit
+            stopping.append(signum)
+            hat.emergency_coast()
         raise SystemExit(128 + signum)
 
     signal.signal(signal.SIGTERM, _on_signal)

@@ -212,10 +212,18 @@ log records.
   - **Line period:** −14 to −21 ppm before a battery swap, +226 to +404 ppm after the next power-ups, as
     estimated over each run. The HAT's line timing is evidently not crystal-fixed; the lock tracks it, and every
     tick of every run was locked.
-- **Open:**
-  - When the SSH terminal running `calibrate signs` closed at its prompt, the process hung (futex wait), and
-    SIGINT and SIGTERM didn't stop it; only SIGKILL did. The motors were already coasting.
-  - One tick per run takes 11–12 ms of compute (the rest about 1.3 ms); not yet traced.
+- **Fixed after the hands-on checks:**
+  - **Hang when the SSH terminal closes:**
+    - **Cause:** `install_safety`'s signal handler called `hat.close()`, which takes the driver's write
+      lock. A closed terminal sends SIGHUP, and `run_safe.sh` forwards SIGTERM a few ms later. The second
+      handler ran inside the first while the first held the lock, and a `threading.Lock` taken twice by one
+      thread waits forever. Every later signal blocked the same way. Reproduced 3 of 3 on the Pi with
+      SIGHUP and SIGTERM 5 ms apart (futex wait, deaf to SIGINT); a plain hangup exited 4 of 4.
+    - **Fix:** the handler coasts with the lock-free write, and a second signal only exits. `close()` waits
+      at most 0.5 s for the lock and otherwise coasts lock-free.
+    - **Result:** 5 of 5 now exit.
+  - **The 11–12 ms tick:** it was always the trip tick, where the loop's `hat.coast()` waited for the UART to
+    drain (tcdrain, DATASHEET 6). `coast()` no longer drains; the trip tick now takes under 1 ms.
 
 ### Phase E: Retune and compare
 
