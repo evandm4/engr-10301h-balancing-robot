@@ -760,7 +760,19 @@ keeps a running sum, so the delivered impulse tracks the command to within one p
 Nothing falls. With the measured 10 ms ticks the pitch jitters 3–4× more and the model-based PID's cost rises
 65% (still the best baseline); the other two change by −9 to +18%. **Slow PWM is usable for balancing.** The
 averaged model overstates how well a controller will do, so the pulse-density actuator should go into the
-engines before final tuning (E2). The bench's ripple sizes are only matched to within about 1 rad/s by
+engines before final tuning (E2).
+
+*The pulses are locked to the data stream* (`tick_lock`, duty 0.05, 60 pulses over 12 s, with 1200 data
+lines). The pulse period is 199.828 ± 0.022 ms, against 20 × the data-line period of 199.825 ms: equal
+within 15 ± 110 ppm. Both run 880 ppm off the Pi's clock (a line every 9.9912 ms by the Pi), so an
+independent clock would have drifted visibly. Relative to the earliest line arrivals, the detected pulse
+onsets sit at 0.47 of a tick (4.7 ms), with no trend. The spread (onset detection, sd 2.7 ms) and the
+unknown lag between the electrical pulse and the vibration envelope leave the tick's exact offset uncertain
+by a few ms. So the robot loop can lock to the line arrivals (SOFTWARE_PLAN D2) and fix the tick phase. The
+best offset is one where each command's last byte lands just before a tick, which saves up to one tick
+(5 ms on average) of latency. Find it on the robot by sweeping the offset with `latency`. (The script's own
+summary said "not locked": with 2 ms of timestamp jitter on the lines, its grid fit mis-indexed them. The
+analysis above fits the lines by index.) The bench's ripple sizes are only matched to within about 1 rad/s by
 either model; stiction between pulses is the likely remainder.
 
 *Backlash* (`backlash`, left motor, beam still on, rocked by hand with the motor in slow PWM at duty 0): the
