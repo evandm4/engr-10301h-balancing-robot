@@ -232,6 +232,7 @@ def test_velocity_integrator_limited_by_lean_cap(dyn):
     assert ctrl.pitch_pid.setpoint == pytest.approx(0.05)
 
 
+@pololu_only   # its 0.3 m/s step and gains are sized for the Pololu robot
 def test_cascade_still_balances_under_harder_conditions():
     from balance_sim import step_profile
     real = CONFIG.build_dynamics()   # the configured DC motor

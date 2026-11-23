@@ -31,7 +31,14 @@ from .robust import RobustnessConfig, sample_delay_steps, sample_robots
 
 def spec_from_eval_config(config: EvalConfig, controller: str = "cascaded") -> SimSpec:
     s = config.sensor
+    imu = {}
+    if getattr(s, "needs_accelerations", False):   # IMUSensor: gyro + accelerometer + complementary filter
+        # The filter runs at the controller's period, config.control_dt (as Evaluator does), whatever
+        # control_dt the sensor was built with: variations of an EvalConfig change only control_dt.
+        # gravity: the batch engine uses the robot's (BatchRobot.gravity), as the config sets the sensor's from it
+        imu = dict(imu=True, imu_height=s.imu_height, filter_time_constant=s.filter_time_constant)
     return SimSpec(
+        **imu,
         controller=controller,
         goal=step_profile(config.goal_steps, config.goal_transition),
         disturbance=push_profile(config.pushes) if config.pushes else None,

@@ -28,7 +28,7 @@ from typing import Optional
 import numpy as np
 
 from .controller import LQR_STATE_GAINS, cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
-from .physics import rk4_step, voltage_drive
+from .physics import accelerometer_tilt, derivatives, rk4_step, voltage_drive
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule, per_sim_ring_size
 from .simulate import BatchResult
@@ -53,7 +53,8 @@ class TorchSimulator:
         max_delay_steps: Optional[int] = None,
     ):
         """noise: (n_ticks, 4, n_seeds) table from schedule.noise_table, or None for no random noise
-        (the spec's gyro bias still applies, as in simulate_batch).
+        (the spec's gyro bias still applies, as in simulate_batch). With spec.imu the controller
+        sees the complementary filter's estimate and the gyro, as in simulate_batch.
         dtype: torch.float32 (default; fast) or torch.float64 (for checking against NumPy).
         record: also keep the full state history on the GPU (n_steps x B x 4 values).
         n_gains: gains per simulation. Cascaded: always 5 (a 4-gain set gets kv_i = 0).
@@ -110,6 +111,11 @@ class TorchSimulator:
         self.ring = torch.zeros(R + 1, B, dtype=dtype, device=device)
         self.voltage = bool(robot.voltage_mode)
         self.ring_drive = torch.zeros(R + 1, B, dtype=dtype, device=device) if self.voltage else None   # drive voltages
+        # IMU mode: the complementary filter's estimate, and the drive/torque applied during the previous step.
+        self.estimate, self.applied = zeros(), zeros()
+        tau = spec.filter_time_constant
+        self.alpha = tau / (tau + spec.control_dt)   # Python floats, as ComplementaryFilter
+        self.one_minus_alpha = 1.0 - self.alpha
         self.alive = zeros(torch.bool)
         self.fall_time = zeros()
         self.pitch_error, self.effort, self.velocity_error = zeros(), zeros(), zeros()
@@ -127,6 +133,23 @@ class TorchSimulator:
         if self.noise is not None:
             n = self.noise[self.tick][0][:, self.seed_index]    # (3, B): velocity, pitch, pitch-rate noise
             x_dot = x_dot + spec.velocity_std * n[0]
+        if spec.imu:
+            # Accelerations at the sample: the drive in effect just before this tick, the push now.
+            force = self.force_per_step[self.step][0] if self.has_push else 0.0
+            derivs = derivatives(self.robot, self.state, self.applied, xp, force)
+            if self.noise is not None:
+                gyro = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
+                tilt_offset = spec.pitch_std * n[1] + spec.pitch_bias
+            else:   # the biases still apply, with zero noise
+                gyro = theta_dot + spec.pitch_rate_bias
+                tilt_offset = spec.pitch_bias
+            tilt = accelerometer_tilt(theta, theta_dot, derivs[1], derivs[3],
+                                      spec.imu_height, self.robot.gravity, xp) + tilt_offset
+            filtered = self.alpha * (self.estimate + spec.control_dt * gyro) + self.one_minus_alpha * tilt
+            estimate = self.torch.where(self.tick == 0, tilt, filtered)   # the first tick starts from the tilt
+            self.estimate.copy_(estimate)
+            theta, theta_dot = self.estimate, gyro
+        elif self.noise is not None:
             theta = theta + (spec.pitch_std * n[1] + spec.pitch_bias)
             theta_dot = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
         elif spec.pitch_rate_bias or spec.pitch_bias:   # deterministic, so they need no table
@@ -180,6 +203,8 @@ class TorchSimulator:
         self.velocity_error.add_(torch.where(alive, (x_dot - self.goal_per_step[self.step]) ** 2 * dt, 0.0))
 
         force = self.force_per_step[self.step][0] if self.has_push else 0.0   # a lookup, so graphs can replay it
+        if spec.imu:
+            self.applied.copy_(drive)
         stepped = rk4_step(self.robot, self.state, drive, dt, xp, force)
         for buffer, new in zip(self.state, stepped):
             buffer.copy_(torch.where(alive, new, buffer))
@@ -198,7 +223,7 @@ class TorchSimulator:
 
     def _reset(self):
         for buffer in (*self.state, self.pitch_integral, self.velocity_integral, self.setpoint, self.in_flight,
-                       self.ring, *([self.ring_drive] if self.voltage else []), self.pitch_error, self.effort, self.velocity_error, self.step, self.tick):
+                       self.estimate, self.applied, self.ring, *([self.ring_drive] if self.voltage else []), self.pitch_error, self.effort, self.velocity_error, self.step, self.tick):
             buffer.zero_()
         self.state[2].copy_(self.start_pitch)
         self.alive.fill_(True)

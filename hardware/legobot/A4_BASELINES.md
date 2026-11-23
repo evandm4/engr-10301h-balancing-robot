@@ -1,10 +1,38 @@
 # A4: baselines on the LEGO robot
 
 SOFTWARE_PLAN A4, 2026-11-22. The LEGO robot (`legobot_config.py`) on its derived scenario (A3,
-`legobot_scenario.py`), with the voltage-mode driver since B1. These are the reference points the
+`legobot_scenario.py`), with the voltage-mode driver since B1 and the simulated IMU since B2. These are the reference points the
 LEGO tuning runs (E1, E2) are compared against. Re-score with `python hardware/legobot/legobot_baselines.py`.
 
-## Scores with the voltage-mode driver (B1; current)
+## Scores with the simulated IMU (B2; current)
+
+Since B2 the controller sees the robot code's complementary-filter estimate (τ = 0.5 s) from a simulated
+gyro and accelerometer (10 cm above the axle), instead of true pitch plus white noise. Voltage-mode
+driver as in B1; gains and scenario unchanged.
+
+| Baseline | Plain (seeds 1–3, 9 runs) | Robust, train seeds 1–50 (150) | Robust, dev seeds 5000–5049 (150) | Dev worst |
+|---|---|---|---|---|
+| Hand-tuned PID | 2.336 (0) | 2.659 (0) | 2.615 (0) | 4.09 |
+| Model-based PID | 1.823 (0) | 14.27 (1) | 26.46 (2) | 1826 |
+| Cost-matched LQR | 1.511 (0) | 1.774 (0) | 1.767 (0) | 3.57 |
+
+The plain costs rose 7–52% (the PIDs most): the accelerometer reads acceleration as tilt, so the
+estimate lags and leans during every speed change. The LQR's falls went from 8 to 0 and the model-based
+PID's from 3 to 2: the old model's 0.005 rad of white pitch noise per tick was harsher than a filtered
+estimate (the accelerometer's 0.0135 rad per sample leaves about 1e-3 rad after the filter).
+
+Sensitivity on the plain scenario (mean cost, no falls in any case; reference engine):
+
+| Sensor | Hand-tuned | Model-based | LQR |
+|---|---|---|---|
+| Noise model (B1) | 1.584 | 1.196 | 1.408 |
+| IMU, accel noise 0.0135, τ 0.5 s, d 0.10 m (configured) | 2.336 | 1.823 | 1.511 |
+| Accel noise at the datasheet's 0.00135 | 2.330 | 1.817 | 1.509 |
+| τ = 1.0 s | 2.908 | 2.125 | 1.647 |
+| τ = 0.25 s | 2.109 | 2.068 | 1.528 |
+| IMU at d = 0.05 m | 2.291 | 1.807 | 1.511 |
+
+## Scores with the voltage-mode driver (B1, superseded by B2)
 
 Since B1 the LEGO robot uses the voltage-mode driver with back-EMF feedforward, and the scenario was
 re-derived for it (pushes 0.90 N, tilts up to 0.14 rad, pitch_limit_rad 0.14; legobot_config.py).

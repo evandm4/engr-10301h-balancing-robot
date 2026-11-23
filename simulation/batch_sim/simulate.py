@@ -22,7 +22,7 @@ from typing import Optional
 import numpy as np
 
 from .controller import cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
-from .physics import rk4_step, voltage_drive
+from .physics import accelerometer_tilt, derivatives, rk4_step, voltage_drive
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule, per_sim_ring_size
 
@@ -60,6 +60,8 @@ def simulate_batch(
     noise       (n_ticks, 4, n_seeds) from schedule.noise_table, or None for no random noise. The
                 spec's gyro bias applies either way, as in SensorNoise with every std at 0;
                 for a perfect sensor, also use a spec with pitch_rate_bias = 0.
+    IMU mode (spec.imu): the controller sees the complementary filter's pitch estimate and the
+                gyro rate (see balance_sim.sensors.IMUSensor); gravity is the robot's.
     seed_index  (B,) which noise column each simulation uses (required with noise)
     schedule    pass a prebuilt one to skip rebuilding it for every batch
     record      also return the full state history (memory: n_steps x B x 4 values)
@@ -101,6 +103,9 @@ def simulate_batch(
     voltage = robot.voltage_mode
     ring_drive = np.zeros_like(ring) if voltage else None   # drive voltages, same slots as ring
     drive = zeros() if voltage else None
+    estimate = None   # the IMU complementary filter's pitch estimate; set on the first tick
+    alpha = spec.filter_time_constant / (spec.filter_time_constant + control_dt)   # as ComplementaryFilter
+    one_minus_alpha = 1.0 - alpha
     alive = np.ones(B, dtype=bool)
     fall_time = np.full(B, np.nan, dtype=dtype)
     pitch_error, effort, velocity_error = zeros(), zeros(), zeros()
@@ -114,6 +119,23 @@ def simulate_batch(
             if noise is not None:
                 n = noise[j][:, seed_index]
                 x_dot = x_dot + spec.velocity_std * n[0]
+            if spec.imu:
+                # Accelerations at the sample: the drive in effect just before this tick, the push now.
+                derivs = derivatives(robot, state, drive if voltage else torque, np, float(schedule.force_per_step[k]))
+                if noise is not None:
+                    gyro = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
+                    tilt_offset = spec.pitch_std * n[1] + spec.pitch_bias
+                else:   # the biases still apply, with zero noise
+                    gyro = theta_dot + spec.pitch_rate_bias
+                    tilt_offset = spec.pitch_bias
+                tilt = accelerometer_tilt(theta, theta_dot, derivs[1], derivs[3],
+                                          spec.imu_height, robot.gravity, np) + tilt_offset
+                if j == 0:
+                    estimate = tilt
+                else:
+                    estimate = alpha * (estimate + control_dt * gyro) + one_minus_alpha * tilt
+                theta, theta_dot = estimate, gyro
+            elif noise is not None:
                 theta = theta + (spec.pitch_std * n[1] + spec.pitch_bias)
                 theta_dot = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
             elif spec.pitch_rate_bias or spec.pitch_bias:   # deterministic, so they need no table

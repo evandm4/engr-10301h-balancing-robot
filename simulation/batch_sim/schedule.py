@@ -52,6 +52,13 @@ class SimSpec:
     pitch_rate_bias: float = 0.0
     position_std: float = 0.0
     velocity_std: float = 0.0
+    # IMU sensor (balance_sim.sensors.IMUSensor, SOFTWARE_PLAN B2): a gyro and an accelerometer
+    # through a complementary filter replace the noisy true pitch. In IMU mode pitch_std and
+    # pitch_bias are the accelerometer tilt's noise and offset, and pitch_rate_std and
+    # pitch_rate_bias the gyro's. The filter runs at control_dt; gravity is the robot's.
+    imu: bool = False
+    imu_height: float = 0.0             # m, accelerometer above the axle along the body axis
+    filter_time_constant: float = 0.5   # s
 
     def __post_init__(self):
         if self.latency < 0:

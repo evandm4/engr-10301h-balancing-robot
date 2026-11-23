@@ -11,7 +11,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from balance_sim import SensorNoise
+from balance_sim import IMUSensor, SensorNoise
 from batch_sim import BatchRobot, simulate_batch
 from batch_tuning import BatchEvaluator, decode_units, robot_from_eval_config
 from config import CONFIG
@@ -247,3 +247,98 @@ def test_float32_stays_close_to_float64():
     assert stable.sum() >= 12
     assert (r32.n_fell[stable] == 0).all()
     np.testing.assert_allclose(r32.costs[stable], r64.costs[stable], rtol=1e-3)
+
+
+# ---- IMU sensor: gyro + accelerometer through the complementary filter (SOFTWARE_PLAN B2) ----
+
+def _imu_config(voltage=False, base=SHORT):
+    """Noisy, biased IMU with the accelerometer above the axle, and pushes so the force path runs."""
+    sensor = IMUSensor(pitch_std=0.004, pitch_bias=0.01, pitch_rate_std=0.02, pitch_rate_bias=0.015,
+                       velocity_std=0.01, imu_height=0.1, filter_time_constant=0.5,
+                       control_dt=base.control_dt, gravity=base.params.gravity, seed=0)
+    config = replace(base, sensor=sensor, pushes=((0.5, 0.1, 1.5), (1.4, 0.05, -2.0)))
+    # voltage=False forces current mode even when the robot's config is already voltage mode (legobot)
+    return _voltage_config(True, config) if voltage else replace(config, voltage_estimate=None)
+
+
+IMU_CONFIGS = {
+    "current": _imu_config(False),
+    "voltage": _imu_config(True),
+    "current_latency_between_steps": _imu_config(False, replace(SHORT, latency=0.0037)),
+}
+
+
+@pytest.mark.parametrize("name", list(IMU_CONFIGS))
+def test_imu_costs_and_falls_match_reference(name):
+    config = IMU_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    assert batched.spec.imu and batched.robot.voltage_mode == (name == "voltage")
+    gains = _candidates()
+    result = batched.evaluate_population(gains)
+    for i, g in enumerate(gains):
+        expected = ref.evaluate_gains(g)
+        np.testing.assert_allclose(result.costs[i], expected.costs, rtol=COST_RTOL)
+        assert result.n_fell[i] == expected.n_fell
+    assert 0 < result.n_fell.sum() < result.costs.size
+
+
+@pytest.mark.parametrize("name", list(IMU_CONFIGS))
+def test_imu_trajectories_match_reference_exactly(name):
+    config = IMU_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    gains = _candidates(n=12, seed=1)
+    pitch, seed = ref.scenarios()[1]
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), schedule=batched.schedule, record=True)
+    for i, g in enumerate(gains):
+        expected = ref.run(g, pitch, seed)
+        n = len(expected.t)
+        np.testing.assert_array_equal(run.states[:n, i], expected.states)
+        assert run.fell[i] == expected.fell
+
+
+def test_imu_changes_the_run_and_voltage_estimate_differs_from_true_motor():
+    gains = _candidates(n=6, seed=5)
+    plain = BatchEvaluator(replace(IMU_CONFIGS["current"], sensor=SensorNoise(pitch_std=0.004, pitch_bias=0.01,
+                           pitch_rate_std=0.02, pitch_rate_bias=0.015, velocity_std=0.01, seed=0)), SPACE)
+    imu = BatchEvaluator(IMU_CONFIGS["current"], SPACE)
+    assert not np.allclose(plain.evaluate_population(gains).costs, imu.evaluate_population(gains).costs, rtol=1e-6)
+
+
+def test_imu_without_noise_table_applies_biases_like_the_reference():
+    """A zero-noise IMU with biases: the no-table branch must match the reference (noise 0, biases kept)."""
+    config = replace(IMU_CONFIGS["current"], sensor=IMUSensor(
+        pitch_bias=0.01, pitch_rate_bias=0.015, imu_height=0.1, control_dt=SHORT.control_dt,
+        gravity=SHORT.params.gravity, seed=0))
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    gains = _candidates(n=8, seed=3)
+    pitch, seed = ref.scenarios()[0]
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, schedule=batched.schedule, record=True)
+    for i, g in enumerate(gains):
+        expected = ref.run(g, pitch, seed)
+        np.testing.assert_array_equal(run.states[:len(expected.t), i], expected.states)
+
+
+@pytest.mark.parametrize("voltage", [False, True])
+def test_imu_per_simulation_delay_matches_reference(voltage):
+    config = _imu_config(voltage)
+    batched = BatchEvaluator(config, SPACE)
+    gains = _candidates(n=6, seed=2)
+    pitch, seed = batched.scenarios()[0]
+    delays = np.array([0, 1, 3, 4, 7, 12])
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), delay_steps=delays, record=True)
+    for i, (g, d) in enumerate(zip(gains, delays)):
+        ref = Evaluator(replace(config, latency=d * config.dt), SPACE)
+        expected = ref.run(g, pitch, seed)
+        np.testing.assert_array_equal(run.states[:len(expected.t), i], expected.states)
+
+
+def test_imu_filter_runs_at_the_eval_configs_control_period():
+    """Both evaluators run the filter at EvalConfig.control_dt, not the sensor's own control_dt."""
+    config = replace(IMU_CONFIGS["current"], sensor=replace(IMU_CONFIGS["current"].sensor, control_dt=0.01))
+    batched = BatchEvaluator(config, SPACE).evaluate_gains(HAND_TUNED)
+    expected = BatchEvaluator(IMU_CONFIGS["current"], SPACE).evaluate_gains(HAND_TUNED)
+    np.testing.assert_array_equal(batched.costs, expected.costs)
+    ref = Evaluator(config, SPACE).evaluate_gains(HAND_TUNED)
+    np.testing.assert_allclose(batched.costs, ref.costs, rtol=COST_RTOL)

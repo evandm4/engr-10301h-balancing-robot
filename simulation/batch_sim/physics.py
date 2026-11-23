@@ -57,6 +57,17 @@ def voltage_drive(robot: BatchRobot, command, x_dot, theta_dot, xp=np):
     return xp.clip(volts, -robot.supply_voltage, robot.supply_voltage)
 
 
+def accelerometer_tilt(theta, theta_dot, x_ddot, theta_ddot, height, gravity, xp=np):
+    """The tilt an accelerometer `height` above the axle reads (balance_sim.sensors.accelerometer_tilt),
+    over (B,) arrays, with the same operation order."""
+    s, c = xp.sin(theta), xp.cos(theta)
+    a_x = x_ddot + height * (theta_ddot * c - theta_dot**2 * s)
+    f_z = height * (-theta_ddot * s - theta_dot**2 * c) + gravity
+    f_forward = a_x * c - f_z * s
+    f_up = a_x * s + f_z * c
+    return xp.arctan2(-f_forward, f_up)
+
+
 def derivatives(robot: BatchRobot, state, torque, xp=np, force=0.0):
     """d(state)/dt for every robot in the batch. See Planar2D.derivatives.
 

@@ -77,16 +77,24 @@ ACTUATOR = ActuatorConfig(
 )
 
 # ---------------------------------------------------------------- SENSOR ---
-# DATASHEET 2.3. Gyro and pitch noise kept at config.py's conservative values until
-# measured on the chassis (8.4); the encoder values are for 360 counts per turn at
-# r = 34.5 mm, differenced 10 ms apart (the motors report at 100 Hz).
+# DATASHEET 2.3 and 3.4. The ICM-20948's gyro and accelerometer are simulated and fused by
+# the robot code's complementary filter (model "imu", SOFTWARE_PLAN B2), so the pitch the
+# controller sees carries the accelerometer's acceleration error (low-passed) and the gyro
+# bias turns into an offset of bias x tau. In this model pitch_std and pitch_bias are the
+# accelerometer tilt's. Noise kept at 10x the datasheet for both sensors (gyro 0.02 rad/s
+# against 2.2e-3; accelerometer tilt 0.0135 rad against 1.35e-3 at DLPF cfg 3) until
+# measured on the chassis (8.4): LEGO frames rattle. The encoder values are for 360 counts
+# per turn at r = 34.5 mm, differenced 10 ms apart (the motors report at 100 Hz).
 SENSOR = SensorConfig(
-    pitch_std=0.005,               # rad
-    pitch_bias=0.015,              # rad: board-level accelerometer offset and LEGO mount play
-    pitch_rate_std=0.02,           # rad/s
-    pitch_rate_bias=0.01,          # rad/s, after calibrating at boot
+    model="imu",
+    pitch_std=0.0135,              # rad, accelerometer tilt per sample (raw, before the filter)
+    pitch_bias=0.015,              # rad, accelerometer offset after calibration, and LEGO mount play
+    pitch_rate_std=0.02,           # rad/s, gyro
+    pitch_rate_bias=0.01,          # rad/s, gyro, after calibrating at boot
     position_std=0.0010,           # m: +/-3 deg including gearbox slack
     velocity_std=0.025,            # m/s
+    imu_height=0.10,               # m above the axle, Est. (the HAT stack's height; DATASHEET 3.4)
+    filter_time_constant=0.5,      # s: 1 s raised the baselines' cost 15-25% more, 0.25 s was mixed (B2)
 )
 
 # ---------------------------------------------------------------- TIMING ---

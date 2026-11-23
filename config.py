@@ -49,6 +49,7 @@ from balance_sim import (
     PIDController,
     Planar2D,
     RobotParams,
+    IMUSensor,
     SensorNoise,
     VoltageModeActuator,
     cost,
@@ -192,16 +193,25 @@ class SensorConfig:
     position_std: float = 0.0005       # m (quantization is 0.065 mm; this also stands in for gear backlash)
     velocity_std: float = 0.02         # m/s (differencing encoder counts 5 ms apart gives 0.018)
 
-    def build(self, seed: int = 0) -> SensorNoise:
-        return SensorNoise(
-            pitch_std=self.pitch_std,
-            pitch_bias=self.pitch_bias,
-            pitch_rate_std=self.pitch_rate_std,
-            pitch_rate_bias=self.pitch_rate_bias,
-            position_std=self.position_std,
-            velocity_std=self.velocity_std,
-            seed=seed,
-        )
+    # Which model. "noise": the controller sees true pitch plus pitch_std noise and the
+    # pitch_bias offset (SensorNoise). "imu": a gyro and an accelerometer at imu_height above
+    # the axle, fused by the robot code's complementary filter (IMUSensor; SOFTWARE_PLAN B2);
+    # then pitch_std and pitch_bias are the ACCELEROMETER tilt's noise per sample and offset.
+    model: str = "noise"
+    imu_height: float = 0.10           # m, "imu" only
+    filter_time_constant: float = 0.5  # s, "imu" only: complementary-filter crossover 1/(2 pi tau)
+
+    def build(self, seed: int = 0, gravity: float = 9.81, control_dt: float = 0.005) -> SensorNoise:
+        """gravity and control_dt matter only for the "imu" model (ProjectConfig.build_sensor passes them)."""
+        common = dict(pitch_std=self.pitch_std, pitch_bias=self.pitch_bias, pitch_rate_std=self.pitch_rate_std,
+                      pitch_rate_bias=self.pitch_rate_bias, position_std=self.position_std,
+                      velocity_std=self.velocity_std, seed=seed)
+        if self.model == "noise":
+            return SensorNoise(**common)
+        if self.model == "imu":
+            return IMUSensor(**common, imu_height=self.imu_height, filter_time_constant=self.filter_time_constant,
+                             control_dt=control_dt, gravity=gravity)
+        raise ValueError(f"Unknown sensor model {self.model!r}; use 'noise' or 'imu'")
 
 
 # ---------------------------------------------------------------- TIMING ---
@@ -581,7 +591,7 @@ class ProjectConfig:
         return Planar2D(robot, fall_angle=self.timing.fall_angle_rad, actuator=actuator)
 
     def build_sensor(self, seed: int = 0) -> SensorNoise:
-        return self.sensor.build(seed)
+        return self.sensor.build(seed, gravity=self.robot.gravity, control_dt=self.timing.control_dt_s)
 
     def build_pitch_controller(self, gains=None) -> PIDController:
         """A pitch-only PID (no velocity loop) with the configured limits.

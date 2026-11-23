@@ -92,19 +92,28 @@ def simulate(
     torque = 0.0        # torque command currently reaching the actuator
     drive = 0.0         # what the actuator gets for it (the same, but a voltage-mode driver's volts)
     to_drive = getattr(dynamics, "drive", None)
+    imu = sensor is not None and getattr(sensor, "needs_accelerations", False)
+    if imu and abs(sensor.control_dt - control_dt) > 1e-12:
+        raise ValueError(f"the IMU filter runs at {sensor.control_dt} s but the controller at {control_dt} s")
     fell, fall_time = False, None
 
     for k in range(n_steps):
         t = k * dt
+        push = () if disturbance is None else (disturbance(t),)
         if k % spc == 0:
-            measured = state if sensor is None else sensor.measure(state)
+            if sensor is None:
+                measured = state
+            elif imu:   # accelerations at the sample: the drive in effect just before t, the push at t
+                derivs = dynamics.derivatives(state, drive, *push)
+                measured = sensor.measure(state, (derivs[1], derivs[3]))
+            else:
+                measured = sensor.measure(state)
             command = controller.update(measured, control_dt)
             pending.append((t + latency, command, command if to_drive is None else to_drive(command, measured)))
         while pending and pending[0][0] <= t + 1e-12:
             _, torque, drive = pending.popleft()
         torques.append(torque)
         references.append(controller.pitch_reference())
-        push = () if disturbance is None else (disturbance(t),)
         state = _rk4_step(dynamics, state, drive, dt, *push)
         ts.append((k + 1) * dt)
         states.append(state.copy())

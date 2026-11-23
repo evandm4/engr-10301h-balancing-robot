@@ -11,7 +11,7 @@ After tuning, score the winner again on seeds it never saw (validation) to check
 it hasn't overfit.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -44,7 +44,7 @@ class EvalConfig:
 
     params: RobotParams
     motor: Optional[MotorParams]               # None = ideal actuator
-    sensor: SensorNoise                        # seed is overridden per scenario
+    sensor: SensorNoise                        # or IMUSensor; seed is overridden per scenario
     latency: float                             # s
     duration: float                            # s per scenario
     dt: float                                  # physics step
@@ -122,15 +122,9 @@ class Evaluator:
         """Simulate one scenario with any balance_sim Controller (e.g. an LQRController)."""
         c = self.config
         dyn = self.dynamics()
-        sensor = SensorNoise(
-            pitch_std=c.sensor.pitch_std,
-            pitch_bias=c.sensor.pitch_bias,
-            pitch_rate_std=c.sensor.pitch_rate_std,
-            pitch_rate_bias=c.sensor.pitch_rate_bias,
-            position_std=c.sensor.position_std,
-            velocity_std=c.sensor.velocity_std,
-            seed=seed,
-        )
+        sensor = replace(c.sensor, seed=seed)   # a fresh SensorNoise (or IMUSensor) with this seed
+        if getattr(sensor, "needs_accelerations", False):
+            sensor = replace(sensor, control_dt=c.control_dt)   # the IMU filter runs at the controller's period
         return simulate(
             dyn,
             controller,

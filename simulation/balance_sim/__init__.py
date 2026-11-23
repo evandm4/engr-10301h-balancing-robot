@@ -2,7 +2,7 @@
 
 from .params import RobotParams
 from .actuators import Actuator, DCMotorActuator, IdealActuator, MotorParams, VoltageModeActuator
-from .sensors import SensorNoise
+from .sensors import ComplementaryFilter, IMUSensor, SensorNoise, accelerometer_tilt
 from .dynamics import Dynamics
 from .planar2d import Planar2D, critical_pitch_gain, linearize
 from .controllers import CascadedPIDController, Controller, PIDController, push_profile, step_profile
@@ -21,6 +21,9 @@ __all__ = [
     "VoltageModeActuator",
     "MotorParams",
     "SensorNoise",
+    "IMUSensor",
+    "ComplementaryFilter",
+    "accelerometer_tilt",
     "Dynamics",
     "Planar2D",
     "critical_pitch_gain",

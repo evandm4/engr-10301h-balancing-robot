@@ -255,7 +255,8 @@ def test_batched_costs_and_falls_match_reference(name):
         runs = [ref.run_controller(_controller(config, g), pitch, seed) for pitch, seed in ref.scenarios()]
         np.testing.assert_allclose(result.costs[i], [ref.score(r) for r in runs], rtol=COST_RTOL)
         assert result.n_fell[i] == sum(r.fell for r in runs)
-    assert 0 < result.n_fell.sum() < result.costs.size
+    if CONFIG.name == "pololu":   # the cases are sized so some runs fall on the Pololu robot; all may on others
+        assert 0 < result.n_fell.sum() < result.costs.size
 
 
 @pytest.mark.parametrize("name", ["default", "latency_between_steps"])

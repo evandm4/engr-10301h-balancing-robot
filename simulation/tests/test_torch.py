@@ -19,6 +19,7 @@ torch = pytest.importorskip("torch")
 from batch_sim import BatchRobot, cascaded_update, derivatives, limited_integral, simulate_batch, torch_ops
 from batch_sim.torch_sim import TorchSimulator
 from batch_tuning import BatchEvaluator, decode_units, differential_evolution_search, robot_from_eval_config
+from balance_sim import IMUSensor
 from config import CONFIG
 
 HAS_CUDA = torch.cuda.is_available()
@@ -286,3 +287,28 @@ def test_differential_evolution_on_gpu(short_eval):
     result = differential_evolution_search(ev, max_iter=3, pop_multiplier=4, seed=1)
     assert result.n_evals == 4 * SPACE.dim * 4
     assert short_eval.evaluate_gains(result.gains).mean_cost == pytest.approx(result.best_cost, rel=1e-3)
+
+
+@pytest.mark.parametrize("voltage", [False, True])
+@pytest.mark.parametrize("device", DEVICES)
+def test_imu_float64_matches_numpy(device, voltage):
+    sensor = IMUSensor(pitch_std=0.004, pitch_bias=0.01, pitch_rate_std=0.02, pitch_rate_bias=0.015,
+                       velocity_std=0.01, imu_height=0.1, filter_time_constant=0.5,
+                       control_dt=SHORT.control_dt, gravity=SHORT.params.gravity, seed=0)
+    config = replace(SHORT, sensor=sensor, pushes=((0.5, 0.1, 1.5), (1.4, 0.05, -2.0)))
+    if voltage:
+        config = replace(config, voltage_estimate=_estimate(config.motor), voltage_feedforward=True)
+    else:
+        config = replace(config, voltage_estimate=None)   # current mode even for a voltage-mode robot
+    evaluator = BatchEvaluator(config, SPACE)
+    assert evaluator.spec.imu and evaluator.robot.voltage_mode == voltage
+    G, pitch, seed_index, noise = _flat(evaluator, _near_hand_tuned(32))
+    ref = simulate_batch(evaluator.spec, evaluator.robot, G, pitch, noise, seed_index, evaluator.schedule,
+                         record=True)
+    got = TorchSimulator(evaluator.spec, evaluator.robot, len(G), noise, evaluator.schedule, device=device,
+                         dtype=torch.float64, record=True).run(G, pitch, seed_index)
+    up = ~ref.fell
+    assert up.sum() >= 0.5 * len(G)
+    assert not got.fell[up].any()
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
+    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
