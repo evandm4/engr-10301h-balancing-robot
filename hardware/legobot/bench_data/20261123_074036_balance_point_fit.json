@@ -1,0 +1,77 @@
+{
+  "script": "balance_point",
+  "meta": {
+    "pwmparams": [
+      1.0,
+      0.01
+    ],
+    "vin": 7.31,
+    "side": "both",
+    "wheel": "on the floor, motors coasting",
+    "args": {
+      "trials": 8,
+      "no_hat": false,
+      "pwmparams": [
+        1.0,
+        0.01
+      ],
+      "outdir": "logs"
+    },
+    "gyro_bias": 0.04506546713641848,
+    "median_theta_start": -0.015568520814262767
+  },
+  "constants": {
+    "gyro_bias_start": {
+      "value": 0.04506546713641848,
+      "se": null,
+      "unit": "rad/s",
+      "n": 400,
+      "se_kind": "none"
+    },
+    "theta0": {
+      "value": 0.047254664804926814,
+      "se": 0.042479067893467524,
+      "unit": "rad",
+      "n": 836,
+      "se_kind": "ls"
+    },
+    "c_fall": {
+      "value": 1.2728328143087422,
+      "se": 0.9591965447398776,
+      "unit": "1/s^2",
+      "n": 836,
+      "se_kind": "ls"
+    },
+    "e_fall": {
+      "value": 7.3701073641468335,
+      "se": null,
+      "unit": "1/s",
+      "n": 836,
+      "se_kind": "none"
+    },
+    "theta0_trial_mean": {
+      "value": 0.03580499718809145,
+      "se": 0.036488391868351136,
+      "unit": "rad",
+      "n": 2,
+      "se_kind": "repeats"
+    },
+    "theta0_trial_sd": {
+      "value": 0.05160237864940634,
+      "se": 0.036488391868351136,
+      "unit": "rad",
+      "n": 2,
+      "se_kind": "normal"
+    }
+  },
+  "diagnostics": {
+    "per_trial_theta0": [
+      0.07229338905644259,
+      -0.0006833946802596898
+    ],
+    "per_trial_se": [
+      0.002947343752733487,
+      0.00229946870481791
+    ]
+  }
+}

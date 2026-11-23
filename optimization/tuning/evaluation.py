@@ -11,7 +11,7 @@ After tuning, score the winner again on seeds it never saw (validation) to check
 it hasn't overfit.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -19,6 +19,8 @@ import numpy as np
 from balance_sim import (
     CascadedPIDController,
     DCMotorActuator,
+    SlowPwmActuator,
+    VoltageModeActuator,
     MotorParams,
     Planar2D,
     RobotParams,
@@ -43,7 +45,7 @@ class EvalConfig:
 
     params: RobotParams
     motor: Optional[MotorParams]               # None = ideal actuator
-    sensor: SensorNoise                        # seed is overridden per scenario
+    sensor: SensorNoise                        # or IMUSensor; seed is overridden per scenario
     latency: float                             # s
     duration: float                            # s per scenario
     dt: float                                  # physics step
@@ -61,6 +63,16 @@ class EvalConfig:
     max_pitch_command: float                   # rad; cap on the outer loop's commanded lean
     pitch_integral_limit: float                # rad s; cap on the pitch loop's integral
     velocity_integral_limit: float             # m; cap on the velocity loop's integral
+    # Voltage-mode driver (balance_sim.VoltageModeActuator) in place of the current-mode
+    # DC motor: the robot code's motor constants (its estimate of `motor`); None = current mode.
+    voltage_estimate: Optional[MotorParams] = None
+    voltage_feedforward: bool = True           # back-EMF feedforward on (voltage mode only)
+    voltage_feedforward_gain: float = 1.0      # share of the estimated back-EMF added (voltage mode only)
+    # With voltage_estimate: the Build HAT's slow-PWM mode (balance_sim.SlowPwmActuator; the robot code
+    # sends a duty) instead of the linear voltage mode.
+    slow_pwm: bool = False
+    pwm_tick: float = 0.0                      # slow PWM's pulse-density tick, s; 0 = averaged
+    pwm_tick_phase: float = 0.25               # where the ticks fall against the control loop, fraction of a tick
 
 
 @dataclass
@@ -83,8 +95,18 @@ class Evaluator:
 
     def dynamics(self) -> Planar2D:
         c = self.config
-        actuator = (DCMotorActuator(c.motor, max_torque=c.params.max_torque)
-                    if c.motor is not None else None)
+        if c.motor is None:
+            actuator = None
+        elif c.voltage_estimate is not None:
+            kwargs = dict(max_torque=c.params.max_torque, feedforward=c.voltage_feedforward,
+                          feedforward_gain=c.voltage_feedforward_gain)
+            if c.slow_pwm:
+                actuator = SlowPwmActuator(c.motor, c.voltage_estimate, pwm_tick=c.pwm_tick,
+                                           pwm_tick_phase=c.pwm_tick_phase, **kwargs)
+            else:
+                actuator = VoltageModeActuator(c.motor, c.voltage_estimate, **kwargs)
+        else:
+            actuator = DCMotorActuator(c.motor, max_torque=c.params.max_torque)
         return Planar2D(c.params, fall_angle=c.fall_angle, actuator=actuator)
 
     def controller(self, gains: Sequence[float]) -> CascadedPIDController:
@@ -112,15 +134,9 @@ class Evaluator:
         """Simulate one scenario with any balance_sim Controller (e.g. an LQRController)."""
         c = self.config
         dyn = self.dynamics()
-        sensor = SensorNoise(
-            pitch_std=c.sensor.pitch_std,
-            pitch_bias=c.sensor.pitch_bias,
-            pitch_rate_std=c.sensor.pitch_rate_std,
-            pitch_rate_bias=c.sensor.pitch_rate_bias,
-            position_std=c.sensor.position_std,
-            velocity_std=c.sensor.velocity_std,
-            seed=seed,
-        )
+        sensor = replace(c.sensor, seed=seed)   # a fresh SensorNoise (or IMUSensor) with this seed
+        if getattr(sensor, "needs_accelerations", False):
+            sensor = replace(sensor, control_dt=c.control_dt)   # the IMU filter runs at the controller's period
         return simulate(
             dyn,
             controller,

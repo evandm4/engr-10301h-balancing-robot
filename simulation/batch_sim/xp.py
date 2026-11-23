@@ -21,6 +21,8 @@ class _TorchOps:
         import torch
         self._torch = torch
         self.sin, self.cos, self.abs, self.tanh = torch.sin, torch.cos, torch.abs, torch.tanh
+        self.arctan2 = torch.atan2
+        self.floor = torch.floor
         self._constants = {}
 
     def _constant(self, value, like):

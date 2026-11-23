@@ -33,7 +33,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "simulation"))
 sys.path.insert(0, str(HERE.parent))
 
-from config import CONFIG
+from config import CONFIG, add_robot_argument, results_dir
 from tuning import Evaluator
 
 
@@ -54,6 +54,7 @@ def measure(fn, repeats: int):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    add_robot_argument(parser)
     parser.add_argument("--repeats", type=int, default=7)
     parser.add_argument("--no-save", action="store_true")
     args = parser.parse_args()
@@ -105,7 +106,7 @@ def main():
         print("Note: this folder is inside OneDrive; pause syncing for the steadiest timings.")
 
     if not args.no_save:
-        folder = HERE.parent / "results" / "benchmarks"
+        folder = results_dir("benchmarks")
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / f"cpu_{time.strftime('%Y%m%d-%H%M%S')}.json"
         path.write_text(json.dumps(report, indent=2))

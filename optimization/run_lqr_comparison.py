@@ -44,7 +44,7 @@ From the project folder:
     python optimization/run_lqr_comparison.py --replot results/lqr_comparison/<run>   redraw a run's figures
 NumPy works too (--backend numpy, the default) but the searches take hours.
 
-Results go to results/lqr_comparison/<timestamp>/: comparison.json, lqr_comparison.png,
+Results go to results/lqr_comparison/<timestamp>/ (results/legobot/... with --robot legobot): comparison.json, lqr_comparison.png,
 example_runs.png, each search's <method>.json and history CSV, and trajectories/.
 """
 
@@ -62,7 +62,7 @@ sys.path.insert(0, str(ROOT))   # config.py; importing it puts simulation/ and o
 
 import numpy as np
 
-from config import CONFIG
+from config import CONFIG, add_robot_argument, results_dir
 from balance_sim import LinearController, spectral_radius, stable_latency_range
 from batch_tuning import BatchEvaluator, checking_tier, cma_es_search, differential_evolution_search
 from tuning import Evaluator, lqr_weights, provenance, save_example_runs, save_result
@@ -142,6 +142,7 @@ def linear_model(name: str, gains) -> LinearController:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    add_robot_argument(parser)
     parser.add_argument("--cma-iters", type=int, default=40, help="CMA-ES generations")
     parser.add_argument("--de-iters", type=int, default=40, help="differential evolution generations")
     parser.add_argument("--pop", type=int, default=120, help="population per generation, for both optimizers")
@@ -315,7 +316,7 @@ def main():
                   f"{', '.join(comparison[name]['at_search_bound'])}.")
 
     # ---- save ----
-    folder = ROOT / "results" / "lqr_comparison" / time.strftime("%Y%m%d-%H%M%S")
+    folder = results_dir("lqr_comparison", time.strftime("%Y%m%d-%H%M%S"))
     snapshot = CONFIG.snapshot()
     for name in SEARCHED:
         for method, s in searches[name].items():

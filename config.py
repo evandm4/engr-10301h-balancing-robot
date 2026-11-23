@@ -24,6 +24,7 @@ in radians throughout.
 """
 
 import math
+import os
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -48,7 +49,10 @@ from balance_sim import (
     PIDController,
     Planar2D,
     RobotParams,
+    IMUSensor,
     SensorNoise,
+    SlowPwmActuator,
+    VoltageModeActuator,
     cost,
     critical_pitch_gain,
     lqr_gain,
@@ -112,10 +116,33 @@ class ActuatorConfig:
 
     model: "ideal" delivers the commanded torque exactly (clipped to
     RobotConfig.max_torque). "dc_motor" adds back-EMF, a supply voltage, and a
-    current limit, so available torque falls as the wheels spin faster.
+    current limit, so available torque falls as the wheels spin faster: a
+    current-mode driver (or exact back-EMF compensation). "voltage" is a
+    voltage-mode driver (PWM duty, no current control) whose robot code turns
+    the torque command into a voltage with the nominal constants below, plus
+    back-EMF feedforward from the measured wheel speed if voltage_feedforward
+    (balance_sim.VoltageModeActuator; SOFTWARE_PLAN B1). Robust scoring
+    randomizes the true constants only, so the robot code's are off by the
+    randomization spreads. "slow_pwm" is the Build HAT's slow-PWM mode, measured on the
+    LEGO motors (balance_sim.SlowPwmActuator; SOFTWARE_PLAN B1b): the drive coasts in the
+    off-time, so torque = |d| N eta k (copysign(V, d) - k N w) / R per motor, and the robot
+    code sends the duty d from the inverse of that model. The voltage_feedforward settings
+    apply to it as well.
     """
 
-    model: str = "dc_motor"            # "ideal" or "dc_motor"
+    model: str = "dc_motor"            # "ideal", "dc_motor", "voltage" or "slow_pwm"
+    voltage_feedforward: bool = True   # "voltage" only: add k N w^ to the drive voltage
+    # "voltage" only: the share of the estimated back-EMF the robot code adds. 1 cancels it as
+    # estimated. The wheel speed it uses is 5-15 ms old on the LEGO robot, and slightly more
+    # than 1 helped some controllers and hurt others (hardware/legobot/A4_BASELINES.md), so it
+    # is a robot-code setting to tune with each controller's gains.
+    voltage_feedforward_gain: float = 1.0
+    # "slow_pwm" only: the Build HAT's pulse-density tick (SlowPwmActuator.pwm_tick); 0 = the averaged
+    # model. Must be a whole number of physics steps.
+    pwm_tick_s: float = 0.0
+    # "slow_pwm" with pwm_tick_s only: where the ticks fall against the control loop, as a fraction of a
+    # tick (SlowPwmActuator.pwm_tick_phase). Robust scoring can draw it per scenario (randomize_range).
+    pwm_tick_phase: float = 0.25
 
     # Pololu 20.4:1 Metal Gearmotor 25Dx65L mm HP 6V with 48 CPR encoder (item 4803), run
     # from a 2S LiPo. Constants derived from Pololu's catalogue numbers (DATASHEET.md 3.1, 5.1).
@@ -153,7 +180,21 @@ class ActuatorConfig:
         if self.model == "dc_motor":
             # The robot's torque limit still applies on top of the motor physics.
             return DCMotorActuator(self.build_motor_params(), max_torque=robot.max_torque)
-        raise ValueError(f"Unknown actuator model {self.model!r}; use 'ideal' or 'dc_motor'")
+        if self.model == "voltage":
+            motor = self.build_motor_params()
+            return VoltageModeActuator(motor, motor, max_torque=robot.max_torque, feedforward=self.voltage_feedforward,
+                                       feedforward_gain=self.voltage_feedforward_gain)
+        if self.model == "slow_pwm":
+            motor = self.build_motor_params()
+            return SlowPwmActuator(motor, motor, max_torque=robot.max_torque, feedforward=self.voltage_feedforward,
+                                   feedforward_gain=self.voltage_feedforward_gain, pwm_tick=self.pwm_tick_s,
+                                   pwm_tick_phase=self.pwm_tick_phase)
+        raise ValueError(f"Unknown actuator model {self.model!r}; use 'ideal', 'dc_motor', 'voltage' or 'slow_pwm'")
+
+    @property
+    def has_motor(self) -> bool:
+        """True for the models with motor physics (a supply voltage and back-EMF)."""
+        return self.model in ("dc_motor", "voltage", "slow_pwm")
 
 
 # ---------------------------------------------------------------- SENSOR ---
@@ -174,16 +215,36 @@ class SensorConfig:
     position_std: float = 0.0005       # m (quantization is 0.065 mm; this also stands in for gear backlash)
     velocity_std: float = 0.02         # m/s (differencing encoder counts 5 ms apart gives 0.018)
 
-    def build(self, seed: int = 0) -> SensorNoise:
-        return SensorNoise(
-            pitch_std=self.pitch_std,
-            pitch_bias=self.pitch_bias,
-            pitch_rate_std=self.pitch_rate_std,
-            pitch_rate_bias=self.pitch_rate_bias,
-            position_std=self.position_std,
-            velocity_std=self.velocity_std,
-            seed=seed,
-        )
+    # Which model. "noise": the controller sees true pitch plus pitch_std noise and the
+    # pitch_bias offset (SensorNoise). "imu": a gyro and an accelerometer at imu_height above
+    # the axle, fused by the robot code's complementary filter (IMUSensor; SOFTWARE_PLAN B2);
+    # then pitch_std and pitch_bias are the ACCELEROMETER tilt's noise per sample and offset.
+    model: str = "noise"
+    imu_height: float = 0.10           # m, "imu" only
+    filter_time_constant: float = 0.5  # s, "imu" only: complementary-filter crossover 1/(2 pi tau)
+    # Encoder model (either sensor model; balance_sim.Encoder, SOFTWARE_PLAN B3): with
+    # encoder_counts > 0, velocity and position come from counts sampled every
+    # encoder_period_s, reaching the robot code encoder_delay_s later, in place of
+    # velocity_std and position_std. 0 keeps the white-noise velocity.
+    encoder_counts: int = 0            # counts per wheel turn (relative to the body)
+    encoder_period_s: float = 0.010
+    encoder_delay_s: float = 0.0
+
+    def build(self, seed: int = 0, gravity: float = 9.81, control_dt: float = 0.005,
+              wheel_radius: float = 0.0) -> SensorNoise:
+        """gravity and control_dt matter only for the "imu" model, wheel_radius only with the
+        encoder (ProjectConfig.build_sensor passes them)."""
+        common = dict(pitch_std=self.pitch_std, pitch_bias=self.pitch_bias, pitch_rate_std=self.pitch_rate_std,
+                      pitch_rate_bias=self.pitch_rate_bias, position_std=self.position_std,
+                      velocity_std=self.velocity_std, seed=seed, encoder_counts=self.encoder_counts,
+                      encoder_period=self.encoder_period_s, encoder_delay=self.encoder_delay_s,
+                      wheel_radius=wheel_radius)
+        if self.model == "noise":
+            return SensorNoise(**common)
+        if self.model == "imu":
+            return IMUSensor(**common, imu_height=self.imu_height, filter_time_constant=self.filter_time_constant,
+                             control_dt=control_dt, gravity=gravity)
+        raise ValueError(f"Unknown sensor model {self.model!r}; use 'noise' or 'imu'")
 
 
 # ---------------------------------------------------------------- TIMING ---
@@ -652,6 +713,7 @@ class LearningConfig:
 # --------------------------------------------------------- PUT IT TOGETHER -
 @dataclass(frozen=True)
 class ProjectConfig:
+    name: str = "pololu"               # which robot this is (ROBOTS); recorded in every snapshot
     robot: RobotConfig = field(default_factory=RobotConfig)
     actuator: ActuatorConfig = field(default_factory=ActuatorConfig)
     sensor: SensorConfig = field(default_factory=SensorConfig)
@@ -686,7 +748,8 @@ class ProjectConfig:
         return Planar2D(robot, fall_angle=self.timing.fall_angle_rad, actuator=actuator)
 
     def build_sensor(self, seed: int = 0) -> SensorNoise:
-        return self.sensor.build(seed)
+        return self.sensor.build(seed, gravity=self.robot.gravity, control_dt=self.timing.control_dt_s,
+                                 wheel_radius=self.robot.wheel_radius)
 
     def build_pitch_controller(self, gains=None) -> PIDController:
         """A pitch-only PID (no velocity loop) with the configured limits.
@@ -753,7 +816,7 @@ class ProjectConfig:
 
         return EvalConfig(
             params=self.build_robot_params(),
-            motor=self.actuator.build_motor_params() if self.actuator.model == "dc_motor" else None,
+            motor=self.actuator.build_motor_params() if self.actuator.has_motor else None,
             sensor=self.build_sensor(),
             latency=self.timing.latency_s,
             duration=self.scenario.validation_duration_s if validation else self.scenario.duration_s,
@@ -772,6 +835,13 @@ class ProjectConfig:
             max_pitch_command=self.controller.max_lean_rad,
             pitch_integral_limit=self.controller.pitch_integral_limit,
             velocity_integral_limit=self.controller.velocity_integral_limit,
+            voltage_estimate=(self.actuator.build_motor_params()
+                              if self.actuator.model in ("voltage", "slow_pwm") else None),
+            voltage_feedforward=self.actuator.voltage_feedforward,
+            voltage_feedforward_gain=self.actuator.voltage_feedforward_gain,
+            slow_pwm=self.actuator.model == "slow_pwm",
+            pwm_tick=self.actuator.pwm_tick_s if self.actuator.model == "slow_pwm" else 0.0,
+            pwm_tick_phase=self.actuator.pwm_tick_phase,
         )
 
     # Snapshot sections and keys that don't change how a controller is trained or scored: where
@@ -830,7 +900,7 @@ class ProjectConfig:
                 for p in space.parameters
             },
         }
-        if self.actuator.model == "dc_motor":
+        if self.actuator.has_motor:
             motor = self.actuator.build_motor_params()
             derived["motor_stall_torque_limit"] = float(motor.stall_torque_limit)   # N m, total
             derived["motor_no_load_speed_rad_s"] = float(motor.no_load_speed)       # output shaft
@@ -999,4 +1069,59 @@ class ProjectConfig:
 #
 #   CONFIG = ProjectConfig(actuator=ActuatorConfig(model="ideal"))
 #
-CONFIG = ProjectConfig()
+POLOLU_CONFIG = ProjectConfig()
+
+
+# ------------------------------------------------------- ROBOT SELECTION -
+# Two robots: "pololu" (the defaults above: Pololu 25D gearmotors, DATASHEET.md)
+# and "legobot" (legobot_config.py: LEGO SPIKE motors, hardware/legobot/DATASHEET.md).
+# CONFIG is the selected one, chosen once at import from, in order:
+#   1. --robot NAME (or --robot=NAME) on the command line,
+#   2. the ROBOT environment variable,
+#   3. "pololu".
+# The command line is read here, before any script parses its arguments, because
+# scripts and tests read CONFIG at import time. Scripts with a parser also call
+# add_robot_argument so --robot shows in --help and is validated.
+ROBOTS = ("pololu", "legobot")
+DEFAULT_ROBOT = "pololu"
+
+
+def load_config(name: str) -> ProjectConfig:
+    """The ProjectConfig for robot `name` (one of ROBOTS)."""
+    if name == "pololu":
+        return POLOLU_CONFIG
+    if name == "legobot":
+        from legobot_config import LEGOBOT_CONFIG   # imports this module's classes, so imported lazily
+        return LEGOBOT_CONFIG
+    raise ValueError(f"Unknown robot {name!r}; use one of {ROBOTS}")
+
+
+def _selected_robot(argv=None, environ=None) -> str:
+    argv = sys.argv[1:] if argv is None else argv
+    environ = os.environ if environ is None else environ
+    for i, arg in enumerate(argv):
+        if arg == "--robot" and i + 1 < len(argv):
+            return argv[i + 1]
+        if arg.startswith("--robot="):
+            return arg.split("=", 1)[1]
+    return environ.get("ROBOT", DEFAULT_ROBOT) or DEFAULT_ROBOT
+
+
+def add_robot_argument(parser) -> None:
+    """Add --robot to an argparse parser. The choice itself was already made when
+    this module was imported (see above); the argument documents and validates it."""
+    parser.add_argument("--robot", choices=ROBOTS, default=CONFIG.name,
+                        help=f"which robot to simulate (default: $ROBOT, else {DEFAULT_ROBOT}; now {CONFIG.name})")
+
+
+def results_dir(*parts: str, robot: Optional[str] = None) -> Path:
+    """Where results for `robot` (default: the selected one) go: results/<...> for
+    the Pololu robot, whose earlier results and the documents citing them live
+    there, and results/<robot>/<...> for any other robot."""
+    robot = CONFIG.name if robot is None else robot
+    base = _ROOT / "results"
+    return base.joinpath(*parts) if robot == "pololu" else base.joinpath(robot, *parts)
+
+
+ROBOT = _selected_robot()
+CONFIG = load_config(ROBOT)

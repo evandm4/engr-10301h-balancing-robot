@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from balance_sim import CascadedPIDController, Planar2D, PIDController, pitch_error_signal, simulate
-from balance_sim.actuators import Actuator
+from balance_sim.actuators import VoltageModeActuator
 from balance_sim.simulator import _rk4_step
 from batch_sim import BatchRobot, actuator_torque, derivatives
 from config import CONFIG
@@ -460,25 +460,6 @@ def assumption_audit():
               f"falls {sum(r.fell for r in runs)}/{len(runs)}")
 
 
-class VoltageModeActuator(Actuator):
-    """PWM duty proportional to the torque command, with no back-EMF compensation.
-
-    command_limit: the largest torque command (N m). P.max_torque by default; the
-    command that maps to the full supply voltage, FULL_SUPPLY_COMMAND, lets the duty reach 100%.
-    """
-
-    def __init__(self, command_limit=None):
-        self.command_limit = P.max_torque if command_limit is None else command_limit
-
-    def torque(self, command, relative_wheel_speed):
-        m = MOTOR
-        command = clip(command, self.command_limit)
-        per_amp = m.n_motors * m.gear_ratio * m.gear_efficiency * m.torque_constant
-        volts = clip(m.resistance * command / per_amp, m.supply_voltage)
-        current = (volts - m.torque_constant * m.gear_ratio * relative_wheel_speed) / m.resistance
-        return per_amp * clip(current, m.current_limit)
-
-
 def friction():
     heading("9.4 Friction sensitivity (one run: seed 100, 5.73 deg start)")
     tilt = CONFIG.scenario.start_pitches_rad[0]
@@ -518,9 +499,12 @@ def driver_modes():
     full = per_amp * m.supply_voltage / m.resistance   # the command whose voltage is the whole supply
     print(f"voltage at the {P.max_torque} N m command cap: {m.resistance * P.max_torque / per_amp:.2f} V of "
           f"{m.supply_voltage} V; full supply = a {full:.3f} N m command")
-    capped = Planar2D(P, CONFIG.timing.fall_angle_rad, VoltageModeActuator())
+    # balance_sim.VoltageModeActuator with the feedforward off: duty proportional to the command.
+    capped = Planar2D(P, CONFIG.timing.fall_angle_rad,
+                      VoltageModeActuator(MOTOR, MOTOR, max_torque=P.max_torque, feedforward=False))
     full_robot = P.with_changes(max_torque=full)
-    full_duty = Planar2D(full_robot, CONFIG.timing.fall_angle_rad, VoltageModeActuator(full))
+    full_duty = Planar2D(full_robot, CONFIG.timing.fall_angle_rad,
+                         VoltageModeActuator(MOTOR, MOTOR, max_torque=full, feedforward=False))
     for name, gains in (("tuned", TUNED), ("tuned 2026-11-06", TUNED_1106), ("hand-tuned", HAND)):
         for label, dyn, limit in (("current-mode", None, None), ("voltage-mode, duty capped at max_torque", capped, None),
                                   ("voltage-mode, duty up to the full supply", full_duty, full)):

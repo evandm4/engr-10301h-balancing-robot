@@ -8,6 +8,7 @@ Both classes report TOTAL torque across both wheels (the same convention as the
 rest of the model).
 """
 
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
@@ -27,6 +28,14 @@ class Actuator(ABC):
         relative_wheel_speed is wheel angular velocity minus body pitch rate
         (rad/s), i.e. how fast the motors are actually spinning.
         """
+
+    def drive(self, command: float, measured_wheel_speed: float) -> float:
+        """What the robot code sends the driver for a torque command, computed
+        once per control tick from what it measures (measured_wheel_speed: the
+        relative wheel speed it sees, rad/s). The simulator delays and holds this
+        value and passes it to torque() as `command`. Drivers that take the
+        torque command itself (all but VoltageModeActuator) pass it through."""
+        return command
 
 
 class IdealActuator(Actuator):
@@ -119,3 +128,167 @@ class DCMotorActuator(Actuator):
         i = (v - m.torque_constant * rotor_speed) / m.resistance
         i = float(_clip(i, -m.current_limit, m.current_limit))
         return m.n_motors * m.gear_ratio * m.gear_efficiency * m.torque_constant * i
+
+
+class VoltageModeActuator(Actuator):
+    """A voltage-mode driver (PWM duty, no current control) with the robot code's
+    back-EMF feedforward (SOFTWARE_PLAN B1; PHYSICS.md 9.3).
+
+    Once per control tick the robot code turns the torque command into a voltage
+    with ITS constants (`estimate`: the nominal, measured-on-the-bench motor):
+
+        V = R^ tau_c / (n N eta^ k^) + k^ N w^,   clipped to +-supply_voltage,
+
+    where tau_c is the command clipped to max_torque and w^ is the relative wheel
+    speed it measures (drive()). The simulator delays and holds V like any
+    command. The motor then responds with the TRUE constants (`motor`, which
+    robust scoring randomizes): i = (V - k N w) / R, clipped to the current limit,
+    and torque n N eta k i (torque()). With exact constants and w^ = w this is
+    DCMotorActuator; the differences are the constants' mismatch and w^ being a
+    sampled, noisy, delayed measurement.
+
+    feedforward=False is the plain voltage mode of PHYSICS.md 9.3 (duty
+    proportional to the torque command): extra drag n N^2 eta k^2 / R, and a
+    voltage that only reaches R^ max_torque / (n N eta^ k^).
+
+    supply_voltage is the true supply (the robot code reads the battery voltage,
+    e.g. the Build HAT's vin), so duty = V / supply_voltage is exact. The Build
+    HAT's `bias` dead band is not modeled: the robot sets bias 0 (DATASHEET 7.2).
+    """
+
+    def __init__(self, motor: MotorParams, estimate: Optional[MotorParams] = None,
+                 max_torque: Optional[float] = None, feedforward: bool = True, feedforward_gain: float = 1.0):
+        if max_torque is not None and max_torque <= 0:
+            raise ValueError("max_torque must be positive")
+        self.m = motor
+        self.estimate = motor if estimate is None else estimate
+        self.max_torque = max_torque
+        self.feedforward = feedforward
+        self.feedforward_gain = feedforward_gain   # share of the back-EMF the robot code cancels (1 = all)
+
+    def drive(self, command: float, measured_wheel_speed: float) -> float:
+        e = self.estimate
+        if self.max_torque is not None:
+            command = _clip(command, -self.max_torque, self.max_torque)
+        volts = e.resistance * (command / (e.n_motors * e.gear_ratio * e.gear_efficiency * e.torque_constant))
+        if self.feedforward:
+            back_emf = e.torque_constant * (e.gear_ratio * measured_wheel_speed)
+            volts = volts + (back_emf if self.feedforward_gain == 1.0 else self.feedforward_gain * back_emf)
+        return float(_clip(volts, -self.m.supply_voltage, self.m.supply_voltage))
+
+    def torque(self, command: float, relative_wheel_speed: float) -> float:
+        """command: the drive voltage from drive() (V), not a torque."""
+        m = self.m
+        rotor_speed = m.gear_ratio * relative_wheel_speed
+        i = (command - m.torque_constant * rotor_speed) / m.resistance
+        i = float(_clip(i, -m.current_limit, m.current_limit))
+        return m.n_motors * m.gear_ratio * m.gear_efficiency * m.torque_constant * i
+
+
+class SlowPwmActuator(VoltageModeActuator):
+    """The Raspberry Pi Build HAT in slow PWM (pwmparams 1 0.01), with the robot code's
+    inverse of it (SOFTWARE_PLAN B1b; hardware/legobot/DATASHEET.md 8.7).
+
+    Measured on the LEGO motors: in slow PWM the driver lets the motor coast in the
+    PWM off-time and the current falls to zero within the period, so the drive acts
+    only during the on-time. Per motor, with duty d in [-1, 1]:
+
+        i_on = (copysign(V, d) - k N w) / R,  clipped to the current limit,
+        torque = N eta k |d| i_on       (total: n_motors times that).
+
+    So the zero-speed torque is linear in duty (no dead band; lever on a scale, within
+    4%) and the back-EMF damping scales with |d|: spin-up time constants follow
+    J / (|d| a k + b) at every duty, a = N eta k / R. At d = 0 the motor coasts.
+
+    drive() is the robot code: it inverts the same model with ITS constants
+    (`estimate`) and the speed it measures, w^, and the true supply V (the HAT's vin):
+
+        d = (tau_c / n) / (a^ (V - k^ N w^))   for tau_c >= 0,
+        d = (tau_c / n) / (a^ (V + k^ N w^))   for tau_c < 0,     clipped to +-1,
+
+    with tau_c the command clipped to max_torque and a^ = N eta^ k^ / R^. Where the
+    denominator is not positive (wheel faster than the no-load speed in the commanded
+    direction) the duty saturates at copysign(1, tau_c). feedforward=False drops the
+    k^ N w^ terms; feedforward_gain scales them, as in VoltageModeActuator. With exact
+    constants and w^ = w the command is delivered exactly below saturation. Unlike the
+    linear voltage mode, a mismatch in the constants gives a torque error proportional
+    to the command, not a drag at zero command.
+
+    pwm_tick > 0 turns on the HAT's pulse-density modulation (measured, DATASHEET 8.7):
+    the simulation loop (balance_sim.simulate; batch_sim) cuts time into ticks of
+    pwm_tick, and at each tick a running sum adds the duty in effect; the tick is a
+    full-voltage pulse (duty +-1) when |sum| >= 0.5, and the sum moves 1 toward zero;
+    otherwise the motor coasts (duty 0). The quantized duty then goes to torque() (see
+    pdm_update). pwm_tick = 0 is the averaged model.
+
+    pwm_tick_phase: where the ticks fall against the control loop, as a fraction of a
+    tick: the first tick starts floor(pwm_tick_phase x steps per tick) physics steps
+    after the first control sample (pwm_tick_offset). The HAT's ticks are locked to its
+    own clock, not the robot's loop (DATASHEET 8.7), and the scores depend strongly on
+    this phase, so robust scoring draws it per scenario. 0.25 puts the ticks half a
+    control period after the samples when a tick is two control periods.
+
+    Not modeled: regeneration through the diodes above the no-load speed, and the
+    `minpwm` 0.01 cut-off.
+    """
+
+    def __init__(self, motor: MotorParams, estimate: Optional[MotorParams] = None,
+                 max_torque: Optional[float] = None, feedforward: bool = True, feedforward_gain: float = 1.0,
+                 pwm_tick: float = 0.0, pwm_tick_phase: float = 0.25):
+        super().__init__(motor, estimate, max_torque=max_torque, feedforward=feedforward,
+                         feedforward_gain=feedforward_gain)
+        if pwm_tick < 0:
+            raise ValueError("pwm_tick must be non-negative")
+        self.pwm_tick = pwm_tick
+        self.pwm_tick_phase = pwm_tick_phase
+
+    def drive(self, command: float, measured_wheel_speed: float) -> float:
+        e = self.estimate
+        if self.max_torque is not None:
+            command = _clip(command, -self.max_torque, self.max_torque)
+        per_motor = command / e.n_motors
+        a_hat = e.gear_ratio * e.gear_efficiency * e.torque_constant / e.resistance
+        back_emf = 0.0
+        if self.feedforward:
+            back_emf = e.torque_constant * (e.gear_ratio * measured_wheel_speed)
+            if self.feedforward_gain != 1.0:
+                back_emf = self.feedforward_gain * back_emf
+        v = self.m.supply_voltage
+        den = a_hat * (v - back_emf) if command >= 0 else a_hat * (v + back_emf)
+        duty = per_motor / den if den > 0 else math.copysign(1.0, per_motor)
+        return float(_clip(duty, -1.0, 1.0))
+
+    def torque(self, command: float, relative_wheel_speed: float) -> float:
+        """command: the duty from drive(), in [-1, 1], not a torque."""
+        m = self.m
+        rotor_speed = m.gear_ratio * relative_wheel_speed
+        i = (math.copysign(m.supply_voltage, command) - m.torque_constant * rotor_speed) / m.resistance
+        i = float(_clip(i, -m.current_limit, m.current_limit))
+        return m.n_motors * m.gear_ratio * m.gear_efficiency * m.torque_constant * abs(command) * i
+
+
+def pdm_update(total: float, duty: float):
+    """One tick of the Build HAT's pulse-density modulation (SlowPwmActuator.pwm_tick).
+
+    Returns (new running sum, this tick's duty: -1, 0 or +1). batch_sim.physics.pdm_update
+    does the same arithmetic on arrays."""
+    total = total + _clip(duty, -1.0, 1.0)
+    out = (1.0 if total >= 0.5 else 0.0) - (1.0 if total <= -0.5 else 0.0)
+    return total - out, out
+
+
+def pwm_steps_per_tick(pwm_tick: float, dt: float) -> int:
+    """Physics steps per PDM tick; the tick must be a whole number of steps (0 when off)."""
+    if pwm_tick <= 0:
+        return 0
+    n = int(round(pwm_tick / dt))
+    if n < 1 or abs(n * dt - pwm_tick) > 1e-9:
+        raise ValueError(f"pwm_tick {pwm_tick} s is not a whole number of physics steps of {dt} s")
+    return n
+
+
+def pwm_tick_offset(phase: float, steps_per_tick: int) -> int:
+    """Physics steps from the first control sample to the first PDM tick, for a phase in [0, 1)."""
+    if not steps_per_tick:
+        return 0
+    return min(steps_per_tick - 1, max(0, int(math.floor(phase * steps_per_tick + 1e-9))))

@@ -1,0 +1,45 @@
+{
+  "script": "latency",
+  "meta": {
+    "pwmparams": [
+      0.65,
+      0.01
+    ],
+    "vin": 7.39,
+    "side": "left",
+    "wheel": "off the ground",
+    "args": {
+      "wheels_off": true,
+      "side": "left",
+      "trials": 30,
+      "duty": 1.0,
+      "hold": 0.7,
+      "pwmparams": [
+        0.65,
+        0.01
+      ],
+      "outdir": "logs"
+    },
+    "firmware": "Firmware version: 1674818421 2023-01-27T11:20:21+00:00"
+  },
+  "constants": {
+    "t_d@left": {
+      "value": 0.014982758620689655,
+      "se": 0.0008107204872891008,
+      "unit": "s",
+      "n": 29,
+      "se_kind": "repeats"
+    }
+  },
+  "diagnostics": {
+    "sd_s": 0.004365863436572201,
+    "p5_s": 0.008400000000000001,
+    "p95_s": 0.021779999999999997,
+    "min_s": 0.0057,
+    "max_s": 0.0228,
+    "t_d_vs_age_slope": [
+      0.5516845993060205,
+      0.2870446541214737
+    ]
+  }
+}

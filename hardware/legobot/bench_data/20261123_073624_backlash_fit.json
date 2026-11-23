@@ -1,0 +1,47 @@
+{
+  "script": "backlash",
+  "meta": {
+    "pwmparams": [
+      1.0,
+      0.01
+    ],
+    "vin": 7.32,
+    "side": "left",
+    "wheel": "as built",
+    "args": {
+      "side": "left",
+      "seconds": 15.0,
+      "pwmparams": [
+        1.0,
+        0.01
+      ],
+      "outdir": "logs"
+    },
+    "wheel_diameter_mm": 69.0,
+    "firmware": "Firmware version: 1674818421 2023-01-27T11:20:21+00:00"
+  },
+  "constants": {
+    "backlash_ptp_deg@left": {
+      "value": 5.0,
+      "se": null,
+      "unit": "deg",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "backlash_cluster_deg@left": {
+      "value": 2.5760351108356403,
+      "se": null,
+      "unit": "deg",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "backlash_visual_deg@left": {
+      "value": 31.55419741300186,
+      "se": null,
+      "unit": "deg",
+      "n": 1,
+      "se_kind": "none"
+    }
+  },
+  "diagnostics": {}
+}

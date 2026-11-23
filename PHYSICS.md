@@ -545,6 +545,45 @@ which is 16.1 mm/s for the tuned gains and 0.10 m/s for the hand-tuned ones (5 o
 
 Section 9.5 covers what this sensor model leaves out.
 
+### 5.4 IMU and complementary filter (LEGO robot)
+
+The LEGO robot's sensor model is `SensorConfig.model = "imu"` (`balance_sim.IMUSensor`, `ComplementaryFilter` and `accelerometer_tilt` in `sensors.py`; SOFTWARE_PLAN B2). The Pololu robot keeps the white-noise model of 5.1. All three engines have it (`balance_sim`, `batch_sim`, `batch_sim/torch_sim.py`), and the NumPy engine matches the reference bit for bit.
+
+Once per control tick the gyro and the accelerometer read
+
+```math
+\hat{\dot\theta}_g = \dot\theta + \sigma_{\dot\theta}\xi_2 + b_g,\qquad
+\hat\theta_a = \operatorname{atan2}\!\left(-f_{\text{fwd}},\ f_{\text{up}}\right) + \sigma_\theta\xi_1 + b_\theta .
+```
+
+The accelerometer sits at height $d$ above the axle on the body's axis (`imu_height`). With $a_x = \ddot x + d(\ddot\theta\cos\theta - \dot\theta^2\sin\theta)$ and $f_z = g - d(\ddot\theta\sin\theta + \dot\theta^2\cos\theta)$, its specific-force components along the body's axes are $f_{\text{fwd}} = a_x\cos\theta - f_z\sin\theta$ and $f_{\text{up}} = a_x\sin\theta + f_z\cos\theta$ (`accelerometer_tilt`). Standing still it reads $\theta$. While accelerating it is off by about $-(\ddot x + d\ddot\theta)/g$ (9.5). The accelerations come from the dynamics at the sample, with the drive in effect just before the tick and the push at the tick. The robot code fuses the two readings with a complementary filter, started from the first tilt:
+
+```math
+\hat\theta_k = \alpha\left(\hat\theta_{k-1} + \Delta t\,\hat{\dot\theta}_g\right) + (1-\alpha)\,\hat\theta_a,\qquad \alpha = \frac{\tau}{\tau+\Delta t}.
+```
+
+The controller reads $\hat\theta_k$ and $\hat{\dot\theta}_g$. The model draws the same four noise numbers per tick as `SensorNoise`, so batched noise tables apply unchanged. In this model `pitch_std` and `pitch_bias` belong to the accelerometer tilt, not to the estimate. The filter's time constant $\tau$ is `filter_time_constant`.
+
+- **Gyro bias** becomes a constant estimate offset of $b_g\tau$ (0.005 rad for the LEGO values), on top of the rate offset of 5.3.
+- **Acceleration** biases the estimate by about $-(\ddot x + d\ddot\theta)/g$, low-passed with time constant $\tau$. An acceleration of 1 m/s² held for 0.5 s with $\tau$ = 0.5 s gives 0.064 rad, which is DATASHEET.md 3.4's 0.06.
+- **Delay.** The sensors' own low-pass delay stays in the latency (hardware/legobot/DATASHEET.md 6 counts it); the model does not add it again.
+
+LEGO values (`legobot_config.py`): $\tau$ = 0.5 s, $d$ = 0.10 m (an estimate of the HAT stack's height), accelerometer noise 0.0135 rad per sample. A time constant of 1 s raised the baselines' cost 9–24% more, and 0.25 s was mixed (`hardware/legobot/A4_BASELINES.md`). Tests: `simulation/tests/test_imu.py`.
+
+### 5.5 Encoder (LEGO robot)
+
+`balance_sim.Encoder` (`sensors.py`; SOFTWARE_PLAN B3) replaces the white-noise velocity of 5.1 with the speed the Build HAT reports. The simulator calls `sensor.observe(t, state)` every physics step. The relative wheel angle $x/r - \theta$ is sampled every `encoder_period` in whole counts and reaches the robot code `encoder_delay` later; the robot code holds the latest value. The wheel speed is the difference of the two latest counts over one period, and the ground speed is
+
+```math
+\hat{\dot x} = r\left(\hat\omega_{\text{enc}} + \hat{\dot\theta}\right),
+```
+
+using the measured pitch rate. The fields are `SensorNoise.encoder_counts`, `encoder_period`, `encoder_delay` and `wheel_radius`, set from `SensorConfig.encoder_counts`, `encoder_period_s` and `encoder_delay_s`.
+
+A count is $q = 2\pi r/N_c$ of ground distance. Differencing two counts over a period $p$ gives a quantization error that depends on the speed. At one speed, with $f$ the fractional count the wheel advances per period, the error has standard deviation $q\sqrt{f(1-f)}/p$. Averaged over speeds it is $q/(p\sqrt 6)$. For 360 counts per turn, $p$ = 10 ms and $r$ = 34.5 mm this is 0.025 m/s. The delay is 5 ms of transit. Gearbox slack is not modeled; only the wheel position, which no controller reads, would show it.
+
+The velocity channel is therefore coarse and stale. Differencing 5 ms apart instead of 10 ms raised every baseline's cost (`hardware/legobot/A4_BASELINES.md`). Tests: `simulation/tests/test_encoder.py`.
+
 ## 6. Controller (`controllers.py`)
 
 ### 6.1 Inner pitch loop (`controllers.py:187-198`)
@@ -913,6 +952,16 @@ V = \frac{R\,\tau_c}{nNk_t} + k_tN\hat\omega .
 
 A motor-shaft encoder measures $\hat\omega$ directly, because it reads the rotor angle relative to the stator. The alternative is to simulate the real driver and retune (10.1).
 
+**The voltage-mode driver is now modeled (SOFTWARE_PLAN B1).** `balance_sim.VoltageModeActuator` (`actuators.py`; `ActuatorConfig.model = "voltage"`, `voltage_feedforward`, `voltage_feedforward_gain`) simulates the driver in all three engines. Once per control tick the robot code computes (`Actuator.drive`, `Planar2D.drive`)
+
+```math
+V = \frac{\hat R\,\tau_c}{n N\hat\eta\hat k_t} + g_{ff}\,\hat k_tN\hat\omega ,
+```
+
+with its own nominal constants (hats), the command $\tau_c$ clipped to $\tau_{\max}$, the measured wheel speed $\hat\omega$ and the gain $g_{ff}$ (`voltage_feedforward_gain`, 1 by default), and clips $V$ to the supply. The simulator delays and holds $V$ with the command, and the motor answers with its true constants, which robust scoring randomizes. The robot code's estimate stays nominal, so the mismatch comes from the spreads. The torque command is still what is recorded and scored as effort. With the feedforward off the class reproduces the plain voltage mode above exactly (`physics_checks.driver_modes` uses it, and its output is unchanged).
+
+On the LEGO robot plain voltage mode makes every baseline fall in every run (drag 0.051 N m s/rad against a 4.7 V ceiling). With the feedforward, the falls come from what the current-mode model leaves out: the wheel speed $\hat\omega$ is stale (sampled, delayed and quantized, 5.5), and the constants are mismatched. The feedforward gain is tunable. Baselines, experiments and the gain's effect: `hardware/legobot/A4_BASELINES.md`. The Pololu robot keeps `model = "dc_motor"`, so its results are unchanged. Tests: `simulation/tests/test_voltage_mode.py`.
+
 ### 9.4 Friction
 
 Nominal friction is 0. Robust scoring draws it per scenario (8.4): since 2026-11-08 viscous $b \in [0, 0.0015]$ N m s/rad and Coulomb $\tau_c \in [0.02, 0.08]$ N m, from the motors' free-run current (DATASHEET.md 5.2). Sensitivity to viscous friction, for one run (seed 100, 2.86° start; 9.4 output):
@@ -956,6 +1005,10 @@ The model hands the controller pitch plus white noise. A real robot estimates pi
 
 Mounting the IMU above the axle adds $l_{\text{imu}}\ddot\theta$ and $l_{\text{imu}}\dot\theta^2$ terms on top of this.
 
+**Now simulated for the LEGO robot (SOFTWARE_PLAN B2).** The gyro, the accelerometer at its mount height and the robot code's complementary filter are modeled in all three engines (5.4), and the LEGO robot uses them. Its pitch error is then low-frequency and correlated, gyro bias becomes the offset $b_g\tau$, and `pitch_bias` is the accelerometer tilt's offset. The Pololu robot still uses the white-noise model of 5.1, so the 50° / 52° figures above describe what its idealized sensor leaves out.
+
+A pitch offset is also drawn per scenario for the LEGO robot (SOFTWARE_PLAN B6). `BatchRobot.pitch_bias` holds one value per scenario (`None` means the spec's scalar); `robot_from_eval_config` fills it and `pitch_bias_at` (`robust.py`) reads it back. `legobot_config.py` adds `("pitch_bias", -0.015, 0.015)` to `randomize_range`, as its last entry so the other draws are unchanged. Plain runs keep +0.015 rad. The range also covers a fore-aft COM offset $e$ as a pitch offset $\arctan(e/l)$, which is 0.011 rad per mm at $l$ = 90 mm.
+
 ### 9.6 Assumptions that are always on
 
 | Assumption | Holds when | What breaks if not |
@@ -976,7 +1029,7 @@ Grouped by how strong the evidence is that each one matters.
 
 | Limitation | Evidence | Next iteration |
 |---|---|---|
-| Driver assumed to be current-controlled with exact back-EMF compensation | Voltage-mode driver with the duty capped at the torque limit: every gain set falls 30 of 30; with the full supply available the tuned gains survive at 33 times the cost and the hand-tuned ones fall (9.3) | Decide the hardware driver (DATASHEET.md suggests the DRV8874, whose current-sense output allows a firmware current loop). Either add the back-EMF feedforward of 9.3 to the firmware, or move the `VoltageModeActuator` from `physics_checks.py` into `actuators.py` and retune (or randomize between the two). |
+| Driver assumed to be current-controlled with exact back-EMF compensation | Voltage-mode driver with the duty capped at the torque limit: every gain set falls 30 of 30; with the full supply available the tuned gains survive at 33 times the cost and the hand-tuned ones fall (9.3) | Decide the hardware driver (DATASHEET.md suggests the DRV8874, whose current-sense output allows a firmware current loop). Either add the back-EMF feedforward of 9.3 to the firmware, or move the `VoltageModeActuator` from `physics_checks.py` into `actuators.py` and retune (or randomize between the two). *Done for the LEGO robot (B1), 2026-11-22: `VoltageModeActuator` is in `actuators.py` with the back-EMF feedforward, in all three engines (9.3). The Pololu robot keeps its current-mode model.* |
 | Friction is zero and cannot be randomized | Tuned gains fall at $b \ge 0.003$; the runaway threshold is $rk_pk_v$ (9.4) | *Implemented and retuned 2026-11-06* (`results/batch_tuning/20261106-154750/`; 8.2, 9.4). Both engines model $\tau_f = b\omega + \tau_c\tanh(\omega/\omega_\epsilon)$ (`RobotConfig.wheel_friction`, `coulomb_friction`, `coulomb_friction_speed`). `linearize` includes the slope $\tau_c/\omega_\epsilon$, and robust scoring draws $b$ and $\tau_c$ per scenario (8.4). With $\omega_\epsilon = 1$ rad/s, $\lvert\lambda h\rvert \approx 0.17$ at the largest $\tau_c$ (7.1). Since 2026-11-08 the ranges come from the motors' free-run current (DATASHEET.md 5.2). Still to do: measure friction (9.4). |
 | Latency is fixed at 10 ms | Delay margin is the key robustness number (7.4) | *Implemented and retuned 2026-11-06, retuned again on the datasheet robot 2026-11-08.* The current tuned gains' nominal linear loop is stable from 0 to 37.5 ms (`results/lqr_comparison/20261109-000021/`; 7.4). Robust scoring gives each scenario its own latency, uniform over the whole physics steps in 2.5–20 ms (`RobustnessSettings.latency_range_s`; `simulate_batch(delay_steps=...)`, `TorchSimulator(max_delay_steps=...)`). The alternative, adding the delay margin to the objective, is not done. |
 
@@ -985,16 +1038,18 @@ Grouped by how strong the evidence is that each one matters.
 | Limitation | Evidence | Next iteration |
 |---|---|---|
 | No traction limit | $\lvert F\rvert/N$ up to 0.54 / 0.68 (9.1) | Simplest: add a penalty on time spent above a measured $\mu$. Full model: make $\varphi$ a fifth coordinate. While sticking, enforce $\dot x = r\dot\varphi$. When the required $\lvert F\rvert$ exceeds $\mu_sN$, switch to sliding with $F = -\mu_kN\operatorname{sign}(\dot x - r\dot\varphi)$. |
-| Idealized IMU | Accelerometer tilt error up to 50° / 52° (9.5) | Simulate the accelerometer (from $\ddot x$, $\ddot\theta$ and the mount height) and the gyro, and run the same complementary filter the firmware will use. |
-| Idealized encoders | Velocity is truth plus white noise | Quantize the wheel angle (counts per revolution) and difference it at the control rate, as the firmware will. |
+| Idealized IMU | Accelerometer tilt error up to 50° / 52° (9.5) | Simulate the accelerometer (from $\ddot x$, $\ddot\theta$ and the mount height) and the gyro, and run the same complementary filter the firmware will use. *Done for the LEGO robot (B2), 2026-11-22: `IMUSensor` and `ComplementaryFilter` in `sensors.py`, in all three engines (5.4). The Pololu robot keeps the white-noise sensor.* |
+| Idealized encoders | Velocity is truth plus white noise | Quantize the wheel angle (counts per revolution) and difference it at the control rate, as the firmware will. *Done for the LEGO robot (B3), 2026-11-22: `balance_sim.Encoder` quantizes, delays and holds the wheel angle as the Build HAT reports it (5.5).* |
 
 ### 10.3 Physical fidelity
 
 - **Reflected rotor inertia.** *Implemented 2026-11-08* (`RobotParams.rotor_inertia`, both engines and the pivot model; derived in 2.2, tested against that mass matrix and for energy conservation). It is the largest inertia on the wheel side (1), and it is estimated, not published: measure it with a spin-down test (DATASHEET.md 8).
 - **Winding inductance.** Estimated at $L/R \approx 0.2$–0.5 ms for this motor (4.1). If a measurement shows it is not much less than 5 ms, add the current as a state: $L\,di/dt = V - Ri - k_eN\omega$.
+  *Checked for the LEGO motor, 2026-11-22 (SOFTWARE_PLAN B4): folded into the latency, not modeled.* Its $L/R$ is about 3.2 ms (Pybricks), and its latency budget already counts it (hardware/legobot/DATASHEET.md 6). With the current as a fifth state ($V_e' = (V - V_e)/\tau_e$, $i = (V_e - k\omega)/R$; reference engine, dt 0.5 ms), 7 ms of latency plus the lag gives the same costs as 10 ms of latency without it, within 1% for both PIDs on the plain scenario. The cost-matched LQR came out 9% lower with the explicit lag; its cost is not monotonic in latency (16 ms beat 10 ms), so that difference is within its noise. Every development-seed scenario that falls with the folded model (8 for the model-based PID, 3 for the LQR) also falls with the explicit lag. Modeling the lag would add a state to all three engines for no change in which robots fall.
 - **Gearbox efficiency and backlash.** *Efficiency implemented 2026-11-08* (`MotorParams.gear_efficiency`, 0.78 from the Pololu stall data): the output torque per amp is $nN\eta k_t$, back-EMF still uses $k_t$, so the loss shows as less torque at the current limit. Backlash is still to do: a dead band in $\varphi - \theta$.
+  *Sensitivity checked for the LEGO motor, 2026-11-22 (SOFTWARE_PLAN B5), not modeled.* A reference-engine-only test gave the motor's output side (its 2.44e-3 kg m², nearly all the wheel-side inertia) its own angle, carrying the motor torque, friction and encoder, and coupled it to the wheel through a dead zone of ±b with a 200 Hz damped tooth contact (dt 0.1 ms). On the nominal robot (9 runs, no falls in any case) ±0.5° raised the baselines' cost 3–15%, and ±1.5° (half of LEGO's ±3° accuracy figure, which includes the slack) raised it 19% (model-based PID), 80% (LQR) and 129% (hand-tuned PID). On 30 robust development scenarios, ±1.5° gave the hand-tuned PID a fall it did not have (0 to 1 of 30) and left the others' about the same (1 to 1, 2 to 1). So it matters if the real slack is near ±1.5° and little at ±0.5°: measure it first (hold the motor, rock the wheel, read the HAT's position; hardware/legobot/DATASHEET.md 8.2) and port it only if it is large. Porting has a cost: a stiff contact needs a step about 25 times finer than tuning uses now.
 - **Battery sag.** Use $V_s(t) = V_{oc} - R_{\text{batt}}\,i_{\text{total}}$ instead of a constant per run (`CONDITIONS.md` already lists this). With this motor the voltage only matters above the 1.65 m/s corner speed (4.4), so this is low priority.
-- **Pitch offset per robot.** `pitch_bias` is one constant for every run (5.1). Drawing it per scenario, with either sign, would keep the tuner from fitting one particular offset.
+- **Pitch offset per robot.** `pitch_bias` is one constant for every run (5.1). Drawing it per scenario, with either sign, would keep the tuner from fitting one particular offset. *Done for the LEGO robot (B6), 2026-11-22: `randomize_range` draws `pitch_bias` per scenario in ±0.015 rad (`BatchRobot.pitch_bias`; 9.5). The Pololu robot still uses the one constant.*
 - **Noise as a density.** Specify sensor noise as a density (rad/s/√Hz, as datasheets do) and convert it with $\sigma = \text{ND}\sqrt{f_s/2}$. Today the per-sample $\sigma$ silently changes the physical noise level if the control rate changes.
 - **Scope.** Pushes on the body are *implemented 2026-11-08* (a horizontal force at the center of mass, generalized forces $F$ on $x$ and $Fl\cos\theta$ on $\theta$; `ScenarioConfig.pushes`, both engines, `test_push.py`). Still to do: a 3D model with yaw (differential drive) and slopes, as planned in `ARCHITECTURE.md` and `CONDITIONS.md`.
 

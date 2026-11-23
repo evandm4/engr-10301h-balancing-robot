@@ -11,9 +11,9 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from balance_sim import SensorNoise
+from balance_sim import IMUSensor, SensorNoise
 from batch_sim import BatchRobot, simulate_batch
-from batch_tuning import BatchEvaluator, decode_units
+from batch_tuning import BatchEvaluator, decode_units, robot_from_eval_config
 from config import CONFIG
 from tuning import Evaluator
 
@@ -43,6 +43,25 @@ CONFIGS = {
 }
 
 
+def _voltage_config(feedforward=True, base=SHORT, gain=1.0):
+    """Voltage-mode driver whose constants (resistance x 0.9, torque constant x 1.1) differ from the true motor."""
+    estimate = replace(base.motor, resistance=base.motor.resistance * 0.9,
+                       torque_constant=base.motor.torque_constant * 1.1)
+    return replace(base, voltage_estimate=estimate, voltage_feedforward=feedforward,
+                   voltage_feedforward_gain=gain)
+
+
+VOLTAGE_CONFIGS = {
+    "feedforward": _voltage_config(True),
+    "no_feedforward": _voltage_config(False),
+    "exact_constants": replace(SHORT, voltage_estimate=SHORT.motor),
+    "latency_between_steps": _voltage_config(True, replace(SHORT, latency=0.0037)),
+    "gain_1p2": _voltage_config(True, gain=1.2),
+    "gain_0p9": _voltage_config(True, gain=0.9),
+    "current_limited": _voltage_config(True, replace(SHORT, motor=replace(SHORT.motor, current_limit=0.8))),
+}
+
+
 def _candidates(n=24, seed=0):
     """Random gains plus corner cases: every gain at its lower / upper bound, the hand-tuned set,
     and one too weak to balance (Kp below the critical gain), so the falling path is always covered."""
@@ -66,7 +85,95 @@ def test_costs_and_falls_match_reference(name):
         np.testing.assert_allclose(result.costs[i], expected.costs, rtol=COST_RTOL)
         assert result.n_fell[i] == expected.n_fell
     # The candidates should cover both outcomes, or the test isn't checking much.
+    if CONFIG.name == "pololu":   # the cases are sized so some runs fall on the Pololu robot; all may on others
+        assert 0 < result.n_fell.sum() < result.costs.size
+
+
+@pytest.mark.parametrize("name", list(VOLTAGE_CONFIGS))
+def test_voltage_mode_costs_and_falls_match_reference(name):
+    config = VOLTAGE_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    assert batched.robot.voltage_mode
+    gains = _candidates()
+
+    result = batched.evaluate_population(gains)
+    for i, g in enumerate(gains):
+        expected = ref.evaluate_gains(g)
+        np.testing.assert_allclose(result.costs[i], expected.costs, rtol=COST_RTOL)
+        assert result.n_fell[i] == expected.n_fell
     assert 0 < result.n_fell.sum() < result.costs.size
+
+
+@pytest.mark.parametrize("name", ["feedforward", "no_feedforward", "latency_between_steps", "gain_1p2", "gain_0p9"])
+def test_voltage_mode_trajectories_match_reference_exactly(name):
+    config = VOLTAGE_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    gains = _candidates(n=12, seed=1)
+    pitch, seed = ref.scenarios()[1]
+
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), schedule=batched.schedule, record=True)
+    for i, g in enumerate(gains):
+        expected = ref.run(g, pitch, seed)
+        n = len(expected.t)
+        np.testing.assert_array_equal(run.states[:n, i], expected.states)
+        assert run.fell[i] == expected.fell
+
+
+def test_voltage_mode_differs_from_current_mode():
+    """The new path actually runs: voltage mode with mismatched constants scores differently."""
+    gains = _candidates(n=6, seed=5)
+    current = BatchEvaluator(SHORT, SPACE).evaluate_population(gains).costs
+    voltage = BatchEvaluator(VOLTAGE_CONFIGS["no_feedforward"], SPACE).evaluate_population(gains).costs
+    assert not np.allclose(current, voltage, rtol=1e-6)
+
+
+def test_voltage_feedforward_gain_changes_the_result():
+    gains = _candidates(n=6, seed=5)
+    base = BatchEvaluator(VOLTAGE_CONFIGS["feedforward"], SPACE).evaluate_population(gains).costs
+    scaled = BatchEvaluator(VOLTAGE_CONFIGS["gain_1p2"], SPACE).evaluate_population(gains).costs
+    assert not np.allclose(base, scaled, rtol=1e-6)
+
+
+@pytest.mark.parametrize("feedforward", [True, False])
+def test_voltage_mode_per_robot_parameters_match_separate_reference_runs(feedforward):
+    """True motor constants, mass and supply voltage differ per robot; the robot code's constants don't."""
+    config = _voltage_config(feedforward)
+    rng = np.random.default_rng(6)
+    n = 10
+    masses = rng.uniform(0.6, 1.0, n)
+    resistance = config.motor.resistance * rng.uniform(0.85, 1.15, n)
+    constant = config.motor.torque_constant * rng.uniform(0.9, 1.1, n)
+    supply = config.motor.supply_voltage * rng.uniform(0.8, 1.0, n)
+    batched = BatchEvaluator(config, SPACE)
+    robot = BatchRobot.from_params(config.params, config.motor, voltage_estimate=config.voltage_estimate,
+                                   voltage_feedforward=feedforward, body_mass=masses, resistance=resistance,
+                                   torque_constant=constant, supply_voltage=supply)
+    pitch, seed = batched.scenarios()[0]
+    run = simulate_batch(batched.spec, robot, np.tile(HAND_TUNED, (n, 1)), pitch,
+                         noise=batched.noise_for((seed,)), seed_index=np.zeros(n, dtype=int),
+                         schedule=batched.schedule)
+    for i in range(n):
+        motor = replace(config.motor, resistance=resistance[i], torque_constant=constant[i],
+                        supply_voltage=supply[i])
+        ref = Evaluator(replace(config, params=config.params.with_changes(body_mass=masses[i]), motor=motor), SPACE)
+        expected = ref.run(HAND_TUNED, pitch, seed)
+        np.testing.assert_allclose(run.cost[i], ref.score(expected), rtol=COST_RTOL)
+        np.testing.assert_array_equal(run.final_state[i], expected.states[-1])
+
+
+def test_voltage_mode_per_simulation_latency_matches_shared_latency():
+    config = VOLTAGE_CONFIGS["feedforward"]
+    batched = BatchEvaluator(config, SPACE)
+    gains = _candidates(n=8, seed=9)
+    pitch, seed = batched.scenarios()[0]
+    steps = int(round(config.latency / config.dt))
+    kwargs = dict(noise=batched.noise_for((seed,)), seed_index=np.zeros(len(gains), dtype=int))
+    shared = simulate_batch(batched.spec, batched.robot, gains, pitch, schedule=batched.schedule, **kwargs)
+    per_sim = simulate_batch(batched.spec, batched.robot, gains, pitch, delay_steps=np.full(len(gains), steps),
+                             **kwargs)
+    np.testing.assert_array_equal(shared.cost, per_sim.cost)
+    np.testing.assert_array_equal(shared.final_state, per_sim.final_state)
 
 
 def test_five_gain_sets_with_a_velocity_integral_still_match():
@@ -113,7 +220,7 @@ def test_per_robot_parameters_match_separate_reference_runs():
     n = 10
     masses, heights = rng.uniform(0.6, 1.0, n), rng.uniform(0.07, 0.13, n)
     batched = BatchEvaluator(config, SPACE)
-    robot = BatchRobot.from_params(config.params, config.motor, body_mass=masses, body_com_height=heights)
+    robot = robot_from_eval_config(config, body_mass=masses, body_com_height=heights)
     pitch, seed = batched.scenarios()[0]
     run = simulate_batch(batched.spec, robot, np.tile(HAND_TUNED, (n, 1)), pitch,
                          noise=batched.noise_for((seed,)), seed_index=np.zeros(n, dtype=int),
@@ -150,4 +257,376 @@ def test_float32_stays_close_to_float64():
     stable = r64.n_fell == 0
     assert stable.sum() >= 12
     assert (r32.n_fell[stable] == 0).all()
-    np.testing.assert_allclose(r32.costs[stable], r64.costs[stable], rtol=1e-3)
+    if SHORT.sensor.has_encoder:
+        # A quantized encoder (B3) turns a last-bit difference into a whole count now and then, and
+        # from there the two runs diverge like the chaos penalty's nudged twins: that measures the
+        # loop's sensitivity, not float32 arithmetic. So check the typical difference (median under
+        # 0.5%) and cap the worst at 5%, instead of 0.1% everywhere as with smooth sensing.
+        rel = np.abs(r32.costs[stable] - r64.costs[stable]) / np.abs(r64.costs[stable])
+        assert np.median(rel) < 5e-3 and rel.max() < 0.05
+    else:
+        np.testing.assert_allclose(r32.costs[stable], r64.costs[stable], rtol=1e-3)
+
+
+# ---- IMU sensor: gyro + accelerometer through the complementary filter (SOFTWARE_PLAN B2) ----
+
+def _imu_config(voltage=False, base=SHORT):
+    """Noisy, biased IMU with the accelerometer above the axle, and pushes so the force path runs."""
+    sensor = IMUSensor(pitch_std=0.004, pitch_bias=0.01, pitch_rate_std=0.02, pitch_rate_bias=0.015,
+                       velocity_std=0.01, imu_height=0.1, filter_time_constant=0.5,
+                       control_dt=base.control_dt, gravity=base.params.gravity, seed=0)
+    config = replace(base, sensor=sensor, pushes=((0.5, 0.1, 1.5), (1.4, 0.05, -2.0)))
+    # voltage=False forces current mode even when the robot's config is already voltage mode (legobot)
+    return _voltage_config(True, config) if voltage else replace(config, voltage_estimate=None)
+
+
+IMU_CONFIGS = {
+    "current": _imu_config(False),
+    "voltage": _imu_config(True),
+    "current_latency_between_steps": _imu_config(False, replace(SHORT, latency=0.0037)),
+}
+
+
+@pytest.mark.parametrize("name", list(IMU_CONFIGS))
+def test_imu_costs_and_falls_match_reference(name):
+    config = IMU_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    assert batched.spec.imu and batched.robot.voltage_mode == (name == "voltage")
+    gains = _candidates()
+    result = batched.evaluate_population(gains)
+    for i, g in enumerate(gains):
+        expected = ref.evaluate_gains(g)
+        np.testing.assert_allclose(result.costs[i], expected.costs, rtol=COST_RTOL)
+        assert result.n_fell[i] == expected.n_fell
+    assert 0 < result.n_fell.sum() < result.costs.size
+
+
+@pytest.mark.parametrize("name", list(IMU_CONFIGS))
+def test_imu_trajectories_match_reference_exactly(name):
+    config = IMU_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    gains = _candidates(n=12, seed=1)
+    pitch, seed = ref.scenarios()[1]
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), schedule=batched.schedule, record=True)
+    for i, g in enumerate(gains):
+        expected = ref.run(g, pitch, seed)
+        n = len(expected.t)
+        np.testing.assert_array_equal(run.states[:n, i], expected.states)
+        assert run.fell[i] == expected.fell
+
+
+def test_imu_changes_the_run_and_voltage_estimate_differs_from_true_motor():
+    gains = _candidates(n=6, seed=5)
+    plain = BatchEvaluator(replace(IMU_CONFIGS["current"], sensor=SensorNoise(pitch_std=0.004, pitch_bias=0.01,
+                           pitch_rate_std=0.02, pitch_rate_bias=0.015, velocity_std=0.01, seed=0)), SPACE)
+    imu = BatchEvaluator(IMU_CONFIGS["current"], SPACE)
+    assert not np.allclose(plain.evaluate_population(gains).costs, imu.evaluate_population(gains).costs, rtol=1e-6)
+
+
+def test_imu_without_noise_table_applies_biases_like_the_reference():
+    """A zero-noise IMU with biases: the no-table branch must match the reference (noise 0, biases kept)."""
+    config = replace(IMU_CONFIGS["current"], sensor=IMUSensor(
+        pitch_bias=0.01, pitch_rate_bias=0.015, imu_height=0.1, control_dt=SHORT.control_dt,
+        gravity=SHORT.params.gravity, seed=0))
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    gains = _candidates(n=8, seed=3)
+    pitch, seed = ref.scenarios()[0]
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, schedule=batched.schedule, record=True)
+    for i, g in enumerate(gains):
+        expected = ref.run(g, pitch, seed)
+        np.testing.assert_array_equal(run.states[:len(expected.t), i], expected.states)
+
+
+@pytest.mark.parametrize("voltage", [False, True])
+def test_imu_per_simulation_delay_matches_reference(voltage):
+    config = _imu_config(voltage)
+    batched = BatchEvaluator(config, SPACE)
+    gains = _candidates(n=6, seed=2)
+    pitch, seed = batched.scenarios()[0]
+    delays = np.array([0, 1, 3, 4, 7, 12])
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), delay_steps=delays, record=True)
+    for i, (g, d) in enumerate(zip(gains, delays)):
+        ref = Evaluator(replace(config, latency=d * config.dt), SPACE)
+        expected = ref.run(g, pitch, seed)
+        np.testing.assert_array_equal(run.states[:len(expected.t), i], expected.states)
+
+
+def test_imu_filter_runs_at_the_eval_configs_control_period():
+    """Both evaluators run the filter at EvalConfig.control_dt, not the sensor's own control_dt."""
+    config = replace(IMU_CONFIGS["current"], sensor=replace(IMU_CONFIGS["current"].sensor, control_dt=0.01))
+    batched = BatchEvaluator(config, SPACE).evaluate_gains(HAND_TUNED)
+    expected = BatchEvaluator(IMU_CONFIGS["current"], SPACE).evaluate_gains(HAND_TUNED)
+    np.testing.assert_array_equal(batched.costs, expected.costs)
+    ref = Evaluator(config, SPACE).evaluate_gains(HAND_TUNED)
+    np.testing.assert_allclose(batched.costs, ref.costs, rtol=COST_RTOL)
+
+
+# ---- Encoder: quantized, sampled, delayed wheel angle (SOFTWARE_PLAN B3) ----
+
+def _encoder_config(imu=True, voltage=False, delay=0.005, base=SHORT, latency=None):
+    """Noisy sensor (IMU or noise model) with the encoder on, built explicitly, plus pushes."""
+    common = dict(pitch_std=0.004, pitch_bias=0.01, pitch_rate_std=0.02, pitch_rate_bias=0.015, velocity_std=0.01,
+                  seed=0, encoder_counts=360, encoder_period=0.010, encoder_delay=delay,
+                  wheel_radius=base.params.wheel_radius)
+    if imu:
+        sensor = IMUSensor(imu_height=0.1, filter_time_constant=0.5, control_dt=base.control_dt,
+                           gravity=base.params.gravity, **common)
+    else:
+        sensor = SensorNoise(**common)
+    config = replace(base, sensor=sensor, pushes=((0.5, 0.1, 1.5), (1.4, 0.05, -2.0)))
+    if latency is not None:
+        config = replace(config, latency=latency)
+    return _voltage_config(True, config) if voltage else replace(config, voltage_estimate=None)
+
+
+ENCODER_CONFIGS = {
+    "noise_model": _encoder_config(imu=False),
+    "imu": _encoder_config(imu=True),
+    "voltage_imu": _encoder_config(imu=True, voltage=True),
+    "imu_no_delay": _encoder_config(imu=True, delay=0.0),
+    "imu_latency_between_steps": _encoder_config(imu=True, latency=0.0037),
+}
+
+
+@pytest.mark.parametrize("name", list(ENCODER_CONFIGS))
+def test_encoder_costs_and_falls_match_reference(name):
+    config = ENCODER_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    assert batched.spec.encoder_counts == 360
+    gains = _candidates()
+    result = batched.evaluate_population(gains)
+    for i, g in enumerate(gains):
+        expected = ref.evaluate_gains(g)
+        np.testing.assert_allclose(result.costs[i], expected.costs, rtol=COST_RTOL)
+        assert result.n_fell[i] == expected.n_fell
+    assert 0 < result.n_fell.sum() < result.costs.size
+
+
+@pytest.mark.parametrize("name", list(ENCODER_CONFIGS))
+def test_encoder_trajectories_match_reference_exactly(name):
+    config = ENCODER_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    gains = _candidates(n=12, seed=1)
+    pitch, seed = ref.scenarios()[1]
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), schedule=batched.schedule, record=True)
+    for i, g in enumerate(gains):
+        expected = ref.run(g, pitch, seed)
+        np.testing.assert_array_equal(run.states[:len(expected.t), i], expected.states)
+        assert run.fell[i] == expected.fell
+
+
+def test_encoder_changes_the_run():
+    gains = _candidates(n=6, seed=5)
+    config = ENCODER_CONFIGS["imu"]
+    off = replace(config, sensor=replace(config.sensor, encoder_counts=0))
+    assert not np.allclose(BatchEvaluator(off, SPACE).evaluate_population(gains).costs,
+                           BatchEvaluator(config, SPACE).evaluate_population(gains).costs, rtol=1e-6)
+
+
+@pytest.mark.parametrize("voltage", [False, True])
+def test_encoder_per_simulation_delay_matches_reference(voltage):
+    config = _encoder_config(imu=True, voltage=voltage)
+    batched = BatchEvaluator(config, SPACE)
+    gains = _candidates(n=6, seed=2)
+    pitch, seed = batched.scenarios()[0]
+    delays = np.array([0, 1, 3, 4, 7, 12])
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), delay_steps=delays, record=True)
+    for i, (g, d) in enumerate(zip(gains, delays)):
+        ref = Evaluator(replace(config, latency=d * config.dt), SPACE)
+        expected = ref.run(g, pitch, seed)
+        np.testing.assert_array_equal(run.states[:len(expected.t), i], expected.states)
+
+
+@pytest.mark.parametrize("field, value", [("encoder_period", 0.0123), ("encoder_delay", 0.0037)])
+def test_encoder_timing_must_be_a_multiple_of_dt(field, value):
+    sensor = replace(ENCODER_CONFIGS["imu"].sensor, **{field: value})
+    with pytest.raises(ValueError, match=field):
+        BatchEvaluator(replace(ENCODER_CONFIGS["imu"], sensor=sensor), SPACE)
+
+
+# ---- Per-simulation pitch offset (SOFTWARE_PLAN B6) ----
+
+PITCH_BIAS_CONFIGS = {
+    "noise_model": replace(SHORT, sensor=SensorNoise(pitch_std=0.004, pitch_bias=0.01, pitch_rate_std=0.02,
+                                                     pitch_rate_bias=0.015, velocity_std=0.01, seed=0)),
+    "imu_voltage_encoder": _encoder_config(imu=True, voltage=True),
+}
+
+
+@pytest.mark.parametrize("name", list(PITCH_BIAS_CONFIGS))
+def test_per_simulation_pitch_bias_matches_separate_reference_runs(name):
+    """Every simulation has its own pitch offset (drawn per scenario by randomize_range)."""
+    config = PITCH_BIAS_CONFIGS[name]
+    n = 8
+    biases = np.random.default_rng(5).uniform(-0.02, 0.02, n)
+    batched = BatchEvaluator(config, SPACE)
+    robot = replace(batched.robot, pitch_bias=biases)
+    gains = _candidates(n=n, seed=6)
+    pitch, seed = batched.scenarios()[0]
+    run = simulate_batch(batched.spec, robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(n, dtype=int), schedule=batched.schedule)
+    shared = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                            seed_index=np.zeros(n, dtype=int), schedule=batched.schedule)
+    assert not np.array_equal(run.final_state, shared.final_state)   # the offsets matter
+    for i in range(n):
+        ref = Evaluator(replace(config, sensor=replace(config.sensor, pitch_bias=biases[i])), SPACE)
+        expected = ref.run(gains[i], pitch, seed)
+        np.testing.assert_allclose(run.cost[i], ref.score(expected), rtol=COST_RTOL)
+        np.testing.assert_array_equal(run.final_state[i], expected.states[-1])
+
+
+def test_equal_per_simulation_pitch_bias_is_the_same_as_the_spec_scalar():
+    config = PITCH_BIAS_CONFIGS["imu_voltage_encoder"]
+    batched = BatchEvaluator(config, SPACE)
+    gains = _candidates(n=6, seed=2)
+    pitch, seed = batched.scenarios()[0]
+    kwargs = dict(noise=batched.noise_for((seed,)), seed_index=np.zeros(6, dtype=int), schedule=batched.schedule)
+    plain = simulate_batch(batched.spec, replace(batched.robot, pitch_bias=None), gains, pitch, **kwargs)
+    arrays = simulate_batch(batched.spec, replace(batched.robot, pitch_bias=np.full(6, config.sensor.pitch_bias)),
+                            gains, pitch, **kwargs)
+    np.testing.assert_array_equal(plain.cost, arrays.cost)
+    np.testing.assert_array_equal(plain.final_state, arrays.final_state)
+
+
+# ---- Slow PWM (SlowPwmActuator, SOFTWARE_PLAN B1b): the same checks as the voltage mode ----
+SLOW_PWM_CONFIGS = {name: replace(VOLTAGE_CONFIGS[name], slow_pwm=True)
+                    for name in ("feedforward", "no_feedforward", "exact_constants", "latency_between_steps",
+                                 "gain_1p2", "current_limited")}
+
+
+@pytest.mark.parametrize("name", list(SLOW_PWM_CONFIGS))
+def test_slow_pwm_costs_and_falls_match_reference(name):
+    config = SLOW_PWM_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    assert batched.robot.voltage_mode and batched.robot.slow_pwm
+    gains = _candidates()
+    result = batched.evaluate_population(gains)
+    for i, g in enumerate(gains):
+        expected = ref.evaluate_gains(g)
+        np.testing.assert_allclose(result.costs[i], expected.costs, rtol=COST_RTOL)
+        assert result.n_fell[i] == expected.n_fell
+
+
+@pytest.mark.parametrize("name", ["feedforward", "no_feedforward", "latency_between_steps", "gain_1p2"])
+def test_slow_pwm_trajectories_match_reference_exactly(name):
+    config = SLOW_PWM_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    gains = _candidates(n=12, seed=1)
+    pitch, seed = ref.scenarios()[1]
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), schedule=batched.schedule, record=True)
+    for i, g in enumerate(gains):
+        expected = ref.run(g, pitch, seed)
+        n = len(expected.t)
+        np.testing.assert_array_equal(run.states[:n, i], expected.states)
+        assert run.fell[i] == expected.fell
+
+
+def test_slow_pwm_differs_from_linear_voltage_mode():
+    gains = _candidates(n=6, seed=5)
+    linear = BatchEvaluator(VOLTAGE_CONFIGS["feedforward"], SPACE).evaluate_population(gains).costs
+    slow = BatchEvaluator(SLOW_PWM_CONFIGS["feedforward"], SPACE).evaluate_population(gains).costs
+    assert not np.allclose(linear, slow, rtol=1e-6)
+
+
+def test_slow_pwm_per_robot_parameters_match_separate_reference_runs():
+    config = SLOW_PWM_CONFIGS["feedforward"]
+    rng = np.random.default_rng(7)
+    n = 10
+    resistance = config.motor.resistance * rng.uniform(0.85, 1.15, n)
+    constant = config.motor.torque_constant * rng.uniform(0.9, 1.1, n)
+    supply = config.motor.supply_voltage * rng.uniform(0.8, 1.0, n)
+    batched = BatchEvaluator(config, SPACE)
+    robot = BatchRobot.from_params(config.params, config.motor, voltage_estimate=config.voltage_estimate,
+                                   slow_pwm=True, resistance=resistance, torque_constant=constant,
+                                   supply_voltage=supply)
+    pitch, seed = batched.scenarios()[0]
+    run = simulate_batch(batched.spec, robot, np.tile(HAND_TUNED, (n, 1)), pitch,
+                         noise=batched.noise_for((seed,)), seed_index=np.zeros(n, dtype=int),
+                         schedule=batched.schedule)
+    for i in range(n):
+        motor = replace(config.motor, resistance=resistance[i], torque_constant=constant[i],
+                        supply_voltage=supply[i])
+        ref = Evaluator(replace(config, motor=motor), SPACE)
+        expected = ref.run(HAND_TUNED, pitch, seed)
+        np.testing.assert_allclose(run.cost[i], ref.score(expected), rtol=COST_RTOL)
+        np.testing.assert_array_equal(run.final_state[i], expected.states[-1])
+
+
+# ---- Slow PWM with the HAT's pulse-density modulation (pwm_tick) ----
+PDM_CONFIGS = {
+    "pdm_10ms": replace(SLOW_PWM_CONFIGS["feedforward"], pwm_tick=0.01),
+    "pdm_10ms_latency_between_steps": replace(SLOW_PWM_CONFIGS["latency_between_steps"], pwm_tick=0.01),
+    "pdm_one_step_ticks": replace(SLOW_PWM_CONFIGS["no_feedforward"], pwm_tick=SHORT.dt),
+}
+
+
+@pytest.mark.parametrize("name", list(PDM_CONFIGS))
+def test_pdm_costs_and_trajectories_match_reference(name):
+    config = PDM_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    assert batched.robot.pwm_tick == config.pwm_tick > 0
+    gains = _candidates(n=12, seed=3)
+    result = batched.evaluate_population(gains)
+    for i, g in enumerate(gains):
+        expected = ref.evaluate_gains(g)
+        np.testing.assert_allclose(result.costs[i], expected.costs, rtol=COST_RTOL)
+        assert result.n_fell[i] == expected.n_fell
+    pitch, seed = ref.scenarios()[1]
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), schedule=batched.schedule, record=True)
+    for i, g in enumerate(gains):
+        expected = ref.run(g, pitch, seed)
+        np.testing.assert_array_equal(run.states[:len(expected.t), i], expected.states)
+
+
+def test_pdm_differs_from_averaged_slow_pwm():
+    gains = _candidates(n=6, seed=5)
+    averaged = BatchEvaluator(SLOW_PWM_CONFIGS["feedforward"], SPACE).evaluate_population(gains).costs
+    pulsed = BatchEvaluator(PDM_CONFIGS["pdm_10ms"], SPACE).evaluate_population(gains).costs
+    assert not np.allclose(averaged, pulsed, rtol=1e-6)
+
+
+def test_pdm_tick_must_be_whole_steps():
+    with pytest.raises(ValueError):
+        BatchEvaluator(replace(PDM_CONFIGS["pdm_10ms"], pwm_tick=SHORT.dt * 1.5), SPACE).evaluate_population(
+            _candidates(n=4))
+
+
+
+@pytest.mark.parametrize("phase", [0.0, 0.25, 0.5, 0.99])
+def test_pdm_phase_matches_reference(phase):
+    config = replace(PDM_CONFIGS["pdm_10ms"], pwm_tick_phase=phase)
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    gains = _candidates(n=8, seed=4)
+    result = batched.evaluate_population(gains)
+    for i, g in enumerate(gains):
+        np.testing.assert_allclose(result.costs[i], ref.evaluate_gains(g).costs, rtol=COST_RTOL)
+
+
+def test_pdm_per_simulation_phase_matches_separate_reference_runs():
+    """Robust scoring draws the tick phase per scenario: a (B,) array, each matching its own reference run."""
+    config = PDM_CONFIGS["pdm_10ms"]
+    phases = np.linspace(0.0, 0.95, 8)
+    batched = BatchEvaluator(config, SPACE)
+    robot = replace(batched.robot, pwm_tick_phase=phases)
+    pitch, seed = batched.scenarios()[0]
+    run = simulate_batch(batched.spec, robot, np.tile(HAND_TUNED, (len(phases), 1)), pitch,
+                         noise=batched.noise_for((seed,)), seed_index=np.zeros(len(phases), dtype=int),
+                         schedule=batched.schedule)
+    for i, ph in enumerate(phases):
+        ref = Evaluator(replace(config, pwm_tick_phase=float(ph)), SPACE)
+        expected = ref.run(HAND_TUNED, pitch, seed)
+        np.testing.assert_allclose(run.cost[i], ref.score(expected), rtol=COST_RTOL)
+        np.testing.assert_array_equal(run.final_state[i], expected.states[-1])
+
+
+def test_pdm_phase_changes_the_result():
+    gains = _candidates(n=6, seed=5)
+    a = BatchEvaluator(replace(PDM_CONFIGS["pdm_10ms"], pwm_tick_phase=0.0), SPACE).evaluate_population(gains).costs
+    b = BatchEvaluator(replace(PDM_CONFIGS["pdm_10ms"], pwm_tick_phase=0.6), SPACE).evaluate_population(gains).costs
+    assert not np.allclose(a, b, rtol=1e-6)

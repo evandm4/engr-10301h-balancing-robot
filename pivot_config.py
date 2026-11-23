@@ -9,7 +9,8 @@ Only what is new lives here: how the old body splits into a lower body and an
 upper body, the servo, the pivot sensor, the pivot loop's gains, the extra
 cost terms, the LQR weights, and the extra search bounds. Everything shared
 with the base robot (wheels, wheel motors, IMU noise, latency, timing, the
-goal-velocity scenario) is read from config.py's CONFIG, so changing it there
+goal-velocity scenario) is read from config.py's Pololu robot (POLOLU_CONFIG, whatever ROBOT
+selects), so changing it there
 changes it here too, including the cost (pitch from upright, Bryson-rule
 weights); the servo's effort weight is derived the same way, from a typical
 servo torque. Nothing in config.py or in the base simulation is changed by
@@ -22,7 +23,7 @@ import math
 from dataclasses import asdict, dataclass, field, replace
 from typing import Optional, Tuple
 
-from config import CONFIG, ProjectConfig  # also puts simulation/ and optimization/ on the path
+from config import POLOLU_CONFIG, ProjectConfig  # also puts simulation/ and optimization/ on the path
 
 from pivot_sim import (
     PIVOT_GAIN_NAMES,
@@ -175,7 +176,8 @@ class PivotSearchConfig:
 # --------------------------------------------------------- PUT IT TOGETHER -
 @dataclass(frozen=True)
 class PivotProjectConfig:
-    base: ProjectConfig = CONFIG
+    # Always the Pololu robot: the body split above is sized from it, whatever ROBOT selects.
+    base: ProjectConfig = POLOLU_CONFIG
     body: PivotBodyConfig = field(default_factory=PivotBodyConfig)
     servo: ServoConfig = field(default_factory=ServoConfig)
     sensor: PivotSensorConfig = field(default_factory=PivotSensorConfig)
