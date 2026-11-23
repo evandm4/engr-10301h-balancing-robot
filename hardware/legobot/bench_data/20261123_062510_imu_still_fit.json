@@ -1,0 +1,176 @@
+{
+  "script": "imu_still",
+  "meta": {
+    "pwmparams": [
+      0.65,
+      0.01
+    ],
+    "vin": 7.39,
+    "side": "both",
+    "wheel": "off the ground",
+    "args": {
+      "wheels_off": true,
+      "seconds": 30.0,
+      "motor_duties": [
+        0.3,
+        0.6,
+        1.0
+      ],
+      "motor_seconds": 10.0,
+      "pwmparams": [
+        0.65,
+        0.01
+      ],
+      "outdir": "logs"
+    },
+    "imu_config": {
+      "GYRO_CONFIG_1": 27,
+      "ACCEL_CONFIG": 27,
+      "GYRO_SMPLRT_DIV": 0
+    },
+    "sample_rate_hz": 200.00020858165007
+  },
+  "constants": {
+    "gyro_bias": {
+      "value": 0.04282358505066973,
+      "se": 3.8646782902717416e-05,
+      "unit": "rad/s",
+      "n": 6000,
+      "se_kind": "repeats"
+    },
+    "gyro_pitch_sd": {
+      "value": 0.0015105067686480066,
+      "se": 1.3790126399298822e-05,
+      "unit": "rad/s",
+      "n": 6000,
+      "se_kind": "normal"
+    },
+    "theta_acc_mean": {
+      "value": -2.956787293323528,
+      "se": 8.836881474002698e-05,
+      "unit": "rad",
+      "n": 6000,
+      "se_kind": "repeats"
+    },
+    "theta_acc_sd": {
+      "value": 0.0014518918717311574,
+      "se": 1.32550034497415e-05,
+      "unit": "rad",
+      "n": 6000,
+      "se_kind": "normal"
+    },
+    "gx_sd": {
+      "value": 0.0015105067686480066,
+      "se": 1.3790126399298822e-05,
+      "unit": "rad/s",
+      "n": 6000,
+      "se_kind": "normal"
+    },
+    "gy_sd": {
+      "value": 0.0014893172920541961,
+      "se": 1.3596677706033336e-05,
+      "unit": "rad/s",
+      "n": 6000,
+      "se_kind": "normal"
+    },
+    "gz_sd": {
+      "value": 0.0013964478424494016,
+      "se": 1.2748828841489871e-05,
+      "unit": "rad/s",
+      "n": 6000,
+      "se_kind": "normal"
+    },
+    "adev_0.00499999s": {
+      "value": 0.0013374261871896013,
+      "se": 1.2209992403797514e-05,
+      "unit": "rad/s",
+      "n": 6000,
+      "se_kind": "allan"
+    },
+    "adev_0.0499999s": {
+      "value": 0.0005453486282592512,
+      "se": 1.5755994337059624e-05,
+      "unit": "rad/s",
+      "n": 6000,
+      "se_kind": "allan"
+    },
+    "adev_0.499999s": {
+      "value": 0.00019421666411227487,
+      "se": 1.7879093135464445e-05,
+      "unit": "rad/s",
+      "n": 6000,
+      "se_kind": "allan"
+    },
+    "adev_4.99999s": {
+      "value": 0.00010068084585867673,
+      "se": 3.183807896657495e-05,
+      "unit": "rad/s",
+      "n": 6000,
+      "se_kind": "allan"
+    },
+    "gyro_sd_duty_0.3": {
+      "value": 0.014036552381765535,
+      "se": 0.00024086661531640997,
+      "unit": "rad/s",
+      "n": 1699,
+      "se_kind": "normal"
+    },
+    "gyro_bias_duty_0.3": {
+      "value": 0.04282016001188448,
+      "se": 8.143211842184281e-05,
+      "unit": "rad/s",
+      "n": 1699,
+      "se_kind": "repeats"
+    },
+    "gyro_sd_added_duty_0.3": {
+      "value": 0.013955041098754109,
+      "se": null,
+      "unit": "rad/s",
+      "n": 1699,
+      "se_kind": "none"
+    },
+    "gyro_sd_duty_0.6": {
+      "value": 0.014753042821748644,
+      "se": 0.00025316155943741,
+      "unit": "rad/s",
+      "n": 1699,
+      "se_kind": "normal"
+    },
+    "gyro_bias_duty_0.6": {
+      "value": 0.04262521424133881,
+      "se": 0.00013610479600443986,
+      "unit": "rad/s",
+      "n": 1699,
+      "se_kind": "repeats"
+    },
+    "gyro_sd_added_duty_0.6": {
+      "value": 0.014675511636812454,
+      "se": null,
+      "unit": "rad/s",
+      "n": 1699,
+      "se_kind": "none"
+    },
+    "gyro_sd_duty_1": {
+      "value": 0.017231828579090676,
+      "se": 0.00029561037909205264,
+      "unit": "rad/s",
+      "n": 1700,
+      "se_kind": "normal"
+    },
+    "gyro_bias_duty_1": {
+      "value": 0.04286033336168276,
+      "se": 0.00010206640045577299,
+      "unit": "rad/s",
+      "n": 1700,
+      "se_kind": "repeats"
+    },
+    "gyro_sd_added_duty_1": {
+      "value": 0.01716549694826907,
+      "se": null,
+      "unit": "rad/s",
+      "n": 1700,
+      "se_kind": "none"
+    }
+  },
+  "diagnostics": {}
+}

@@ -10,6 +10,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from config import CONFIG  # noqa: E402
 
+pololu_only = pytest.mark.skipif(CONFIG.name != "pololu", reason="checks numbers or gains specific to config.py's Pololu robot")
+
 from balance_sim import LinearController, critical_pitch_gain, model_based_pid_gains, spectral_radius  # noqa: E402
 from balance_sim.pid_design import _plant_constants  # noqa: E402
 
@@ -41,6 +43,7 @@ def test_default_design_is_stable_at_the_configured_latency():
     assert spectral_radius(P, loop, T, CONFIG.timing.latency_s) < 1.0
 
 
+@pololu_only
 def test_faster_outer_loop_is_unstable_at_the_configured_latency():
     """The module docstring's claim: an outer bandwidth of z/2 fails with the 10 ms delay."""
     gains = model_based_pid_gains(P, outer_fraction=0.5)

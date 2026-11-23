@@ -2,7 +2,7 @@
 
 Runs the real tuning scenario from config.py and reports time per simulation
 at each batch size, so you can see where batching pays off. Compares against
-the latest one-at-a-time baseline from benchmark.py (results/benchmarks/cpu_*.json)
+the latest one-at-a-time baseline from benchmark.py (results/benchmarks/cpu_*.json; results/legobot/benchmarks/ with --robot legobot)
 and saves its own numbers, with machine and library versions, next to it.
 
 From the project folder:
@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT))   # config.py; importing it puts simulation/ and o
 
 import numpy as np
 
-from config import CONFIG
+from config import CONFIG, add_robot_argument, results_dir
 from batch_tuning import BatchEvaluator, decode_units
 
 
@@ -42,6 +42,7 @@ def machine_info(backend: str) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    add_robot_argument(parser)
     parser.add_argument("--backend", choices=["numpy", "torch"], default="numpy")
     parser.add_argument("--sizes", type=int, nargs="+", default=None,
                         help="simulations per batch (rounded up to a multiple of the 9 scenarios)")
@@ -61,7 +62,7 @@ def main():
     base = space.encode(CONFIG.controller.hand_tuned_gains)
 
     cpu_baseline = None
-    folder = ROOT / "results" / "benchmarks"
+    folder = results_dir("benchmarks")
     if folder.exists():
         files = sorted(folder.glob("cpu_*.json"))
         if files:

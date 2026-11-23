@@ -13,7 +13,7 @@ import pytest
 
 from balance_sim import Planar2D, linearize
 from batch_sim import BatchRobot, build_schedule, latency_steps, simulate_batch
-from batch_tuning import BatchEvaluator, spec_from_eval_config
+from batch_tuning import BatchEvaluator, robot_from_eval_config, spec_from_eval_config
 from config import CONFIG
 from tuning import Evaluator
 
@@ -38,9 +38,10 @@ def test_coulomb_torque_opposes_wheel_speed_and_saturates():
     """With no command, the body-joint torque is -tau_c tanh(w / w_eps): read it off the pitch
     acceleration difference against the frictionless robot."""
     tau_c, w_eps = 0.02, 1.0
-    rough = Planar2D(P.with_changes(coulomb_friction=tau_c, coulomb_friction_speed=w_eps), 1.0)
-    smooth = Planar2D(P, 1.0)
-    A, B = linearize(P)
+    base = P.with_changes(coulomb_friction=0.0)   # the robot's own nominal Coulomb friction would add to tau_c
+    rough = Planar2D(base.with_changes(coulomb_friction=tau_c, coulomb_friction_speed=w_eps), 1.0)
+    smooth = Planar2D(base, 1.0)
+    A, B = linearize(base)
     for w in (-50.0, -1.0, 0.3, 50.0):
         state = np.array([0.0, w * P.wheel_radius, 0.0, 0.0])   # relative wheel speed = w
         extra = rough.derivatives(state, 0.0) - smooth.derivatives(state, 0.0)
@@ -49,7 +50,8 @@ def test_coulomb_torque_opposes_wheel_speed_and_saturates():
 
 
 def test_linearize_includes_coulomb_slope():
-    params = P.with_changes(coulomb_friction=0.02, coulomb_friction_speed=2.0, wheel_friction=0.001,
+    base = P.with_changes(coulomb_friction=0.0)
+    params = base.with_changes(coulomb_friction=0.02, coulomb_friction_speed=2.0, wheel_friction=0.001,
                             max_torque=1e9)
     dyn = Planar2D(params, fall_angle=1.0)
     A, _ = linearize(params)
@@ -58,7 +60,7 @@ def test_linearize_includes_coulomb_slope():
                                for e in np.eye(4)])
     np.testing.assert_allclose(A, numeric, atol=1e-5)
     # Same as viscous friction of b + tau_c / w_eps.
-    viscous, _ = linearize(P.with_changes(wheel_friction=0.001 + 0.02 / 2.0))
+    viscous, _ = linearize(base.with_changes(wheel_friction=0.001 + 0.02 / 2.0))
     np.testing.assert_allclose(A, viscous, rtol=1e-12)
 
 
@@ -98,7 +100,7 @@ def test_latency_steps_rounds_up():
 
 def _batch(config, gains, delay_steps=None):
     spec = spec_from_eval_config(config)
-    robot = BatchRobot.from_params(config.params, config.motor)
+    robot = robot_from_eval_config(config)
     ev = BatchEvaluator(config, SPACE)
     scen = ev.scenarios()
     n = len(gains)
@@ -132,7 +134,7 @@ def test_mixed_delays_match_reference_runs_at_each_latency(controller):
     else:
         gain = CONFIG.build_lqr_gain()
         spec = spec_from_eval_config(SHORT, controller="lqr")
-        robot = BatchRobot.from_params(SHORT.params, SHORT.motor)
+        robot = robot_from_eval_config(SHORT)
         mixed = simulate_batch(spec, robot, np.tile(gain, (len(delays), 1)), 0.1, delay_steps=delays)
         for i, d in enumerate(delays):
             single = simulate_batch(replace(spec, latency=d * DT), robot, gain[None], 0.1)
@@ -175,7 +177,7 @@ def test_torch_per_sim_delay_matches_numpy(device, controller):
     seeds = (1, 2)
     noise = BatchEvaluator(config, SPACE).noise_for(seeds)
     seed_index = rng.integers(0, 2, B)
-    robot = BatchRobot.from_params(config.params, config.motor, body_mass=rng.uniform(0.7, 0.9, B))
+    robot = robot_from_eval_config(config, body_mass=rng.uniform(0.7, 0.9, B))
     ref = simulate_batch(spec, robot, gains, pitch, noise=noise, seed_index=seed_index, delay_steps=delays)
     sim = TorchSimulator(spec, robot, B, noise=noise, device=device, dtype=torch.float64,
                          n_gains=gains.shape[1], max_delay_steps=8)
@@ -204,7 +206,7 @@ def test_gyro_bias_applies_without_a_noise_table(device):
     config = replace(SHORT, sensor=SensorNoise(pitch_rate_bias=0.02), train_seeds=(1,))
     ref = Evaluator(config, SPACE)
     spec = spec_from_eval_config(config)
-    robot = BatchRobot.from_params(config.params, config.motor)
+    robot = robot_from_eval_config(config)
     gains = HAND_TUNED[None, :]
     expected = ref.evaluate_gains(HAND_TUNED).costs[0]
     pitch = config.start_pitches[0]

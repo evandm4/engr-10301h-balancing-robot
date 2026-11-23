@@ -17,7 +17,7 @@ From the optimization/ folder:
     python run_tuning.py --iters 10               faster, rougher differential evolution
     python run_tuning.py --workers -1              use every CPU core for differential evolution
 
-Results (JSON, CSV history, plot) are saved under ../results/tuning/<timestamp>/.
+Results (JSON, CSV history, plot) are saved under ../results/tuning/<timestamp>/ (results/legobot/... with --robot legobot).
 Angles are shown in degrees; all calculations stay in radians.
 """
 
@@ -34,7 +34,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "simulation"))
 sys.path.insert(0, str(HERE.parent))
 
-from config import CONFIG
+from config import CONFIG, add_robot_argument, results_dir
 from tuning import (
     Evaluator,
     bayesian_optimization_search,
@@ -51,6 +51,7 @@ from tuning import (
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    add_robot_argument(parser)
     parser.add_argument("--iters", type=int, default=20, help="differential evolution generations")
     parser.add_argument("--pop", type=int, default=8, help="population multiplier (population = pop x 5 gains)")
     parser.add_argument("--workers", type=int, default=1, help="CPU cores for differential evolution (-1 = all)")
@@ -134,7 +135,7 @@ def main():
 
     best_name, best_gains = min(results[1:], key=lambda nc: comparison[nc[0]]["train_cost"])
 
-    folder = HERE.parent / "results" / "tuning" / time.strftime("%Y%m%d-%H%M%S")
+    folder = results_dir("tuning", time.strftime("%Y%m%d-%H%M%S"))
     # Every file written below carries the full config, so any one of them can
     # be traced back to exactly what produced it.
     config_snapshot = CONFIG.snapshot()

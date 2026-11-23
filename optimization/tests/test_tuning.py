@@ -121,7 +121,7 @@ def test_evaluator_controller_knows_the_configured_limits(evaluator):
 def test_evaluator_dc_motor_respects_robot_torque_limit():
     cfg = replace(BASE, params=BASE.params.with_changes(max_torque=0.25))
     act = Evaluator(cfg, SPACE).dynamics().actuator
-    assert act.torque(10.0, 0.0) == pytest.approx(0.25)
+    assert act.torque(act.drive(10.0, 0.0), 0.0) == pytest.approx(0.25)
 
 
 def test_pitch_reference_option_changes_the_score():

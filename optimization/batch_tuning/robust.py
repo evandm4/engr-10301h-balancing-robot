@@ -43,8 +43,12 @@ import numpy as np
 from batch_sim import BatchRobot
 
 # BatchRobot fields that can be randomized: everything numeric except the
-# gravity constant and the (integer) motor count.
-RANDOMIZABLE = tuple(f.name for f in fields(BatchRobot) if f.name not in ("dc_motor", "n_motors", "gravity"))
+# gravity constant, the (integer) motor count and the voltage-mode driver's settings
+# (the robot code's fixed constants: the mismatch comes from randomizing the true ones).
+RANDOMIZABLE = tuple(f.name for f in fields(BatchRobot) if f.name not in (
+    "dc_motor", "n_motors", "gravity", "voltage_mode", "voltage_feedforward",
+    "voltage_feedforward_gain", "slow_pwm", "pwm_tick",
+    "est_torque_constant", "est_resistance", "est_gear_efficiency"))
 ROBOT_PARAM_FIELDS = ("body_mass", "body_com_height", "body_inertia", "wheel_mass", "wheel_radius",
                       "wheel_inertia", "rotor_inertia", "max_torque", "wheel_friction", "coulomb_friction",
                       "coulomb_friction_speed", "gravity")
@@ -179,3 +183,15 @@ def robot_at(robot: BatchRobot, index: int):
         motor = MotorParams(**{name: (int(value(name)) if name == "n_motors" else value(name))
                                for name in MOTOR_PARAM_FIELDS})
     return params, motor
+
+
+def pitch_bias_at(robot: BatchRobot, index: int):
+    """One simulation's pitch offset (rad), or None when the robot leaves it to the SimSpec.
+
+    robot_at's RobotParams/MotorParams hold no sensor settings; build the reference run's sensor
+    with replace(sensor, pitch_bias=pitch_bias_at(robot, i)).
+    """
+    bias = robot.pitch_bias
+    if bias is None:
+        return None
+    return float(np.asarray(bias)[index] if np.ndim(bias) else bias)

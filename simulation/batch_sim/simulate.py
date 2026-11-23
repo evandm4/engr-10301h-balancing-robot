@@ -19,13 +19,16 @@ The loop stops early once every simulation in the batch has fallen.
 from dataclasses import dataclass
 from typing import Optional
 
+import math
+
 import numpy as np
 
 from .controller import cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
-from .physics import rk4_step
+from .physics import (accelerometer_tilt, derivatives, pdm_update, pwm_steps_per_tick, pwm_tick_offset, rk4_step,
+                      voltage_drive)
 from .policy import PolicyMemory, ResidualBase, policy_update, unpack_batch
 from .robot import BatchRobot
-from .schedule import Schedule, SimSpec, build_schedule, per_sim_ring_size
+from .schedule import Schedule, SimSpec, build_schedule, encoder_steps, per_sim_ring_size
 
 
 @dataclass
@@ -69,6 +72,8 @@ def simulate_batch(
     noise       (n_ticks, 4, n_seeds) from schedule.noise_table, or None for no random noise. The
                 spec's gyro bias applies either way, as in SensorNoise with every std at 0;
                 for a perfect sensor, also use a spec with pitch_rate_bias = 0.
+    IMU mode (spec.imu): the controller sees the complementary filter's pitch estimate and the
+                gyro rate (see balance_sim.sensors.IMUSensor); gravity is the robot's.
     seed_index  (B,) which noise column each simulation uses (required with noise)
     schedule    pass a prebuilt one to skip rebuilding it for every batch
     record      also return the full state history (memory: n_steps x B x 4 values)
@@ -125,6 +130,19 @@ def simulate_batch(
         ring_size = schedule.ring_size
     ring = np.zeros((ring_size + 1, B), dtype=dtype)   # the extra last row stays 0: no command yet
     torque, active = zeros(), -1
+    voltage = robot.voltage_mode
+    pitch_bias = spec.pitch_bias if robot.pitch_bias is None else robot.pitch_bias   # per-simulation (B,) or the spec's scalar
+    has_bias = bool(np.any(pitch_bias))
+    ring_drive = np.zeros_like(ring) if voltage else None   # drive voltages, same slots as ring
+    drive = zeros() if voltage else None
+    pdm_steps = pwm_steps_per_tick(robot.pwm_tick, dt)   # slow PWM's pulse-density ticks; 0 = averaged
+    pdm_total = zeros() if pdm_steps else None
+    pdm_offset = pwm_tick_offset(robot.pwm_tick_phase, pdm_steps)   # steps to the first tick: int or (B,) ints
+    pdm_per_sim = isinstance(pdm_offset, np.ndarray)
+    applied = zeros()      # what reached the motor during the last step (drive or torque, or its PDM pulse)
+    estimate = None   # the IMU complementary filter's pitch estimate; set on the first tick
+    alpha = spec.filter_time_constant / (spec.filter_time_constant + control_dt)   # as ComplementaryFilter
+    one_minus_alpha = 1.0 - alpha
     alive = np.ones(B, dtype=bool)
     fall_time = np.full(B, np.nan, dtype=dtype)
     pitch_error, effort, velocity_error = zeros(), zeros(), zeros()
@@ -132,19 +150,51 @@ def simulate_batch(
     saturated_ticks, alive_ticks, peak_pitch = zeros(), zeros(), zeros()
     upright_reference = spec.pitch_reference == "upright"
     history = [np.stack(state, axis=-1)] if record else None
+    encoder = spec.encoder_counts > 0
+    if encoder:
+        # Counts sampled every n_period steps (the state at the start of the step, before the
+        # control tick), each usable n_delay steps later; a ring keeps the few still needed.
+        n_period, n_delay = encoder_steps(spec)
+        resolution = 2.0 * math.pi / spec.encoder_counts
+        speed_per_count = resolution / spec.encoder_period
+        counts = np.zeros((n_delay // n_period + 3, B), dtype=dtype)
 
     for k in range(schedule.n_steps):
+        if encoder and k % n_period == 0:
+            counts[(k // n_period) % len(counts)] = np.floor((np.divide(state[0], robot.wheel_radius) - state[2])
+                                                             / resolution)
         if k % spc == 0:
             j = k // spc
             _, x_dot, theta, theta_dot = state
             if noise is not None:
                 n = noise[j][:, seed_index]
                 x_dot = x_dot + spec.velocity_std * n[0]
-                theta = theta + (spec.pitch_std * n[1] + spec.pitch_bias)
+            if spec.imu:
+                # Accelerations at the sample: the drive in effect just before this tick, the push now.
+                derivs = derivatives(robot, state, applied, np, float(schedule.force_per_step[k]))
+                if noise is not None:
+                    gyro = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
+                    tilt_offset = spec.pitch_std * n[1] + pitch_bias
+                else:   # the biases still apply, with zero noise
+                    gyro = theta_dot + spec.pitch_rate_bias
+                    tilt_offset = pitch_bias
+                tilt = accelerometer_tilt(theta, theta_dot, derivs[1], derivs[3],
+                                          spec.imu_height, robot.gravity, np) + tilt_offset
+                if j == 0:
+                    estimate = tilt
+                else:
+                    estimate = alpha * (estimate + control_dt * gyro) + one_minus_alpha * tilt
+                theta, theta_dot = estimate, gyro
+            elif noise is not None:
+                theta = theta + (spec.pitch_std * n[1] + pitch_bias)
                 theta_dot = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
-            elif spec.pitch_rate_bias or spec.pitch_bias:   # deterministic, so they need no table
-                theta = theta + spec.pitch_bias
+            elif spec.pitch_rate_bias or has_bias:   # deterministic, so they need no table
+                theta = theta + pitch_bias
                 theta_dot = theta_dot + spec.pitch_rate_bias
+            if encoder:
+                m = (k - n_delay) // n_period if k >= n_delay else -1
+                speed = (counts[m % len(counts)] - counts[(m - 1) % len(counts)]) * speed_per_count if m >= 1 else 0.0
+                x_dot = robot.wheel_radius * (speed + theta_dot)
             if policy:
                 command, _, memory = policy_update(
                     spec.policy, weights, n_candidates, x_dot, theta, theta_dot, goal_per_tick[j],
@@ -165,6 +215,8 @@ def simulate_batch(
                     spec.pitch_integral_limit, spec.velocity_integral_limit,
                 )
             ring[j % ring_size] = command
+            if voltage:
+                ring_drive[j % ring_size] = voltage_drive(robot, command, x_dot, theta_dot)
             change = command - last_command
             torque_variation += np.where(alive, np.abs(change), 0.0)
             torque_rate_sq += np.where(alive, change * change, 0.0)
@@ -173,10 +225,15 @@ def simulate_batch(
             last_command = command
         if per_sim_delay:
             since = k - delay_steps
-            torque = ring[np.where(since >= 0, (since // spc) % ring_size, ring_size), columns_b]
+            slot = np.where(since >= 0, (since // spc) % ring_size, ring_size)
+            torque = ring[slot, columns_b]
+            if voltage:
+                drive = ring_drive[slot, columns_b]
         elif schedule.active_command[k] != active:
             active = schedule.active_command[k]
             torque = ring[active % ring_size].copy()
+            if voltage:
+                drive = ring_drive[active % ring_size].copy()
 
         # Cost terms at this sample, only for robots still up.
         theta = state[2]
@@ -186,7 +243,18 @@ def simulate_batch(
         effort += np.where(alive, torque**2 * dt, 0.0)
         velocity_error += np.where(alive, (state[1] - goal_per_step[k]) ** 2 * dt, 0.0)
 
-        stepped = rk4_step(robot, state, torque, dt, np, float(schedule.force_per_step[k]))
+        if not pdm_steps:
+            applied = drive if voltage else torque
+        elif pdm_per_sim:
+            since = k - pdm_offset
+            tick = (since >= 0) & (since % pdm_steps == 0)
+            if tick.any():
+                total, out = pdm_update(pdm_total, drive)
+                pdm_total = np.where(tick, total, pdm_total)
+                applied = np.where(tick, out, applied)
+        elif k >= pdm_offset and (k - pdm_offset) % pdm_steps == 0:
+            pdm_total, applied = pdm_update(pdm_total, drive)
+        stepped = rk4_step(robot, state, applied, dt, np, float(schedule.force_per_step[k]))
         state = tuple(np.where(alive, new, old) for new, old in zip(stepped, state))
         just_fell = alive & (np.abs(state[2]) > spec.fall_angle)
         fall_time[just_fell] = (k + 1) * dt

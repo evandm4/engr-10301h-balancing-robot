@@ -106,8 +106,20 @@ class Planar2D(Dynamics):
         self.fall_angle = fall_angle
         self.actuator = actuator if actuator is not None else IdealActuator(params.max_torque)
 
+    def drive(self, command: float, measured_state: np.ndarray) -> float:
+        """The value the simulator delays and passes to derivatives() as `torque`:
+        the actuator's drive signal for this command, from the measured state
+        (Actuator.drive). The torque command itself for every actuator but the
+        voltage-mode one."""
+        if type(self.actuator).drive is Actuator.drive:
+            return command
+        measured_wheel_speed = float(measured_state[1]) / self.p.wheel_radius - float(measured_state[3])
+        return self.actuator.drive(command, measured_wheel_speed)
+
     def derivatives(self, state: np.ndarray, torque: float, force: float = 0.0) -> np.ndarray:
-        """force (N): horizontal push on the body at its center of mass, forward +."""
+        """force (N): horizontal push on the body at its center of mass, forward +.
+        torque: what drive() returned (the torque command, or a voltage-mode
+        actuator's drive voltage)."""
         p = self.p
         # Plain floats are much faster than numpy scalars in this hot loop.
         x_dot, theta, theta_dot = float(state[1]), float(state[2]), float(state[3])

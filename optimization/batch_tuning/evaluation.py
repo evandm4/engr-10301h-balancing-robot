@@ -35,7 +35,18 @@ from .robust import RobustnessConfig, sample_delay_steps, sample_robots
 
 def spec_from_eval_config(config: EvalConfig, controller: str = "cascaded", policy=None) -> SimSpec:
     s = config.sensor
+    imu = {}
+    if getattr(s, "needs_accelerations", False):   # IMUSensor: gyro + accelerometer + complementary filter
+        # The filter runs at the controller's period, config.control_dt (as Evaluator does), whatever
+        # control_dt the sensor was built with: variations of an EvalConfig change only control_dt.
+        # gravity: the batch engine uses the robot's (BatchRobot.gravity), as the config sets the sensor's from it
+        imu = dict(imu=True, imu_height=s.imu_height, filter_time_constant=s.filter_time_constant)
+    encoder = {}
+    if getattr(s, "has_encoder", False):   # B3: the wheel radius comes from the BatchRobot
+        encoder = dict(encoder_counts=s.encoder_counts, encoder_period=s.encoder_period,
+                       encoder_delay=s.encoder_delay)
     return SimSpec(
+        **imu, **encoder,
         controller=controller,
         policy=policy,
         goal=step_profile(config.goal_steps, config.goal_transition),
@@ -59,6 +70,24 @@ def spec_from_eval_config(config: EvalConfig, controller: str = "cascaded", poli
         velocity_weight=config.velocity_weight,
         pitch_reference=config.pitch_reference,
     )
+
+
+def robot_from_eval_config(config: EvalConfig, **overrides) -> BatchRobot:
+    """The BatchRobot for an EvalConfig: its params, motor and voltage-mode settings.
+
+    An ideal-actuator variant (motor=None) drops any voltage estimate, as the
+    reference Evaluator does. overrides go to BatchRobot.from_params.
+    """
+    return BatchRobot.from_params(
+        config.params, config.motor,
+        voltage_estimate=config.voltage_estimate if config.motor is not None else None,
+        voltage_feedforward=config.voltage_feedforward,
+        voltage_feedforward_gain=config.voltage_feedforward_gain,
+        slow_pwm=config.slow_pwm and config.motor is not None and config.voltage_estimate is not None,
+        pwm_tick=(config.pwm_tick if config.slow_pwm and config.motor is not None
+                  and config.voltage_estimate is not None else 0.0),
+        pwm_tick_phase=config.pwm_tick_phase,
+        **{"pitch_bias": config.sensor.pitch_bias, **overrides})
 
 
 def decode_units(space: SearchSpace, units) -> np.ndarray:
@@ -149,7 +178,7 @@ class BatchEvaluator:
         self.policy = policy
         self.spec = spec_from_eval_config(config, controller, policy)
         self.schedule = build_schedule(self.spec)
-        self.robot = BatchRobot.from_params(config.params, config.motor)
+        self.robot = robot_from_eval_config(config)
         self._noise: Dict[Tuple[int, ...], np.ndarray] = {}
         self._scenario_sets: Dict[Tuple[int, ...], _ScenarioSet] = {}
         self._torch_sims: "OrderedDict[Tuple[int, Tuple[int, ...], int], object]" = OrderedDict()

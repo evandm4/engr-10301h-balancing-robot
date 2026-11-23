@@ -22,16 +22,18 @@ takes a moment, and replays are cheap. On a CPU device it runs the same code
 without graphs (useful for tests).
 """
 
+import math
 from dataclasses import fields
 from typing import Optional
 
 import numpy as np
 
 from .controller import LQR_STATE_GAINS, cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
-from .physics import rk4_step
+from .physics import (accelerometer_tilt, derivatives, pdm_update, pwm_steps_per_tick, pwm_tick_offset, rk4_step,
+                      voltage_drive)
 from .policy import PolicyMemory, ResidualBase, policy_update, unpack_batch
 from .robot import BatchRobot
-from .schedule import Schedule, SimSpec, build_schedule, per_sim_ring_size
+from .schedule import Schedule, SimSpec, build_schedule, encoder_steps, per_sim_ring_size
 from .simulate import BatchResult
 from .xp import torch_ops
 
@@ -55,7 +57,8 @@ class TorchSimulator:
         scenarios_per_candidate: Optional[int] = None,
     ):
         """noise: (n_ticks, 4, n_seeds) table from schedule.noise_table, or None for no random noise
-        (the spec's gyro bias still applies, as in simulate_batch).
+        (the spec's gyro bias still applies, as in simulate_batch). With spec.imu the controller
+        sees the complementary filter's estimate and the gyro, as in simulate_batch.
         dtype: torch.float32 (default; fast) or torch.float64 (for checking against NumPy).
         record: also keep the full state history on the GPU (n_steps x B x 4 values).
         n_gains: gains per simulation. Cascaded: always 5 (a 4-gain set gets kv_i = 0).
@@ -83,6 +86,8 @@ class TorchSimulator:
         self.use_graphs = device.type == "cuda" if use_graphs is None else use_graphs
         self.record = record
         self.robot = robot.to_torch(device, dtype)
+        self.pitch_bias = spec.pitch_bias if robot.pitch_bias is None else self.robot.pitch_bias   # (B,) or scalar
+        self.has_bias = bool(np.any(spec.pitch_bias if robot.pitch_bias is None else robot.pitch_bias))
         self.lqr = spec.controller == "lqr"
         self.policy = spec.controller == "policy"
         if self.lqr and (n_gains is None or n_gains < LQR_STATE_GAINS):
@@ -132,6 +137,28 @@ class TorchSimulator:
         n_in_flight = self.n_gains - LQR_STATE_GAINS if self.lqr else 0
         self.in_flight = torch.zeros(n_in_flight, B, dtype=dtype, device=device)   # LQR commands in flight, oldest first
         self.ring = torch.zeros(R + 1, B, dtype=dtype, device=device)
+        self.voltage = bool(robot.voltage_mode)
+        self.ring_drive = torch.zeros(R + 1, B, dtype=dtype, device=device) if self.voltage else None   # drive voltages
+        # Slow PWM's pulse-density ticks (simulate_batch): the running sum and this tick's duty, per simulation.
+        self.pdm_steps = pwm_steps_per_tick(robot.pwm_tick, spec.dt)
+        self.pdm_total = zeros() if self.pdm_steps else None
+        self.pdm_out = zeros() if self.pdm_steps else None
+        offset = pwm_tick_offset(robot.pwm_tick_phase, self.pdm_steps)   # robot: the NumPy BatchRobot given
+        self.pdm_offset = (torch.as_tensor(offset, dtype=torch.long, device=device) if isinstance(offset, np.ndarray)
+                           else offset)   # as simulate_batch: an int, or a (B,) tensor of per-simulation offsets
+        # IMU mode: the complementary filter's estimate, and the drive/torque applied during the previous step.
+        self.estimate, self.applied = zeros(), zeros()
+        tau = spec.filter_time_constant
+        self.alpha = tau / (tau + spec.control_dt)   # Python floats, as ComplementaryFilter
+        self.one_minus_alpha = 1.0 - self.alpha
+        # Encoder: counts sampled at the start of every n_period-th step, in a small ring (see simulate_batch).
+        self.encoder = spec.encoder_counts > 0
+        if self.encoder:
+            self.n_period, self.n_delay = encoder_steps(spec)
+            self.resolution = 2.0 * math.pi / spec.encoder_counts
+            self.speed_per_count = self.resolution / spec.encoder_period
+            self.n_counts = self.n_delay // self.n_period + 3
+            self.counts = torch.zeros(self.n_counts, B, dtype=dtype, device=device)
         # Policy memory: integrators, command history (newest first) and last tick's saturation.
         self.int_v, self.int_theta = zeros(), zeros()
         self.commands = torch.zeros(4 if self.policy else 0, B, dtype=dtype, device=device)
@@ -155,17 +182,53 @@ class TorchSimulator:
 
     # ---- one step, written as in-place updates so it can be captured --------
 
+    def _encoder_sample(self):
+        """Store this step's count if it is a sampling step. Idempotent within a step (the state
+        has not moved yet), so both the control tick and the physics step can call it."""
+        torch, xp = self.torch, self.xp
+        step = self.step
+        slot = torch.div(step, self.n_period, rounding_mode="floor") % self.n_counts
+        x, _, theta, _ = self.state
+        count = xp.floor((xp.divide(x, self.robot.wheel_radius) - theta) / self.resolution)
+        old = self.counts[slot]
+        self.counts.index_copy_(0, slot, torch.where(step % self.n_period == 0, count.unsqueeze(0), old))
+
     def _controller_tick(self):
         spec, xp = self.spec, self.xp
+        if self.encoder:
+            self._encoder_sample()
         _, x_dot, theta, theta_dot = self.state
         if self.noise is not None:
             n = self.noise[self.tick][0][:, self.seed_index]    # (3, B): velocity, pitch, pitch-rate noise
             x_dot = x_dot + spec.velocity_std * n[0]
-            theta = theta + (spec.pitch_std * n[1] + spec.pitch_bias)
+        if spec.imu:
+            # Accelerations at the sample: the drive in effect just before this tick, the push now.
+            force = self.force_per_step[self.step][0] if self.has_push else 0.0
+            derivs = derivatives(self.robot, self.state, self.applied, xp, force)
+            if self.noise is not None:
+                gyro = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
+                tilt_offset = spec.pitch_std * n[1] + self.pitch_bias
+            else:   # the biases still apply, with zero noise
+                gyro = theta_dot + spec.pitch_rate_bias
+                tilt_offset = self.pitch_bias
+            tilt = accelerometer_tilt(theta, theta_dot, derivs[1], derivs[3],
+                                      spec.imu_height, self.robot.gravity, xp) + tilt_offset
+            filtered = self.alpha * (self.estimate + spec.control_dt * gyro) + self.one_minus_alpha * tilt
+            estimate = self.torch.where(self.tick == 0, tilt, filtered)   # the first tick starts from the tilt
+            self.estimate.copy_(estimate)
+            theta, theta_dot = self.estimate, gyro
+        elif self.noise is not None:
+            theta = theta + (spec.pitch_std * n[1] + self.pitch_bias)
             theta_dot = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
-        elif spec.pitch_rate_bias or spec.pitch_bias:   # deterministic, so they need no table
-            theta = theta + spec.pitch_bias
+        elif spec.pitch_rate_bias or self.has_bias:   # deterministic, so they need no table
+            theta = theta + self.pitch_bias
             theta_dot = theta_dot + spec.pitch_rate_bias
+        if self.encoder:
+            torch = self.torch
+            m = torch.div(self.step - self.n_delay, self.n_period, rounding_mode="floor")   # latest sample available
+            difference = self.counts[m % self.n_counts][0] - self.counts[(m - 1) % self.n_counts][0]
+            speed = torch.where(m >= 1, difference * self.speed_per_count, 0.0)
+            x_dot = self.robot.wheel_radius * (speed + theta_dot)
         if self.policy:
             memory = PolicyMemory(self.int_v, self.int_theta, list(self.commands), self.saturated,
                                   self.pitch_integral, self.velocity_integral)
@@ -203,6 +266,9 @@ class TorchSimulator:
             self.pitch_integral.copy_(pitch_integral)
         self.velocity_integral.copy_(velocity_integral)
         self.ring.index_copy_(0, self.write_slot_per_tick[self.tick], command.unsqueeze(0))
+        if self.voltage:
+            drive = voltage_drive(self.robot, command, x_dot, theta_dot, xp)
+            self.ring_drive.index_copy_(0, self.write_slot_per_tick[self.tick], drive.unsqueeze(0))
         torch, alive = self.torch, self.alive
         change = command - self.last_command
         self.torque_variation.add_(torch.where(alive, torch.abs(change), 0.0))
@@ -215,14 +281,19 @@ class TorchSimulator:
     def _physics_step(self):
         spec, xp, torch = self.spec, self.xp, self.torch
         dt, alive = spec.dt, self.alive
+        if self.encoder:
+            self._encoder_sample()
         if self.per_sim_delay:
             # The command issued at tick (step - delay) // spc, or the zero row before the first arrives.
             since = self.step - self.delay_steps
             slot = torch.where(since >= 0, torch.div(since, self.schedule.steps_per_control, rounding_mode="floor")
                                % self.ring_size, self.ring_size)
             torque = self.ring.gather(0, slot.unsqueeze(0))[0]
+            drive = self.ring_drive.gather(0, slot.unsqueeze(0))[0] if self.voltage else torque
         else:
-            torque = self.ring[self.slot_per_step[self.step]][0]
+            slot = self.slot_per_step[self.step]
+            torque = self.ring[slot][0]
+            drive = self.ring_drive[slot][0] if self.voltage else torque
 
         # Cost terms at this sample, only for robots still up.
         x, x_dot, theta, theta_dot = self.state
@@ -233,7 +304,17 @@ class TorchSimulator:
         self.velocity_error.add_(torch.where(alive, (x_dot - self.goal_per_step[self.step]) ** 2 * dt, 0.0))
 
         force = self.force_per_step[self.step][0] if self.has_push else 0.0   # a lookup, so graphs can replay it
-        stepped = rk4_step(self.robot, self.state, torque, dt, xp, force)
+        if self.pdm_steps:
+            # Branch-free so CUDA graphs can replay it: compute the tick update every step, keep it on ticks.
+            since = self.step - self.pdm_offset
+            is_tick = (since >= 0) & (since % self.pdm_steps == 0)
+            total, out = pdm_update(self.pdm_total, drive, xp)
+            self.pdm_total.copy_(torch.where(is_tick, total, self.pdm_total))
+            self.pdm_out.copy_(torch.where(is_tick, out, self.pdm_out))
+            drive = self.pdm_out
+        if spec.imu:
+            self.applied.copy_(drive)
+        stepped = rk4_step(self.robot, self.state, drive, dt, xp, force)
         for buffer, new in zip(self.state, stepped):
             buffer.copy_(torch.where(alive, new, buffer))
         just_fell = alive & (torch.abs(self.state[2]) > spec.fall_angle)
@@ -251,7 +332,9 @@ class TorchSimulator:
 
     def _reset(self):
         for buffer in (*self.state, self.pitch_integral, self.velocity_integral, self.setpoint, self.in_flight,
-                       self.ring, self.pitch_error, self.effort, self.velocity_error, self.step, self.tick,
+                       self.estimate, self.applied, self.ring, *([self.counts] if self.encoder else []),
+                       *([self.ring_drive] if self.voltage else []), *([self.pdm_total, self.pdm_out] if self.pdm_steps else []),
+                       self.pitch_error, self.effort, self.velocity_error, self.step, self.tick,
                        self.int_v, self.int_theta, self.commands, self.saturated, self.last_command,
                        self.torque_variation, self.torque_rate_sq, self.saturated_ticks, self.alive_ticks,
                        self.peak_pitch):
@@ -322,6 +405,9 @@ class TorchSimulator:
                 raise ValueError(f"robot must give per-simulation values for exactly {per_sim}, got {given}")
             for name in per_sim:
                 getattr(self.robot, name).copy_(torch.as_tensor(np.asarray(getattr(robot, name)), dtype=self.dtype))
+            if self.pdm_steps and isinstance(self.pdm_offset, torch.Tensor):
+                self.pdm_offset.copy_(torch.as_tensor(
+                    pwm_tick_offset(np.asarray(robot.pwm_tick_phase, dtype=float), self.pdm_steps), dtype=torch.long))
         self.gains.copy_(torch.as_tensor(gains if self.policy else gains.T, dtype=self.dtype))
         self.start_pitch.copy_(torch.as_tensor(np.broadcast_to(start_pitch, (self.B,)).copy(), dtype=self.dtype))
         if seed_index is not None:

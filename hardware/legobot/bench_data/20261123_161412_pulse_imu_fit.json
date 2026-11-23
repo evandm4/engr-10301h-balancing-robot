@@ -1,0 +1,223 @@
+{
+  "script": "pulse_imu",
+  "meta": {
+    "vin": 7.57,
+    "side": "left",
+    "args": {
+      "wheels_off": true,
+      "side": "left",
+      "duties": [
+        0.05,
+        0.1,
+        0.2,
+        0.4
+      ],
+      "modes": [
+        "1,0.01",
+        "0.65,0.01"
+      ],
+      "hold": 3.0,
+      "outdir": "logs"
+    },
+    "firmware": "Firmware version: 1674818421 2023-01-27T11:20:21+00:00",
+    "imu_dlpf": "cfg 0 (gyro 197 Hz)"
+  },
+  "constants": {
+    "period_1_0.05@left": {
+      "value": 0.199,
+      "se": null,
+      "unit": "s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "period_1_0.1@left": {
+      "value": 0.018,
+      "se": null,
+      "unit": "s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "period_1_0.2@left": {
+      "value": 0.452,
+      "se": null,
+      "unit": "s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "period_1_0.4@left": {
+      "value": 0.181,
+      "se": null,
+      "unit": "s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "period_0.65_0.05@left": {
+      "value": 0.017,
+      "se": null,
+      "unit": "s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "period_0.65_0.1@left": {
+      "value": 0.017,
+      "se": null,
+      "unit": "s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "period_0.65_0.2@left": {
+      "value": 0.015,
+      "se": null,
+      "unit": "s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "period_0.65_0.4@left": {
+      "value": 0.017,
+      "se": null,
+      "unit": "s",
+      "n": 1,
+      "se_kind": "none"
+    }
+  },
+  "diagnostics": {
+    "results": [
+      {
+        "mode": [
+          1.0,
+          0.01
+        ],
+        "duty": 0.05,
+        "period_s": 0.199,
+        "ac_peak": 0.792886178197281,
+        "on_fraction": 0.4126666666666667,
+        "contrast": 6.133965697076829,
+        "top_hz": [
+          5.2,
+          4.8,
+          4.5,
+          10.0
+        ]
+      },
+      {
+        "mode": [
+          1.0,
+          0.01
+        ],
+        "duty": 0.1,
+        "period_s": 0.018,
+        "ac_peak": 0.5461371492630254,
+        "on_fraction": 0.43833333333333335,
+        "contrast": 2.7794035751212243,
+        "top_hz": [
+          3.8,
+          2.8,
+          3.4,
+          2.4
+        ]
+      },
+      {
+        "mode": [
+          1.0,
+          0.01
+        ],
+        "duty": 0.2,
+        "period_s": 0.452,
+        "ac_peak": 0.2524810966640475,
+        "on_fraction": 0.45466666666666666,
+        "contrast": 1.5006850023908462,
+        "top_hz": [
+          4.5,
+          2.1,
+          39.3,
+          4.8
+        ]
+      },
+      {
+        "mode": [
+          1.0,
+          0.01
+        ],
+        "duty": 0.4,
+        "period_s": 0.181,
+        "ac_peak": 0.20539832155129956,
+        "on_fraction": 0.458,
+        "contrast": 1.3286555022938153,
+        "top_hz": [
+          5.5,
+          297.9,
+          297.6,
+          20.0
+        ]
+      },
+      {
+        "mode": [
+          0.65,
+          0.01
+        ],
+        "duty": 0.05,
+        "period_s": 0.017,
+        "ac_peak": 0.3781464970242834,
+        "on_fraction": 0.4533333333333333,
+        "contrast": 2.320781614420636,
+        "top_hz": [
+          7.6,
+          7.9,
+          15.5,
+          3.8
+        ]
+      },
+      {
+        "mode": [
+          0.65,
+          0.01
+        ],
+        "duty": 0.1,
+        "period_s": 0.017,
+        "ac_peak": 0.31089010419636937,
+        "on_fraction": 0.3931310436812271,
+        "contrast": 2.0726595159776844,
+        "top_hz": [
+          4.8,
+          7.6,
+          4.5,
+          5.5
+        ]
+      },
+      {
+        "mode": [
+          0.65,
+          0.01
+        ],
+        "duty": 0.2,
+        "period_s": 0.015,
+        "ac_peak": 0.3350528031055962,
+        "on_fraction": 0.4086666666666667,
+        "contrast": 1.6121432794945423,
+        "top_hz": [
+          7.9,
+          4.5,
+          1.7,
+          11.4
+        ]
+      },
+      {
+        "mode": [
+          0.65,
+          0.01
+        ],
+        "duty": 0.4,
+        "period_s": 0.017,
+        "ac_peak": 0.32737865497705243,
+        "on_fraction": 0.5336666666666666,
+        "contrast": 1.3785881409786704,
+        "top_hz": [
+          52.1,
+          51.7,
+          23.1,
+          41.0
+        ]
+      }
+    ]
+  }
+}

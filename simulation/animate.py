@@ -34,7 +34,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))   # config.py; importing it puts simulation/ and optimization/ on the path
 
-from config import CONFIG  # noqa: E402
+from config import CONFIG, add_robot_argument, results_dir  # noqa: E402
 from balance_sim import SimResult, load_trajectory, save_trajectory  # noqa: E402
 
 COLORS = ["tab:blue", "tab:orange", "tab:green", "tab:purple"]
@@ -74,7 +74,7 @@ def simulate_runs(gains_by_label: Dict[str, List[float]], tilt_rad: float, seed:
 
 def latest_results_folder() -> Optional[Path]:
     """The most recent folder under results/tuning or results/batch_tuning that has a comparison.json."""
-    found = [p.parent for sub in ("tuning", "batch_tuning") for p in (ROOT / "results" / sub).glob("*/comparison.json")]
+    found = [p.parent for sub in ("tuning", "batch_tuning") for p in results_dir(sub).glob("*/comparison.json")]
     return max(found, key=lambda p: p.name) if found else None
 
 
@@ -399,6 +399,7 @@ class RunAnimation:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    add_robot_argument(parser)
     parser.add_argument("--gains", type=float, nargs="+", action="append",
                         help="kp ki kd kv_p [kv_i]; repeat to compare several")
     parser.add_argument("--label", action="append", help="a name for each --gains, in order")

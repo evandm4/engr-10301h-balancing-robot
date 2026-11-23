@@ -13,6 +13,8 @@ from balance_sim import (
 )
 from config import CONFIG
 
+pololu_only = pytest.mark.skipif(CONFIG.name != "pololu", reason="checks numbers or gains specific to config.py's Pololu robot")
+
 INNER = (4.0, 0.5, 0.15)
 LIMITS = CONFIG.controller
 
@@ -106,6 +108,7 @@ def test_result_records_goal_profile(dyn):
 
 # ---- cascaded controller ---------------------------------------------------
 
+@pololu_only
 def test_cascade_tracks_step_velocity_commands(dyn):
     from balance_sim import step_profile
     ctrl = make(kv_p=0.15, kv_i=0.0, goal=step_profile([(1.0, 0.3), (5.0, -0.2)]))
@@ -122,6 +125,7 @@ def test_moving_forward_requires_leaning_forward(dyn):
     assert result.states[-1, 1] > 0.1            # and is now moving forward
 
 
+@pololu_only
 def test_velocity_loop_reduces_drift_from_gyro_bias(dyn):
     bias = SensorNoise(pitch_rate_bias=0.05)
     pitch_only = run(dyn, inner(), duration=10.0, pitch=0.05, sensor=bias)
@@ -228,6 +232,7 @@ def test_velocity_integrator_limited_by_lean_cap(dyn):
     assert ctrl.pitch_pid.setpoint == pytest.approx(0.05)
 
 
+@pololu_only   # its 0.3 m/s step and gains are sized for the Pololu robot
 def test_cascade_still_balances_under_harder_conditions():
     from balance_sim import step_profile
     real = CONFIG.build_dynamics()   # the configured DC motor

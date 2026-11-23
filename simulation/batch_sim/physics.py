@@ -24,11 +24,23 @@ def _is_zero(value) -> bool:
 
 
 def actuator_torque(robot: BatchRobot, command, relative_wheel_speed, xp=np):
-    """Applied torque for a torque command. See Actuator.torque in the CPU code."""
+    """Applied torque for a torque command. See Actuator.torque in the CPU code.
+
+    In voltage mode `command` is the drive voltage from voltage_drive (VoltageModeActuator.torque);
+    in slow PWM it is the duty (SlowPwmActuator.torque)."""
     if not robot.dc_motor:
         return xp.clip(command, -robot.max_torque, robot.max_torque)
-    command = xp.clip(command, -robot.max_torque, robot.max_torque)
     rotor_speed = robot.gear_ratio * relative_wheel_speed
+    if robot.slow_pwm:
+        i = xp.divide(xp.copysign(robot.supply_voltage, command) - robot.torque_constant * rotor_speed,
+                      robot.resistance)
+        i = xp.clip(i, -robot.current_limit, robot.current_limit)
+        return robot.n_motors * robot.gear_ratio * robot.gear_efficiency * robot.torque_constant * xp.abs(command) * i
+    if robot.voltage_mode:
+        i = xp.divide(command - robot.torque_constant * rotor_speed, robot.resistance)
+        i = xp.clip(i, -robot.current_limit, robot.current_limit)
+        return robot.n_motors * robot.gear_ratio * robot.gear_efficiency * robot.torque_constant * i
+    command = xp.clip(command, -robot.max_torque, robot.max_torque)
     per_motor_shaft_torque = xp.divide(command, robot.n_motors * robot.gear_ratio * robot.gear_efficiency)
     i_wanted = xp.divide(per_motor_shaft_torque, robot.torque_constant)
     v_wanted = robot.resistance * i_wanted + robot.torque_constant * rotor_speed
@@ -36,6 +48,46 @@ def actuator_torque(robot: BatchRobot, command, relative_wheel_speed, xp=np):
     i = xp.divide(v - robot.torque_constant * rotor_speed, robot.resistance)
     i = xp.clip(i, -robot.current_limit, robot.current_limit)
     return robot.n_motors * robot.gear_ratio * robot.gear_efficiency * robot.torque_constant * i
+
+
+def voltage_drive(robot: BatchRobot, command, x_dot, theta_dot, xp=np):
+    """The drive voltage the robot code sends for a torque command (VoltageModeActuator.drive).
+
+    x_dot and theta_dot are the MEASURED values (after sensor noise and bias). In slow PWM it
+    returns the duty instead (SlowPwmActuator.drive)."""
+    w_hat = xp.divide(x_dot, robot.wheel_radius) - theta_dot
+    c = xp.clip(command, -robot.max_torque, robot.max_torque)
+    if robot.slow_pwm:
+        per_motor = xp.divide(c, robot.n_motors)
+        a_hat = robot.gear_ratio * robot.est_gear_efficiency * robot.est_torque_constant / robot.est_resistance
+        back_emf = 0.0 * w_hat     # an array, so torch keeps the dtype in where() below; v - 0 is exact
+        if robot.voltage_feedforward:
+            back_emf = robot.est_torque_constant * (robot.gear_ratio * w_hat)
+            if robot.voltage_feedforward_gain != 1.0:
+                back_emf = robot.voltage_feedforward_gain * back_emf
+        v = robot.supply_voltage
+        den = xp.where(c >= 0, a_hat * (v - back_emf), a_hat * (v + back_emf))
+        ok = den > 0
+        duty = xp.where(ok, xp.divide(per_motor, xp.where(ok, den, 1.0)), xp.copysign(1.0, per_motor))
+        return xp.clip(duty, -1.0, 1.0)
+    volts = robot.est_resistance * xp.divide(
+        c, robot.n_motors * robot.gear_ratio * robot.est_gear_efficiency * robot.est_torque_constant)
+    if robot.voltage_feedforward:
+        back_emf = robot.est_torque_constant * (robot.gear_ratio * w_hat)
+        gain = robot.voltage_feedforward_gain
+        volts = volts + (back_emf if gain == 1.0 else gain * back_emf)
+    return xp.clip(volts, -robot.supply_voltage, robot.supply_voltage)
+
+
+def accelerometer_tilt(theta, theta_dot, x_ddot, theta_ddot, height, gravity, xp=np):
+    """The tilt an accelerometer `height` above the axle reads (balance_sim.sensors.accelerometer_tilt),
+    over (B,) arrays, with the same operation order."""
+    s, c = xp.sin(theta), xp.cos(theta)
+    a_x = x_ddot + height * (theta_ddot * c - theta_dot**2 * s)
+    f_z = height * (-theta_ddot * s - theta_dot**2 * c) + gravity
+    f_forward = a_x * c - f_z * s
+    f_up = a_x * s + f_z * c
+    return xp.arctan2(-f_forward, f_up)
 
 
 def derivatives(robot: BatchRobot, state, torque, xp=np, force=0.0):
@@ -85,3 +137,34 @@ def rk4_step(robot: BatchRobot, state, torque, dt: float, xp=np, force=0.0):
     k4 = derivatives(robot, _axpy(state, dt, k3), torque, xp, force)
     h = dt / 6.0
     return tuple(s + h * (a + 2 * b + 2 * c + d) for s, a, b, c, d in zip(state, k1, k2, k3, k4))
+
+
+def pdm_update(total, duty, xp=np):
+    """One tick of the HAT's pulse-density modulation over (B,) arrays (balance_sim.pdm_update):
+    returns (new running sum, this tick's duty: -1, 0 or +1). Both comparisons are exact, so the
+    result is bit-identical to the reference for any backend."""
+    total = total + xp.clip(duty, -1.0, 1.0)
+    if xp is np:
+        out = (total >= 0.5).astype(total.dtype) - (total <= -0.5).astype(total.dtype)
+    else:
+        out = (total >= 0.5).to(total.dtype) - (total <= -0.5).to(total.dtype)
+    return total - out, out
+
+
+def pwm_steps_per_tick(pwm_tick: float, dt: float) -> int:
+    """Physics steps per PDM tick (balance_sim.pwm_steps_per_tick); 0 when off."""
+    if pwm_tick <= 0:
+        return 0
+    n = int(round(pwm_tick / dt))
+    if n < 1 or abs(n * dt - pwm_tick) > 1e-9:
+        raise ValueError(f"pwm_tick {pwm_tick} s is not a whole number of physics steps of {dt} s")
+    return n
+
+
+def pwm_tick_offset(phase, steps_per_tick):
+    """balance_sim.pwm_tick_offset for a plain phase or a (B,) array of phases (int64 steps)."""
+    if not steps_per_tick:
+        return 0
+    if isinstance(phase, np.ndarray):
+        return np.clip(np.floor(phase * steps_per_tick + 1e-9), 0, steps_per_tick - 1).astype(np.int64)
+    return min(steps_per_tick - 1, max(0, int(np.floor(phase * steps_per_tick + 1e-9))))

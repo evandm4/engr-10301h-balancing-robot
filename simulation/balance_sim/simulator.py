@@ -6,6 +6,7 @@ from typing import Callable, Optional
 
 import numpy as np
 
+from .actuators import pdm_update, pwm_steps_per_tick, pwm_tick_offset
 from .controllers import Controller
 from .dynamics import Dynamics
 from .sensors import SensorNoise
@@ -88,21 +89,45 @@ def simulate(
         sensor.reset()
 
     ts, states, torques, references = [0.0], [state.copy()], [], []
-    pending = deque()   # (time the command takes effect, torque)
-    torque = 0.0        # torque currently reaching the actuator
+    pending = deque()   # (time the command takes effect, torque command, drive signal)
+    torque = 0.0        # torque command currently reaching the actuator
+    drive = 0.0         # what the actuator gets for it (the same, but a voltage-mode driver's volts)
+    applied = 0.0       # what reaches the motor this step: drive, or its pulse-density quantization
+    pdm_steps = pwm_steps_per_tick(getattr(getattr(dynamics, "actuator", None), "pwm_tick", 0.0), dt)
+    pdm_total = 0.0
+    # Where the HAT's ticks fall against the control loop (SlowPwmActuator.pwm_tick_phase).
+    pdm_offset = pwm_tick_offset(getattr(getattr(dynamics, "actuator", None), "pwm_tick_phase", 0.25), pdm_steps)
+    to_drive = getattr(dynamics, "drive", None)
+    imu = sensor is not None and getattr(sensor, "needs_accelerations", False)
+    encoder = sensor is not None and getattr(sensor, "has_encoder", False)
+    if imu and abs(sensor.control_dt - control_dt) > 1e-12:
+        raise ValueError(f"the IMU filter runs at {sensor.control_dt} s but the controller at {control_dt} s")
     fell, fall_time = False, None
 
     for k in range(n_steps):
         t = k * dt
+        push = () if disturbance is None else (disturbance(t),)
+        if encoder:
+            sensor.observe(t, state)
         if k % spc == 0:
-            measured = state if sensor is None else sensor.measure(state)
-            pending.append((t + latency, controller.update(measured, control_dt)))
+            if sensor is None:
+                measured = state
+            elif imu:   # accelerations at the sample: the drive in effect just before t, the push at t
+                derivs = dynamics.derivatives(state, applied, *push)
+                measured = sensor.measure(state, (derivs[1], derivs[3]))
+            else:
+                measured = sensor.measure(state)
+            command = controller.update(measured, control_dt)
+            pending.append((t + latency, command, command if to_drive is None else to_drive(command, measured)))
         while pending and pending[0][0] <= t + 1e-12:
-            torque = pending.popleft()[1]
+            _, torque, drive = pending.popleft()
+        if not pdm_steps:
+            applied = drive
+        elif k >= pdm_offset and (k - pdm_offset) % pdm_steps == 0:
+            pdm_total, applied = pdm_update(pdm_total, drive)
         torques.append(torque)
         references.append(controller.pitch_reference())
-        push = () if disturbance is None else (disturbance(t),)
-        state = _rk4_step(dynamics, state, torque, dt, *push)
+        state = _rk4_step(dynamics, state, applied, dt, *push)
         ts.append((k + 1) * dt)
         states.append(state.copy())
         if dynamics.is_fallen(state):
