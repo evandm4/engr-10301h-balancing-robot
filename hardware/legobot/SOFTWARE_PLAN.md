@@ -109,15 +109,18 @@ log records.
 
 - **Shared with the simulator, not copied:** the robot imports `config.load_config("legobot")`. The estimator is
   `ComplementaryFilter` with the config's τ, run at the 200 Hz control period. Wheel speed is the count
-  difference over one 10 ms HAT period, as `Encoder` computes it, and v = r(ω̄ + gyro). The controller is built by
-  `ProjectConfig.build_controller` or `build_lqr_controller`, so the torque cap, lean cap and integral limits
-  match the sim. Duty = `VoltageModeActuator.drive(τ, ω_wheel)` / vin, per wheel, using the HAT's measured vin.
-- **Controllers:** `--controller hand | model | lqr | <gains JSON>` (tuning results' `gains`, or `K` for LQR).
-  An optional `feedforward_gain` in the JSON is applied too. The LQR design needs scipy, which the Pi doesn't
-  have, so export it first: `--controller lqr --export-gains lqr.json` on the laptop. `--goal still | scenario`.
+  difference over one 10 ms HAT period, as `Encoder` computes it, and v = r(ω̄ + gyro). The controller is the
+  cascaded PID built by `ProjectConfig.build_controller`, so the torque cap, lean cap and integral limits match
+  the sim. The duty is the config actuator's own `drive(τ, ω_wheel)` per wheel, using the HAT's measured vin
+  (slow PWM since B1b; see below).
+- **Controller:** cascaded PID only. `--controller hand | model | <gains JSON>` (a tuning result's `gains`; an
+  optional `feedforward_gain` in the JSON is applied too). `--goal still | scenario`. The LQR was dropped from
+  LEGO testing on 2026-11-23 and removed from the robot code (`--controller lqr` and `--export-gains` are gone; an
+  LQR gains file is refused).
 - **Trips (each one coasts both motors and ends the run):**
   - tilt past 0.70 rad;
-  - a wheel stalled (|duty| ≥ 0.5, or 0.8 × the cap on the bench, at under 1 rad/s for 1 s);
+  - a wheel stalled (|duty| ≥ 0.5, or 0.8 × the cap on the bench, for 1 s with the wheel's mean speed in the
+    duty's direction under 3 rad/s; see the hands-on checks below);
   - a wheel turning fast against its duty (a sign error);
   - 3 vin replies below 6.6 V, or no vin reply for 2 s;
   - "Motor power fault";
@@ -137,8 +140,9 @@ log records.
   SCHED_FIFO 50, pinned to core 3; the watchdog runs at 51 and the reader at 49. The Pi's
   `/etc/security/limits.d/legobot-rt.conf` (added 2026-11-23) gives `user` rtprio 60 and unlimited memlock, so no
   root is needed. Without that file, the loop falls back to normal priority and records it in the summary.
-- **Checked against the simulator:** 16 tests pass. Closed loop against the simulator (`--sim --sim-noise
-  --goal scenario`), the hand-tuned, model-based and LQR controllers all finish the 20 s scenario, cruising within
+- **Checked against the simulator (first version, before the LQR was dropped):** 16 tests pass. Closed loop
+  against the simulator (`--sim --sim-noise --goal scenario`), the hand-tuned, model-based and LQR controllers all
+  finish the 20 s scenario, cruising within
   0.07 m/s of 0.27 m/s. Plain voltage mode (`--ff-gain 0`) falls and trips on tilt, as the sim predicts (A4). On
   the Pi 3B, sense + safety + controller + feedforward take 0.06 ms per tick (p99 0.08 ms).
 - **Bench, 2026-11-23** (robot upside down on the stand, wheels off the ground, `--bench` duty cap 0.3,

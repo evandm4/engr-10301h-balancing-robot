@@ -128,10 +128,15 @@ def test_gains_file_formats(tmp_path, cfg):
     assert d["kind"] == "pid" and d["gains"] == [5.0, 1.0, 0.4, 0.3] and d["feedforward_gain"] == 1.05
     assert c.goal == 0.0 and c.pitch_pid.output_limit == cfg.robot.max_torque
     assert c.max_pitch_command == pytest.approx(cfg.controller.max_lean_rad)
-    q = tmp_path / "lqr.json"
+    c, d = control.build_controller(cfg, str(p), goal="scenario")
+    assert callable(c.goal)
+    q = tmp_path / "lqr.json"                                   # the LQR was dropped for the LEGO robot
     q.write_text(json.dumps({"K": [-4.0, -4.7, -0.5, 0.0, 0.1, 0.1]}))
-    c, d = control.build_controller(cfg, str(q), goal="scenario")
-    assert d["kind"] == "lqr" and callable(c.goal)
+    with pytest.raises(ValueError):
+        control.build_controller(cfg, str(q))
+    for spec in ("lqr", "nonexistent.json"):                    # no "lqr" spec any more: read as a path
+        with pytest.raises(OSError):
+            control.build_controller(cfg, spec)
     w = tmp_path / "weights.json"
     w.write_text(json.dumps({"gains": {"s_velocity": 1.0, "s_pitch": 1.0}}))
     with pytest.raises(ValueError):
@@ -151,7 +156,7 @@ def _reference_falls(spec):
     return r.fell
 
 
-@pytest.mark.parametrize("controller", ["hand", "model", "lqr"])
+@pytest.mark.parametrize("controller", ["hand", "model"])
 def test_closed_loop_balances_with_simulator(tmp_path, controller):
     """The robot code (estimator, controller, slow-PWM feedforward, line-locked loop) balances the simulated
     robot standing still from a 0.02 rad tilt, with noise (the sim adds its 0.015 rad offset). Independent of the scenario's tuning."""
@@ -166,7 +171,7 @@ def test_closed_loop_balances_with_simulator(tmp_path, controller):
     assert abs(result.states[result.t > 5.0, 1].mean()) < 0.15     # no runaway (a P-only velocity loop creeps)
 
 
-@pytest.mark.parametrize("controller", ["hand", "model", "lqr"])
+@pytest.mark.parametrize("controller", ["hand", "model"])
 def test_closed_loop_tracks_the_scenario(tmp_path, controller):
     """Velocity signs and units: during the scenario's forward cruise the robot moves forward at a good share of
     the goal. Skipped where the reference simulator's own run falls (the gains or scenario, not this code)."""

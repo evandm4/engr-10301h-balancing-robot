@@ -6,7 +6,7 @@ runs what was tuned:
     200 Hz control period (B2);
   - wheel speed is the difference of the two newest encoder counts over the HAT's 10 ms sample period,
     as balance_sim.Encoder computes it (B3), and velocity = r (wheel speed + gyro rate) as SensorNoise does;
-  - the controller is balance_sim's CascadedPIDController (or LQRController), built by legobot_config's
+  - the controller is balance_sim's CascadedPIDController, built by legobot_config's
     ProjectConfig with its torque cap, lean cap and integral limits;
   - the duty is the config's actuator model's own drive() (B1, B1b) with its nominal constants and the
     measured battery voltage, per wheel with that wheel's speed: SlowPwmActuator's inverse of the HAT's slow
@@ -53,44 +53,39 @@ def load_robot_config():
 
 # ------------------------------------------------------------------------------------ controller ---
 def load_gains_file(path):
-    """A tuning result JSON: {"gains": {"kp", "ki", "kd", "kv_p"[, "kv_i"]}} (or a list in that order),
-    or {"K": [...]} for LQR gains in balance_sim.lqr's layout. An optional "feedforward_gain" is the
-    robot-code feedforward gain tuned with these gains (A4_BASELINES)."""
+    """A cascaded-PID tuning result JSON: {"gains": {"kp", "ki", "kd", "kv_p"[, "kv_i"]}} (or a list in that
+    order). An optional "feedforward_gain" is the robot-code feedforward gain tuned with these gains
+    (A4_BASELINES). The LEGO robot runs the cascaded PID only (the LQR was dropped, 2026-11-23)."""
     with open(path) as f:
         data = json.load(f)
     out = {"source": str(path), "feedforward_gain": data.get("feedforward_gain")}
     if "K" in data:
-        out["kind"], out["gains"] = "lqr", [float(k) for k in data["K"]]
-        return out
+        raise ValueError(f"{path} holds LQR gains; the LEGO robot runs the cascaded PID only")
     g = data["gains"]
     if isinstance(g, dict):
         missing = {"kp", "ki", "kd", "kv_p"} - set(g)
         if missing:
-            raise ValueError(f"{path}: gains lack {sorted(missing)} (an LQR-weights result? export 'K' instead)")
+            raise ValueError(f"{path}: gains lack {sorted(missing)} (not a cascaded-PID result?)")
         g = [g["kp"], g["ki"], g["kd"], g["kv_p"]] + ([g["kv_i"]] if "kv_i" in g else [])
     out["kind"], out["gains"] = "pid", [float(x) for x in g]
     return out
 
 
 def build_controller(cfg, spec="hand", goal="still"):
-    """spec: "hand" (legobot hand-tuned gains), "model" (model-based baseline), "lqr" (cost-matched LQR
-    design), or a gains JSON path. goal: "still" (hold 0 m/s) or "scenario" (the tuning scenario's goal
-    profile, from the moment the loop arms). Returns (controller, description dict)."""
+    """The cascaded PID (CascadedPIDController, built by ProjectConfig.build_controller). spec: "hand"
+    (legobot hand-tuned gains), "model" (model-based baseline), or a gains JSON path. goal: "still" (hold
+    0 m/s) or "scenario" (the tuning scenario's goal profile, from the moment the loop arms). Returns
+    (controller, description dict)."""
     ff_gain = None
+    kind = "pid"
     if spec == "hand":
-        kind, gains = "pid", list(cfg.controller.hand_tuned_gains)
+        gains = list(cfg.controller.hand_tuned_gains)
     elif spec == "model":
-        kind, gains = "pid", list(cfg.model_based_gains())
-    elif spec == "lqr":
-        try:
-            kind, gains = "lqr", [float(k) for k in cfg.build_lqr_gain()]
-        except ImportError as e:     # the design needs scipy, which the Pi doesn't have
-            raise SystemExit(f"LQR design needs {e.name}: on the laptop run `python -m robot.balance "
-                             f"--controller lqr --export-gains lqr.json`, copy it over, and pass its path")
+        gains = list(cfg.model_based_gains())
     else:
         loaded = load_gains_file(spec)
-        kind, gains, ff_gain = loaded["kind"], loaded["gains"], loaded["feedforward_gain"]
-    controller = cfg.build_controller(gains) if kind == "pid" else cfg.build_lqr_controller(gain=gains)
+        gains, ff_gain = loaded["gains"], loaded["feedforward_gain"]
+    controller = cfg.build_controller(gains)
     if goal == "still":
         controller.goal = 0.0
     elif goal != "scenario":

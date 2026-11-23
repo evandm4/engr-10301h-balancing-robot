@@ -342,7 +342,7 @@ def deployed_version():
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--controller", default="hand",
-                    help="hand | model | lqr | path to a tuning result JSON (default hand)")
+                    help="cascaded PID gains: hand | model | path to a tuning result JSON (default hand)")
     ap.add_argument("--goal", choices=("still", "scenario"), default="still")
     ap.add_argument("--seconds", type=float, default=10.0, help="run time after arming")
     ap.add_argument("--bench", action="store_true", help=f"wheels off the ground: |duty| <= {lc.BENCH_DUTY_CAP}")
@@ -362,8 +362,6 @@ def main(argv=None):
     ap.add_argument("--sim-noise", action="store_true", help="--sim: legobot_config's sensor noise and offsets")
     ap.add_argument("--outdir", default=lc.LOG_DIR)
     ap.add_argument("--label", default="balance")
-    ap.add_argument("--export-gains", metavar="PATH",
-                    help="write --controller's gains as a JSON the robot can load, and exit (LQR designs need scipy)")
     a = ap.parse_args(argv)
     # run_safe.sh starts Python as a background job, which inherits SIGINT as ignored: restore Ctrl-C now,
     # so it works while the HAT opens; install_safety() replaces this handler once the HAT is open.
@@ -371,15 +369,6 @@ def main(argv=None):
 
     cfg = control.load_robot_config()
     controller, desc = control.build_controller(cfg, a.controller, a.goal)
-    if a.export_gains:
-        import json
-        key = "K" if desc["kind"] == "lqr" else "gains"
-        out = {key: desc["gains"], "feedforward_gain": desc["feedforward_gain"], "from": a.controller,
-               "robot": cfg.name, "deployed": deployed_version()}
-        with open(a.export_gains, "w") as f:
-            json.dump(out, f, indent=2)
-        print(f"wrote {a.export_gains}: {key} = {desc['gains']}")
-        return "exported"
     duty_cap = a.duty_cap if a.duty_cap is not None else (lc.BENCH_DUTY_CAP if a.bench else lc.DUTY_CAP)
     if a.bench and duty_cap > lc.BENCH_DUTY_CAP:
         raise SystemExit(f"--bench caps |duty| at {lc.BENCH_DUTY_CAP}")
