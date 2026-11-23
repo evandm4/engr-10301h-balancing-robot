@@ -211,6 +211,15 @@ CONTROLLER = replace(
     ControllerConfig(),
     max_lean_deg=25.0,
     hand_tuned_gains=(2.5, 1.5, 0.2, 0.5),     # kp, ki, kd, kv_p: picked by hand in 13 trials (A4_BASELINES.md)
+    # The model-based design's inner integral pole, as a share of the inner pole pair's frequency. config.py's
+    # 0.1 is linearly unstable on this robot at every latency (spectral radius 1.003 from 0 to 20 ms, a 0.29 Hz
+    # mode): its RHP zero is relatively faster (z/p 1.05, Pololu 0.80), so the outer loop (z/3 = 2.84 rad/s)
+    # outruns the integral pole (1.63 rad/s) and the cascade's separation fails. The rule: the smallest ratio,
+    # in steps of 0.1, that is linearly stable over the whole training latency range. 0.2 is still unstable
+    # (1.0003); 0.3 gives 0.997 at 0-20 ms. Robust scoring (legobot_baselines.py, NumPy, 2026-11-23): training
+    # 29.8 (2 falls) -> 18.3 (1), dev 6.5 -> 7.2 (0 falls either way), dev chaos 0.26 -> 12. 0.4 falls more.
+    # On Pololu, 0.3 is unstable at 15 ms.
+    design_integral_ratio=0.3,
 )
 
 # The Pololu scenario's start times, sized from this robot (slow-PWM driver, the robot code's

@@ -375,5 +375,24 @@ but the old sim could exceed it.
 Robust costs fell and most falls went away: the delays the tuner trained against up to now (to 35 ms) were
 ones the locked robot can't have. Plain costs rose 3–6%. The nominal 10 ms now reaches the pulse 2.5 ms
 earlier than with the old fixed phase (0.25), and these gains weren't tuned for either. The remaining falls
-(1 and 2 of 150) come from linear controllers on pushes a full-torque response still catches. These are
-the reference points for E1.
+(1 and 2 of 150) come from linear controllers on pushes a full-torque response still catches.
+
+### Model-based design made linearly stable (2026-11-23)
+
+The model-based PID above was linearly unstable at every latency, 0 to 20 ms (spectral radius 1.003, a
+slow 0.29 Hz mode; `test_pid_design` under `ROBOT=legobot`). Latency isn't the cause. The design puts the
+outer loop at z/3, and this robot's RHP zero is relatively faster (z/p 1.05, Pololu 0.80), so the outer
+bandwidth (2.84 rad/s) outruns the inner integral pole (0.1 × 2p = 1.63 rad/s), and the cascade's time-scale
+separation fails. The design rule now takes the smallest integral ratio, in steps of 0.1, that is linearly
+stable over the training latency range: 0.3 (`legobot_config` `design_integral_ratio`; 0.997 at 0–20 ms).
+
+| Baseline | Plain (9) | Robust train (150) | Robust dev (150) | Dev worst | Dev chaos |
+|---|---|---|---|---|---|
+| Hand-tuned PID (2.5, 1.5, 0.2, 0.5) | 10.26 (0) | 10.69 (0) | 22.52 (1) | 1801 | 24 |
+| Model-based PID (1.98, 5.24, 0.15, 0.52) | 7.059 (0) | 18.32 (1) | 7.185 (0) | 9.79 | 12 |
+
+Against the unstable design: training 29.8 (2 falls) → 18.3 (1), dev 6.5 → 7.2 (no falls either way), but
+the chaos term rose from 0.26 to 12. The torch engine scored the same gains 7.2 on training, with no falls:
+the two engines disagree on one borderline fall. Under pulse-density PWM a run is bit-chaotic, and a flipped
+fall moves a 150-scenario mean by ~11. Treat robust-score differences of that size between candidates as
+noise, unless the falls are traced. These are the reference points for E1.
