@@ -29,7 +29,7 @@ from pivot_config import PIVOT_CONFIG as PC  # noqa: E402
 
 
 def latest_tuned_gains():
-    found = sorted((ROOT / "results" / "pivot_tuning").glob("*/comparison.json"))
+    found = sorted((ROOT / "results" / "pololu" / "pivot_tuning").glob("*/comparison.json"))
     if not found:
         return None
     results = json.loads(found[-1].read_text())["results"]
@@ -60,7 +60,7 @@ def main():
     else:
         tuned = latest_tuned_gains()
         if tuned:
-            print(f"'tuned' uses the best gains from results/pivot_tuning/{tuned[1]}")
+            print(f"'tuned' uses the best gains from results/pololu/pivot_tuning/{tuned[1]}")
             controllers["tuned"] = lambda: PC.build_controller(tuned[0])
 
     conditions = "ideal" if args.ideal else (f"{PC.base.actuator.model} motors, sensor noise (seed {args.seed}), "

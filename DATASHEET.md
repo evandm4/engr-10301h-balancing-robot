@@ -370,7 +370,7 @@ each). Each one changes every score (CostConfig's note on comparability applies)
 2026-11-06 tuned PID gains score about 55 on validation with 1 fall in 30 (0.140 before): their linear loop is
 unstable at every latency. The hand-tuned gains are unchanged at about 2.1. Turning the rotor inertia off alone
 brings the 2026-11-06 gains back to about 4, so it is the largest single change. **Retuned the same day**
-(`results/batch_tuning/20261108-132528/`): kp 1.57, ki 2.10, kd 0.285, kv_p 0.645, validation cost 0.255, no falls
+(`results/pololu/batch_tuning/20261108-132528/`): kp 1.57, ki 2.10, kd 0.285, kv_p 0.645, validation cost 0.255, no falls
 in 300 unseen randomized robots, stable to 40.5 ms of latency. PHYSICS.md, LQR.md and PIVOT.md now quote the
 re-runs.
 

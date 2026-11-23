@@ -29,6 +29,7 @@ from config import (
     ControllerConfig,
     CostConfig,
     SearchConfig,
+    LearningConfig,
     ProjectConfig,
     RobotConfig,
     RobustnessSettings,
@@ -269,6 +270,49 @@ COST = replace(
 # log scale, so its Pololu-sized top costs little.
 SEARCH = replace(SearchConfig(), kv_p_max=2.0)
 
+# -------------------------------------------------------------- LEARNING ---
+# Learned controllers on this robot (docs/ml-baselines-plan.md 13). The search settings are
+# config.py's; what differs is what the inputs are divided by, sized as config.py's were: from the
+# closed loop of this robot's PID and its PID-equivalent linear policy (leaky integrators), in the
+# one-robot simulator with this robot's models (IMU filter, slow-PWM drive), the 60 s scenario,
+# the nominal robot, all 50 dev seeds x 3 tilts, no falls. Measured 2026-11-23 with the hand-tuned
+# gains, so they are provisional until E1/E2's tuned PID (hardware/legobot/legobot_learning_scales.py):
+#   quantity          max     p99     p90     scale
+#   v_meas            0.71    0.48    0.35    0.4   (the goal's 0.40 m/s cruise; also the goal's scale)
+#   theta_meas        0.22    0.10    0.04    0.3   (CostConfig.pitch_limit_rad, as on the Pololu robot)
+#   theta_dot_meas    3.44    1.76    1.08    3.4   (peak, recovering from the 0.30 rad start)
+#   goal - v_meas     0.52    0.24    0.15    0.25  (p99. The Bryson limit, 0.06 m/s, fits the Pololu
+#                                                    robot but would put p90 inputs at 2.5 and peaks at 9)
+#   int_v             0.40    0.39    0.38    0.4   (peak; mostly the standstill offset: bias x T_leak)
+#   int_theta         0.19    0.18    0.18    0.2   (peak)
+#   torque command    0.90    0.42    0.27    0.4   (p99, for the command history and the output. Here
+#                                                    the Bryson limit, 0.09 N m, is 10% of max_torque by
+#                                                    design, and typical commands are 3-10x it: this
+#                                                    voltage-mode drive overcomes 0.03-0.055 N m of
+#                                                    Coulomb friction)
+#   PID setpoint      0.25    0.12    0.07    0.25  (residual input; peak)
+#   PID pitch int.    0.062   0.040   0.029   0.06  (residual input; peak)
+# No tuned reference PID yet (E1/E2, hardware/legobot/SOFTWARE_PLAN.md): the hand-tuned PID is the
+# reference, flagged as provisional everywhere it is used, and B1 would sit on it. When E2 is done,
+# set reference_pid_file to its run_batch_tuning.py comparison.json under results/legobot/ and
+# reference_pid_entry to the chosen search ("PID, cma-es" or "PID, differential evolution"), then
+# re-measure these scales with that PID. No LQR on this robot (A4_BASELINES.md).
+LEARNING = replace(
+    LearningConfig(),
+    speed_scale=0.4,
+    velocity_error_scale=0.25,
+    pitch_scale=0.3,
+    pitch_rate_scale=3.4,
+    int_v_scale=0.4,
+    int_theta_scale=0.2,
+    command_scale=0.4,
+    output_scale=0.4,
+    residual_setpoint_scale=0.25,
+    residual_int_theta_scale=0.06,
+    reference_pid_file=None,
+    reference_pid_entry="PID, hand-tuned",
+)
+
 # --------------------------------------------------------- PUT IT TOGETHER -
 LEGOBOT_CONFIG = ProjectConfig(
     name="legobot",
@@ -281,4 +325,5 @@ LEGOBOT_CONFIG = ProjectConfig(
     scenario=SCENARIO,
     robustness=ROBUSTNESS,
     search=SEARCH,
+    learning=LEARNING,
 )

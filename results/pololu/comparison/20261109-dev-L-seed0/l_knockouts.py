@@ -1,12 +1,12 @@
 """Knock-out test: put one of L's features back the PID's way (no re-tuning), score on dev at 60 s.
 
 Produced the table in docs/ml-baselines-plan.md 12.1. From the project folder (needs a GPU):
-    python results/comparison/20261109-dev-L-seed0/l_knockouts.py
+    python results/pololu/comparison/20261109-dev-L-seed0/l_knockouts.py
 """
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = Path(__file__).resolve().parents[4]
 sys.path[:0] = [str(REPO / "simulation"), str(REPO / "optimization"), str(REPO)]
 
 import numpy as np
@@ -14,7 +14,7 @@ from config import CONFIG
 from balance_sim import load_policy, pid_equivalent_weights, LinearController, stable_latency_range
 from batch_tuning import BatchEvaluator
 
-spec, w, _ = load_policy(REPO / "results" / "neuroevolution" / "linear" / "20261109-133801-seed0" / "final.npz")
+spec, w, _ = load_policy(REPO / "results" / "pololu" / "neuroevolution" / "linear" / "20261109-133801-seed0" / "final.npz")
 pid_w = pid_equivalent_weights(spec, CONFIG.reference_pid_gains())
 idx = {n: i for i, n in enumerate(spec.input_names)}
 cmds = [idx[f"cmd_{k}"] for k in range(1, 5)]

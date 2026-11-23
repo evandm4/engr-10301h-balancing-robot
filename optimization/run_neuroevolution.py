@@ -13,9 +13,9 @@ the validation and fall-rate tiers are never touched here.
 From the project folder:
     python optimization/run_neuroevolution.py --method linear                    quick profile (default)
     python optimization/run_neuroevolution.py --method mlp --profile full --run-seed 3
-    python optimization/run_neuroevolution.py --method warm --warm-from C:/balancebot_training/neuroevolution/linear/<run>/final.npz
+    python optimization/run_neuroevolution.py --method warm --warm-from C:/balancebot_training/pololu/neuroevolution/linear/<run>/final.npz
     python optimization/run_neuroevolution.py --method residual --authority 0.5
-    python optimization/run_neuroevolution.py --resume C:/balancebot_training/neuroevolution/mlp/<run>
+    python optimization/run_neuroevolution.py --resume C:/balancebot_training/pololu/neuroevolution/mlp/<run>
 
 One run seed per process, so a sweep maps onto a job array (scripts/slurm_neuroevolution.sh).
 State is saved after every generation (state.pkl); --resume continues exactly where it stopped,
@@ -85,6 +85,8 @@ def parse_args(argv=None):
     parser.add_argument("--float64", action="store_true", help="train in float64 (default: the profile's float32)")
     parser.add_argument("--out", type=str, default=None, help="run folder (default: a new timestamped one)")
     parser.add_argument("--resume", type=str, default=None, help="continue the run saved in this folder")
+    parser.add_argument("--ignore-config-change", action="store_true",
+                        help="resume even though config.py now trains or scores differently (not for final runs)")
     parser.add_argument("--allow-screen-off", action="store_true",
                         help="let the screen turn off while it runs (sleep stays blocked either way)")
     # For tests and smoke checks: shorter scenarios, and stopping early as if interrupted.
@@ -178,9 +180,12 @@ def initial_point(setup: Setup, rng: np.random.Generator):
         linear[...] = [weights.get(i, 0.0) for i in spec.inputs]
         stds = np.ones(spec.n_params)
         stds[:spec.n_inputs] = learning.warm_linear_std
+        # L's robot-seconds count against A-warm: in its budget cap and its checkpoint marks.
         summary = Path(args.warm_from).with_name("summary.json")
-        if summary.exists():                                       # L's robot-seconds count against A-warm
-            charged = float(json.loads(summary.read_text())["robot_seconds_total"])
+        if not summary.exists():
+            raise SystemExit(f"--warm-from needs its run's summary.json next to it ({summary}), "
+                             "so the linear run's robot-seconds can be charged to A-warm")
+        charged = float(json.loads(summary.read_text())["robot_seconds_total"])
     return x0, stds, charged
 
 
@@ -247,9 +252,14 @@ def _run(args) -> Path:
         folder = Path(args.resume)
         with open(folder / "state.pkl", "rb") as f:
             saved = pickle.load(f)
+        # Resuming under a config that trains or scores differently would continue the search on
+        # another objective, silently: refuse unless told to.
+        differences = CONFIG.scoring_differences(json.loads((folder / "snapshot.json").read_text())["config"])
+        if differences and not args.ignore_config_change:
+            raise SystemExit("config.py has changed since this run started, in what it trains or scores: "
+                             + ", ".join(differences) + ". Start a new run, or pass --ignore-config-change.")
         stop_after = args.stop_after
-        args = argparse.Namespace(**saved["args"])
-        args.stop_after = stop_after
+        args = argparse.Namespace(**{**saved["args"], "stop_after": stop_after})
         setup = Setup(args)
         search = PolicySearch.restore(setup.train, saved["search"])
         run_state = saved["run"]
@@ -265,7 +275,8 @@ def _run(args) -> Path:
                               seed=args.run_seed, stds=stds, full_cma_max_params=CONFIG.learning.full_cma_max_params)
         run_state = {"next_checkpoint": 0, "best_dev": math.inf, "stagnant": 0, "selected": None,
                      "charged_before": charged, "stop_reason": None}
-        snapshot = {"config": CONFIG.snapshot(), "args": vars(args), "profile": asdict(setup.profile),
+        snapshot = {"config": CONFIG.snapshot(), "robot": CONFIG.name,
+                    "reference_provisional": CONFIG.reference_is_provisional, "args": vars(args), "profile": asdict(setup.profile),
                     "spec": asdict(setup.spec), "n_params": setup.spec.n_params, "backend": setup.backend,
                     "train_dtype": np.dtype(setup.train_dtype).name, "train_seeds": list(setup.robust.train_seeds),
                     "dev_seeds": list(setup.dev_seeds), "popsize": setup.popsize, "sigma0": setup.sigma0,
@@ -274,12 +285,17 @@ def _run(args) -> Path:
                     "hardware": hardware()}
         (folder / "snapshot.json").write_text(json.dumps(snapshot, indent=2, default=str))
         with open(folder / "history.csv", "w", newline="") as f:
+            # sigma is cma's global factor; the step size per weight is sigma x sqrt(diag C), whose
+            # median is median_std (sigma alone can grow while C shrinks the steps).
             csv.writer(f).writerow(["generation", "n_evals", "robot_seconds", "best_train_objective",
-                                    "generation_min", "generation_median", "sigma", "elapsed_s",
+                                    "generation_min", "generation_median", "sigma", "median_std", "elapsed_s",
                                     "generation_s", *POWER_FIELDS])
         with open(folder / "checkpoints.csv", "w", newline="") as f:
             csv.DictWriter(f, CHECKPOINT_FIELDS).writeheader()
         search.start()
+        if args.method == "residual" and CONFIG.reference_is_provisional:
+            print(f"NOTE: {CONFIG.name} has no tuned reference PID yet; B1's base is the provisional "
+                  f"{CONFIG.learning.reference_pid_entry!r}")
         print(f"{args.method}: {setup.spec.n_params} parameters, {search.method}, population {setup.popsize}, "
               f"{setup.backend}; start point scores {search.best_cost:.4f}")
 
@@ -290,13 +306,17 @@ def _run(args) -> Path:
         tmp.replace(folder / "state.pkl")
 
     generations_this_call = 0
+    charged = run_state["charged_before"]
     while True:
-        # Checkpoint when one or more marks have been passed, and always at the end.
-        over_budget = (search.n_evals + setup.popsize) * search.per_eval > setup.budget
+        # Budgets count everything charged to the method (A-warm: L's run too). A checkpoint is
+        # scored at the last generation that doesn't pass its mark: when the next generation would
+        # pass one or more marks, score now. So "at the PID's budget" never means more than it.
+        total_next = (search.n_evals + setup.popsize) * search.per_eval + charged
+        over_budget = total_next > setup.budget
         capped = search.generation >= setup.max_generations
         at_end = over_budget or capped or search.stopped()
         passed = run_state["next_checkpoint"]
-        while passed < len(setup.checkpoints) and search.robot_seconds >= setup.checkpoints[passed]:
+        while passed < len(setup.checkpoints) and setup.checkpoints[passed] < total_next:
             passed += 1
         if (passed > run_state["next_checkpoint"] or at_end) and run_state.get("scored_at") != search.n_evals:
             rows, winner, dev = score_checkpoint(setup, search, folder)
@@ -311,6 +331,8 @@ def _run(args) -> Path:
             limit = setup.profile.stagnation_checkpoints
             if limit and run_state["stagnant"] >= limit:
                 run_state["stop_reason"] = f"dev score stagnant for {limit} checkpoints"
+            run_state["next_checkpoint"] = passed
+            save_state()        # so a run killed before the next generation doesn't score this again
         run_state["next_checkpoint"] = passed
         if run_state["stop_reason"] is None and at_end:
             run_state["stop_reason"] = ("budget" if over_budget else "generation cap" if capped else
@@ -328,7 +350,7 @@ def _run(args) -> Path:
         power = power_state() if setup.backend == "torch" else {}
         with open(folder / "history.csv", "a", newline="") as f:
             csv.writer(f).writerow([search.generation, search.n_evals, search.robot_seconds, search.best_cost,
-                                    float(np.min(costs)), float(np.median(costs)), search.sigma,
+                                    float(np.min(costs)), float(np.median(costs)), search.sigma, search.median_std,
                                     round(search.elapsed_s, 2), round(search.elapsed_s - before, 3),
                                     *(power.get(k, "") for k in POWER_FIELDS)])
         save_state()

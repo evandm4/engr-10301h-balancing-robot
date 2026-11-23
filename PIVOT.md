@@ -17,7 +17,7 @@ simulation/examples/run_pivot_demo.py   held vs level vs LQR vs tuned, printed a
 simulation/tests/test_pivot.py          physics, servo, timing, controller, config and tuner tests
 optimization/pivot_tuning/              PivotEvaluator, for the existing search methods
 optimization/run_pivot_tuning.py        tune the 7 gains, compare with the baselines and the LQR
-results/pivot_tuning/                   its output
+results/pololu/pivot_tuning/                   its output
 ```
 
 Everything shared with the base robot (wheels, wheel motors, IMU noise, latency, control rate, the goal-velocity scenario, start tilts, seeds, the wheel-gain search bounds) is read from `config.py`'s `CONFIG`, so it can't drift apart. **Since 2026-11-08 that shared scenario is the base robot's 20 s one** (a 0→1.3 m/s speed-up, larger start tilts up to 0.30 rad, a stop and reverse); its pushes are not applied to the pivot model. The results below were produced on the earlier 12 s scenario and need a re-run, and the pivot's fall penalty of 500 should be re-checked against the longer run (PHYSICS.md 8.3). Only what is new is written in `pivot_config.py`. Since 2026-11-06 that includes the cost: Bryson-rule weights, pitch from upright, fall penalty 500. The servo effort weight follows the same rule from a typical servo torque (`PivotCostConfig.servo_torque_limit` = 0.25 N m, weight 1.44), and the LQR's weights were rescaled to match (`LQRConfig`). The results below were re-run on this cost; the earlier ones are kept after them.
@@ -123,7 +123,7 @@ Pitch error is measured from upright (config.py's `pitch_reference`), for every 
 
 ## Results so far
 
-**Current: datasheet robot (2026-11-08).** Same command and budget as below (`results/pivot_tuning/20261108-132603/`, 882 and 840 evaluations, about 2.5 minutes each on 8 cores). The wheels and wheel motors are now config.py's datasheet values (DATASHEET.md), and the dynamics include the wheel-motor rotors' reflected inertia (Equations of motion, above). The body split, servo and pivot gains are unchanged. Validation as below: 30 runs, no controller fell.
+**Current: datasheet robot (2026-11-08).** Same command and budget as below (`results/pololu/pivot_tuning/20261108-132603/`, 882 and 840 evaluations, about 2.5 minutes each on 8 cores). The wheels and wheel motors are now config.py's datasheet values (DATASHEET.md), and the dynamics include the wheel-motor rotors' reflected inertia (Equations of motion, above). The body split, servo and pivot gains are unchanged. Validation as below: 30 runs, no controller fell.
 
 | controller | kp | ki | kd | kv_p | k_level | k_phi_p | k_phi_d | validation |
 |---|---|---|---|---|---|---|---|---|
@@ -142,7 +142,7 @@ Every finding of the 2026-11-06 run below still holds, with these numbers:
 4. **The tuned PID still beats the untuned LQR by a wide margin** (0.182 against 0.466).
 5. **The tuned costs are about 30% higher than on the earlier robot** (0.142 to 0.182 held, 0.157 to 0.210 active; the LQR's 15%, the hand-tuned 7%), and the tuned wheel gains are stiffer (kd 0.13 to 0.18, kp 0.58 to 0.79): the rotors' inertia makes the wheels slower to accelerate, as for the base robot (PHYSICS.md 3.2). The pivot tuner still scores the nominal robot without friction, so its gains are not comparable with the base robot's robust-tuned ones.
 
-**Earlier: cost of 2026-11-06, robot before the datasheet update.** From `python optimization/run_pivot_tuning.py --workers 8 --compare-held` (default budget, about 860 evaluations per search, 5 minutes on 8 cores; `results/pivot_tuning/20261106-154343/`). Validation is 30 runs on unseen noise seeds, DC motors, 10 ms latency, 50 Hz servo; no controller fell. The pivot tuner is the reference CPU tuner: nominal robot, no friction or latency randomization.
+**Earlier: cost of 2026-11-06, robot before the datasheet update.** From `python optimization/run_pivot_tuning.py --workers 8 --compare-held` (default budget, about 860 evaluations per search, 5 minutes on 8 cores; `results/pololu/pivot_tuning/20261106-154343/`). Validation is 30 runs on unseen noise seeds, DC motors, 10 ms latency, 50 Hz servo; no controller fell. The pivot tuner is the reference CPU tuner: nominal robot, no friction or latency randomization.
 
 | controller | kp | ki | kd | kv_p | k_level | k_phi_p | k_phi_d | validation |
 |---|---|---|---|---|---|---|---|---|
@@ -160,7 +160,7 @@ What this says:
 3. **Keeping the upper body level is no longer free.** `k_level = 1` cuts the upper body's mean RMS tilt from 1.6° to 0.6°, but costs 8.7% (2.095 against 1.927), against 0.1% before. The servo's effort is now a real term.
 4. **The tuned PID beats the LQR by a wide margin** (0.142 against 0.403). As for the base robot (LQR.md), the cost-matched LQR regulates without goal feed-forward and gives up a lot of tracking. The pivot LQR's weights are not tuned.
 
-**Earlier cost (2026-10-01).** `results/pivot_tuning/20261001-052500/`: velocity weight 1, effort 0.01, servo 0.01, pitch from the commanded lean, fall penalty 100, step-shaped goal. Kept as a record.
+**Earlier cost (2026-10-01).** `results/pololu/pivot_tuning/20261001-052500/`: velocity weight 1, effort 0.01, servo 0.01, pitch from the commanded lean, fall penalty 100, step-shaped goal. Kept as a record.
 
 | controller | kp | ki | kd | kv_p | k_level | k_phi_p | k_phi_d | validation | upright |
 |---|---|---|---|---|---|---|---|---|---|

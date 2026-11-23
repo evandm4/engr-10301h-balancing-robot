@@ -327,11 +327,16 @@ class CostConfig:
     #     scoring draws takes 0.02-0.14 N m.
     #   - velocity_limit is the tracking error accepted on ScenarioConfig's goal.
     #     Change the goal profile and revisit it.
-    #   - fall_penalty must exceed any non-fall cost. These weights scale costs up,
-    #     and the bound grows with the run length and top speed, so changing a
-    #     limit or the scenario can silently break that; re-check it (PHYSICS.md
-    #     8.3, test_fall_penalty_exceeds_any_non_fall_cost). For the 20 s scenario
-    #     the bound is 883 (462 for the earlier 12 s one, under its 500).
+    #   - fall_penalty must exceed any non-fall cost of a TRAINING run. These weights
+    #     scale costs up, and the bound grows with the run length and top speed, so
+    #     changing a limit or the scenario can silently break that; re-check it
+    #     (PHYSICS.md 8.3, test_fall_penalty_exceeds_any_non_fall_cost). For the 20 s
+    #     scenario the bound is 883 (462 for the earlier 12 s one, under its 500).
+    #     It is NOT guaranteed for the 60 s validation runs (bound 2,648, above the
+    #     2,000 a fall costs there) or under heavier weightings, so validation
+    #     reports falls as a separate count, and compare_controllers.py checks, for
+    #     every weighting it re-scores, that the costliest non-fall run it actually
+    #     scored stays below the cheapest possible fall.
     # Changing one limit changes every score: runs under different limits are not
     # comparable (every run records them in its config snapshot). A limit of
     # math.inf switches that term off. pitch_limit_rad is in radians, not degrees
@@ -546,12 +551,14 @@ class RobustnessSettings:
     """
 
     n_train_seeds: int = 50            # noise seeds 1..N scored during tuning
-    # Unseen seeds (and, through them, unseen robots) for the final validation. Seeds
-    # 1000-1099 were the validation set until 2026-11-09, but the 20 s scenario's push
-    # size and blend times were checked against those robots while it was designed, so
-    # they are no longer held out. 2000-2099 were fixed after the scenario, the search
-    # bounds and the model-based design were frozen, and are used for nothing else.
-    validation_seeds: Tuple[int, ...] = tuple(range(2000, 2100))
+    # Unseen seeds (and, through them, unseen robots) for the final validation. Retired
+    # sets: 1000-1099 (checked against while the 20 s scenario's push and blend times were
+    # sized) and 2000-2099 (results seen before the latency range was widened to 2.5 ms
+    # and the direct LQR search gained an integral gain, 2026-11-09). 3000-3099 were fixed
+    # after those changes, and are used for nothing else. Only the final comparison scores
+    # them: compare_controllers.py, run_lqr_comparison.py and run_batch_tuning.py all
+    # score the dev seeds instead unless given --final.
+    validation_seeds: Tuple[int, ...] = tuple(range(3000, 3100))
     # The other evaluation tiers (docs/ml-baselines-plan.md 2.5). Smoke is the first 10 dev
     # seeds, on purpose: both are for development. Development seeds take every
     # hyperparameter, architecture and run-selection decision; validation and fall-rate are
@@ -560,14 +567,10 @@ class RobustnessSettings:
     smoke_seeds: Tuple[int, ...] = tuple(range(5000, 5010))
     dev_seeds: Tuple[int, ...] = tuple(range(5000, 5050))
     fall_rate_seeds: Tuple[int, ...] = tuple(range(6000, 7000))
-    retired_seeds: Tuple[int, ...] = tuple(range(100, 110)) + tuple(range(1000, 1100))
-    fresh_seed_start: int = 1_000_000  # fresh-scenario ablations draw from here up
-    # Unseen seeds (and, through them, unseen robots) for the final validation. Retired
-    # sets: 1000-1099 (checked against while the 20 s scenario's push and blend times were
-    # sized) and 2000-2099 (results seen before the latency range was widened to 2.5 ms
-    # and the direct LQR search gained an integral gain, 2026-11-09). 3000-3099 were fixed
-    # after those changes, and are used for nothing else.
-    validation_seeds: Tuple[int, ...] = tuple(range(3000, 3100))
+    retired_seeds: Tuple[int, ...] = tuple(range(100, 110)) + tuple(range(1000, 1100)) + tuple(range(2000, 2100))
+    # Fresh-scenario ablations draw from here up. Spent by the PR #10 review (2026-11-09):
+    # 1,000,000-1,000,003 and 5,000,000-5,000,332; start new experiments above 6,000,000.
+    fresh_seed_start: int = 1_000_000
     # (parameter, relative spread): each scenario's robot has that parameter
     # scaled by a random factor in [1 - spread, 1 + spread]. Build and datasheet
     # tolerances (DATASHEET.md 2); replace with measured spreads. Names are
@@ -671,7 +674,11 @@ class LearningConfig:
     residual_authority: float = 0.25   # 0.5 as an ablation
     residual_setpoint_scale: float = 0.3      # rad
     residual_int_theta_scale: float = 0.05    # rad s
-    reference_pid_file: str = "results/lqr_comparison/20261108-225341/comparison.json"
+    # The reference controller: an entry of a comparison.json from run_lqr_comparison.py (entries
+    # "PID, ML-tuned", ...) or run_batch_tuning.py (read as "PID, cma-es", "PID, hand-tuned", ...;
+    # read_pid_comparison). None: no tuned reference exists yet for this robot, and the entry is
+    # one of its own baselines (ProjectConfig.baseline_pids), flagged as provisional.
+    reference_pid_file: Optional[str] = "results/pololu/lqr_comparison/20261109-000021/comparison.json"   # tuned at 2.5-20 ms
     reference_pid_entry: str = "PID, ML-tuned"
     # Where training runs write (run_neuroevolution.py). Not the repository: a run rewrites its
     # search state every generation, and a synced folder (OneDrive) can lock a file mid-upload and
@@ -857,6 +864,36 @@ class ProjectConfig:
             pwm_tick_locked=self.actuator.model == "slow_pwm" and self.actuator.pwm_tick_locked,
         )
 
+    # Snapshot sections and keys that don't change how a controller is trained or scored: where
+    # output goes, which seeds other tiers hold back, the LQR and PID search settings, and
+    # values derived from the rest.
+    NOT_SCORING = ("lqr", "search", "derived", "learning.output_dir", "robustness.validation_seeds",
+                   "robustness.fall_rate_seeds", "robustness.retired_seeds", "robustness.fresh_seed_start")
+
+    def scoring_differences(self, snapshot: dict) -> list:
+        """Dotted keys (e.g. "robustness.latency_range_s") where a saved snapshot() differs from
+        this config in something that changes how a controller is trained or scored. An empty
+        list means a run saved under that snapshot is comparable with runs made now."""
+        import json
+
+        normalize = lambda value: json.loads(json.dumps(value, default=str))
+        now = normalize(self.snapshot())
+        then = normalize(snapshot)
+        differences = []
+        for section in sorted(set(now) | set(then)):
+            if section in self.NOT_SCORING:
+                continue
+            a, b = now.get(section), then.get(section)
+            if not isinstance(a, dict) or not isinstance(b, dict):
+                if a != b:
+                    differences.append(section)
+                continue
+            for key in sorted(set(a) | set(b)):
+                name = f"{section}.{key}"
+                if name not in self.NOT_SCORING and a.get(key) != b.get(key):
+                    differences.append(name)
+        return differences
+
     def snapshot(self) -> dict:
         """Everything this configuration defines, as plain JSON-friendly data.
 
@@ -913,26 +950,50 @@ class ProjectConfig:
         )
 
     def training_output_root(self) -> Path:
-        """Folder training runs write under: $BALANCEBOT_TRAINING_DIR, else LearningConfig.output_dir
-        if its drive exists here, else results/ in the repository."""
+        """Folder this robot's training runs write under: <base>/<robot name>, where <base> is
+        $BALANCEBOT_TRAINING_DIR, else LearningConfig.output_dir if its drive exists here, else
+        results/ in the repository. One subfolder per robot, so their runs never mix."""
         import os
 
         override = os.environ.get("BALANCEBOT_TRAINING_DIR")
         if override:
-            return Path(override)
+            return Path(override) / self.name
         configured = self.learning.output_dir
         if configured and sys.platform == "win32":
             drive = Path(configured).drive
             if drive and Path(drive + "\\").exists():
-                return Path(configured)
-        return _ROOT / "results"
+                return Path(configured) / self.name
+        return _ROOT / "results" / self.name
+
+    def baseline_pids(self) -> dict:
+        """This robot's own PID baselines, needing no tuning run: {label: ("cascaded", gains)}."""
+        return {"PID, hand-tuned": ("cascaded", tuple(float(g) for g in self.controller.hand_tuned_gains)),
+                "PID, model-based": ("cascaded", tuple(float(g) for g in self.model_based_gains()))}
+
+    @property
+    def reference_is_provisional(self) -> bool:
+        """True while no tuned reference exists for this robot (LearningConfig.reference_pid_file is
+        None): the reference is one of its baselines, and every ratio against it is provisional."""
+        return self.learning.reference_pid_file is None
+
+    def reference_controllers(self) -> dict:
+        """{label: (kind, gains)}: the controllers of the reference file, or this robot's baselines
+        when there is none."""
+        if self.reference_is_provisional:
+            return self.baseline_pids()
+        return read_pid_comparison(_ROOT / self.learning.reference_pid_file)
 
     def reference_pid_gains(self) -> Tuple[float, ...]:
-        """The reference PID's [kp, ki, kd, kv_p], read from LearningConfig.reference_pid_file."""
-        import json
-
-        with open(_ROOT / self.learning.reference_pid_file) as f:
-            return tuple(float(g) for g in json.load(f)["results"][self.learning.reference_pid_entry]["gains"])
+        """The reference PID's [kp, ki, kd, kv_p]: LearningConfig.reference_pid_entry of the reference
+        file, or of this robot's baselines while it has no tuned reference (reference_is_provisional)."""
+        controllers = self.reference_controllers()
+        entry = self.learning.reference_pid_entry
+        if entry not in controllers:
+            raise KeyError(f"reference entry {entry!r} not among {sorted(controllers)}")
+        kind, gains = controllers[entry]
+        if kind != "cascaded":
+            raise ValueError(f"the reference {entry!r} is not a cascaded PID")
+        return gains
 
     def build_policy_spec(self, kind: str = "mlp", hidden: Optional[Tuple[int, ...]] = None,
                           base_gains: Optional[Tuple[float, ...]] = None, authority: Optional[float] = None):
@@ -1097,13 +1158,36 @@ def add_robot_argument(parser) -> None:
                         help=f"which robot to simulate (default: $ROBOT, else {DEFAULT_ROBOT}; now {CONFIG.name})")
 
 
+def read_pid_comparison(path) -> dict:
+    """{label: (kind, gains)} from a comparison.json of either tuning script.
+
+    run_lqr_comparison.py: entries are labels ("PID, ML-tuned", "LQR, ..."), each with "kind"
+    ("cascaded_pid" or "lqr") and a gains list. run_batch_tuning.py: entries are search methods and
+    baselines ("cma-es", "hand-tuned", ...), cascaded PIDs with gains as a {kp, ki, kd, kv_p(, kv_i)}
+    dict; they are labeled "PID, <entry>" so labels mean the same in both.
+    """
+    import json
+
+    out = {}
+    for name, entry in json.loads(Path(path).read_text())["results"].items():
+        gains = entry["gains"]
+        if isinstance(gains, dict):
+            gains = [gains[k] for k in ("kp", "ki", "kd", "kv_p", "kv_i") if k in gains]
+        if "kind" in entry:
+            kind = "lqr" if entry["kind"] == "lqr" else "cascaded"
+            label = name
+        else:
+            kind, label = "cascaded", f"PID, {name}"
+        out[label] = (kind, tuple(float(g) for g in gains))
+    return out
+
+
 def results_dir(*parts: str, robot: Optional[str] = None) -> Path:
-    """Where results for `robot` (default: the selected one) go: results/<...> for
-    the Pololu robot, whose earlier results and the documents citing them live
-    there, and results/<robot>/<...> for any other robot."""
+    """Where results for `robot` (default: the selected one) go: results/<robot>/<...>.
+    Every robot has its own tree, so no script can mix one robot's results into another's
+    (the Pololu robot's moved from results/<...> to results/pololu/<...> on 2026-11-23)."""
     robot = CONFIG.name if robot is None else robot
-    base = _ROOT / "results"
-    return base.joinpath(*parts) if robot == "pololu" else base.joinpath(robot, *parts)
+    return (_ROOT / "results").joinpath(robot, *parts)
 
 
 ROBOT = _selected_robot()

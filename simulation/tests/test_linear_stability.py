@@ -19,7 +19,7 @@ from balance_sim import (LinearController, Planar2D, PolicyController, loop_matr
 from config import CONFIG
 
 ROOT = Path(__file__).resolve().parents[2]
-RESULTS = json.loads((ROOT / "results/lqr_comparison/20261108-225341/comparison.json").read_text())["results"]
+RESULTS = json.loads((ROOT / CONFIG.learning.reference_pid_file).read_text())["results"]
 GAINS = RESULTS["PID, ML-tuned"]["gains"]
 T = CONFIG.timing.control_dt_s
 LATENCY = CONFIG.timing.latency_s

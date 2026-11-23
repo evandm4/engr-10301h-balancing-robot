@@ -68,8 +68,54 @@ def test_training_output_root(monkeypatch, tmp_path):
     """Runs write outside the synced repository: $BALANCEBOT_TRAINING_DIR first, then the
     configured folder where its drive exists, else results/."""
     monkeypatch.setenv("BALANCEBOT_TRAINING_DIR", str(tmp_path))
-    assert CONFIG.training_output_root() == tmp_path
+    assert CONFIG.training_output_root() == tmp_path / CONFIG.name       # one subfolder per robot
     monkeypatch.delenv("BALANCEBOT_TRAINING_DIR")
     root = CONFIG.training_output_root()
-    assert root.name in ("balancebot_training", "results")
-    assert "OneDrive" not in str(root) or root.name == "results"
+    assert root.name == CONFIG.name and root.parent.name in ("balancebot_training", "results")
+    assert "OneDrive" not in str(root) or root.parent.name == "results"
+
+
+def test_results_and_training_folders_are_per_robot():
+    from config import load_config, results_dir
+
+    lego = load_config("legobot")
+    assert results_dir("batch_tuning", robot="pololu").parts[-3:] == ("results", "pololu", "batch_tuning")
+    assert results_dir("batch_tuning", robot="legobot").parts[-3:] == ("results", "legobot", "batch_tuning")
+    assert lego.training_output_root().name == "legobot"
+    assert lego.training_output_root().parent == CONFIG.training_output_root().parent
+
+
+def test_checkpoints_never_pass_their_marks(tmp_path, monkeypatch):
+    """Each checkpoint is scored at the last generation that doesn't pass its mark (so "at the PID's
+    budget" never means more than it), and the run stops before passing its budget."""
+    from dataclasses import replace
+
+    import run_neuroevolution
+
+    marks = (10.0, 20.0)                      # robot-seconds; a tiny generation is 6 x 6 x 0.4 = 14.4
+    monkeypatch.setattr(run_neuroevolution, "CONFIG",
+                        replace(CONFIG, learning=replace(CONFIG.learning, checkpoints_robot_seconds=marks)))
+    folder = run(["--method", "linear", *TINY, "--generations", "100", "--budget", "40",
+                  "--out", str(tmp_path / "marks")])
+    with open(folder / "checkpoints.csv") as f:
+        scored = sorted({float(r["robot_seconds"]) for r in csv.DictReader(f)})
+    assert scored == pytest.approx([2.4, 16.8, 31.2])       # at or below 10, 20 and the 40 budget
+    assert json.loads((folder / "summary.json").read_text())["stop_reason"] == "budget"
+
+
+def test_resume_refuses_a_changed_config(tmp_path):
+    part = run(["--method", "linear", *TINY, "--out", str(tmp_path / "part"), "--stop-after", "1"])
+    snapshot = json.loads((part / "snapshot.json").read_text())
+    snapshot["config"]["robustness"]["latency_range_s"] = [0.005, 0.02]     # as before 2026-11-09
+    (part / "snapshot.json").write_text(json.dumps(snapshot))
+    with pytest.raises(SystemExit, match="latency_range_s"):
+        run(["--resume", str(part)])
+    run(["--resume", str(part), "--ignore-config-change"])                    # an explicit override works
+    assert (part / "summary.json").exists()
+
+
+def test_warm_start_needs_the_linear_runs_summary(tmp_path):
+    linear = run(["--method", "linear", *TINY, "--out", str(tmp_path / "linear")])
+    (linear / "summary.json").unlink()
+    with pytest.raises(SystemExit, match="summary.json"):
+        run(["--method", "warm", *TINY, "--warm-from", str(linear / "final.npz"), "--out", str(tmp_path / "warm")])

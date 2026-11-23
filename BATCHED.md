@@ -121,7 +121,7 @@ The reference tuner (`run_tuning.py`) scores gains on 3 tilts × 3 noise seeds w
 
 Each candidate then costs 300 simulations, and finalists are validated on 100 unseen seeds with unseen robots (another 300). `--plain` switches this off, `--seeds N`, `--no-randomize` and `--sensitivity-weight W` adjust it, and passing no robustness config to `BatchEvaluator` scores exactly like the reference code.
 
-Latest run, with the 4-gain controller (`results/batch_tuning/20260928-145838/`):
+Latest run, with the 4-gain controller (`results/pololu/batch_tuning/20260928-145838/`):
 
 | gains | reference-style validation | robust validation (300 unseen) | worst scenario | chaos |
 |---|---:|---:|---:|---:|
@@ -133,7 +133,7 @@ The best gains are kp ≈ 1.03, ki ≈ 0.20, kd ≈ 0.10, kv_p ≈ 0.33.
 
 - **The tuned gains are robust.** Their cost barely moves across randomized robots, and their worst scenario is within 8% of the average. The hand-tuned gains get 21% worse on randomized robots, with a tail up to 0.93. `robustness_summary.png` shows both distributions.
 - **Robust tuning found essentially the same gains as the plain tuning.** So the optimum isn't an artifact of 3 seeds and one robot. That's the main value of this run: the answer is now backed by far more evidence.
-- **Dropping kv_i changed nothing for the tuned gains** (the 5-gain runs had already put it at 0, with the same cost). It made the hand-tuned baseline better: its old kv_i of 0.03 cost it 0.277 → 0.243 on reference validation. The earlier 5-gain run is in `results/batch_tuning/20260928-140800/`.
+- **Dropping kv_i changed nothing for the tuned gains** (the 5-gain runs had already put it at 0, with the same cost). It made the hand-tuned baseline better: its old kv_i of 0.03 cost it 0.277 → 0.243 on reference validation. The earlier 5-gain run is in `results/pololu/batch_tuning/20260928-140800/`.
 - **The chaos penalty was never large for the finalists** (they're well-behaved, with nudge effects of about 0.01% of the cost). It matters during the search, where it keeps chaotic candidates with a lucky score from winning.
 
 ## Where to go from here

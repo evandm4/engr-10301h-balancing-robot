@@ -123,6 +123,18 @@ class RobustnessConfig:
         return self.sensitivity_weight > 0
 
 
+def checking_tier(config: RobustnessConfig, final: bool) -> Tuple[RobustnessConfig, str]:
+    """The seeds a tuning script may check its results on, as (config, tier name).
+
+    The validation seeds are frozen: scored once, on final controllers (plan 2.5). Unless final,
+    scripts that check their results on `validation_seeds` get the development seeds in their
+    place, and say so in what they save.
+    """
+    if final:
+        return config, "validation"
+    return replace(config, validation_seeds=tuple(config.dev_seeds), dev_seeds=(), smoke_seeds=()), "dev"
+
+
 def sample_robots(base: BatchRobot, config: RobustnessConfig, seeds: Sequence[int], n_pitches: int) -> BatchRobot:
     """One robot per scenario, in scenario order (seed-major, then tilt), as per-simulation arrays.
 

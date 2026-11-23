@@ -7,8 +7,9 @@ import pytest
 from scipy import stats
 
 from balance_sim import pid_equivalent_weights, save_policy
-from compare_controllers import (clopper_pearson, crossed_bootstrap, first_latency_with_falls, main,
-                                 mcnemar_exact, order_statistic_interval)
+from compare_controllers import (clopper_pearson, crossed_bootstrap, first_latency_losing, first_latency_with_cost,
+                                 first_latency_with_falls, main, mcnemar_exact, order_statistic_interval,
+                                 paired_method_bootstrap)
 from config import CONFIG
 
 
@@ -60,6 +61,32 @@ def test_sweep_metric_is_the_first_latency_reaching_the_threshold():
     assert first_latency_with_falls([15, 20], [0, 3]) is None
 
 
+def test_cost_metrics_see_oscillation_without_falls():
+    """The review's case: past its delay margin L oscillates instead of falling, so only cost shows it."""
+    ms = [10, 15, 20, 25, 30, 35]
+    l_cost = [1.90, 1.93, 2.07, 4.97, 18.3, 194]
+    assert first_latency_with_falls(ms, [0, 0, 0, 0, 1, 84]) == 35
+    assert first_latency_with_cost(ms, l_cost) == 25                       # 1.5 x 1.90 = 2.85
+    assert first_latency_losing(ms, [0.83, 0.84, 0.88, 1.9, 4.3, 8.7]) == 25
+    assert first_latency_losing(ms, [1.2, 0.9, 1.1, 1.1, 1.1, 1.1]) is None   # never beat it at the baseline
+    assert first_latency_with_cost(ms, [2.0] * 6) is None
+
+
+def test_paired_method_bootstrap_sees_a_difference_overlapping_intervals_hide():
+    """Two methods measured on the same hard and easy scenarios: their own intervals overlap, but the
+    paired interval for their ratio excludes 1, because the shared difficulty cancels."""
+    rng = np.random.default_rng(1)
+    difficulty = rng.lognormal(0.0, 0.4, 300)
+    a = difficulty[None, :] * 0.97 * rng.lognormal(0.0, 0.01, (10, 300))
+    b = difficulty[None, :] * rng.lognormal(0.0, 0.01, (10, 300))
+    ca, cb = crossed_bootstrap(a, n_boot=1000), crossed_bootstrap(b, n_boot=1000)
+    assert ca["high"] > cb["low"]                                         # the per-method intervals overlap
+    pair = paired_method_bootstrap(a, b, n_boot=1000)
+    assert pair["high"] < 1.0 and abs(pair["ratio"] - 0.97) < 0.01
+    with pytest.raises(ValueError):
+        paired_method_bootstrap(a, b[:, :100])
+
+
 def test_frozen_tiers_need_final(tmp_path):
     with pytest.raises(SystemExit):
         main(["--tier", "validation", "--out", str(tmp_path)])
@@ -95,3 +122,15 @@ def test_end_to_end_on_smoke(tmp_path):
     assert side["torque_rms_change_per_tick_n_m"]["median"] > 0
     assert 0 < side["time_at_torque_limit_fraction"]["worst"] < 1   # the 0.30 rad start saturates
     assert side["peak_pitch_deg"]["worst"] >= 17.0                  # it starts at 0.30 rad = 17.2 deg
+    # Fall ordering checked per weighting; method pairs only where a method has several runs; the
+    # policies were saved without a run snapshot, which is flagged.
+    assert all("falls_rank_below_every_non_fall" in v for v in sens.values())
+    assert sens["configured"]["falls_rank_below_every_non_fall"]
+    assert set(report["method_pairs"]) == {f"{m} vs L-PID" for m in report["methods"] if m != "L-PID"}
+    assert any("no snapshot.json" in w for w in report["runs"]["L-PID / run0"]["warnings"])
+    assert report["runs"]["PID, ML-tuned"]["warnings"] == []
+    curve = report["latency_sweep"]["curves"]["PID, ML-tuned"]
+    assert report["latency_sweep"]["baseline_ms"] == 15.0 and curve["median_ratio_vs_reference"] == [1.0, 1.0]
+    assert curve["first_latency_losing_to_reference"] is None       # the reference never beats itself
+    assert set(report["latency_sweep"]["by_method"]["L-PID"]) >= {"first_latency_with_cost",
+                                                                  "first_latency_with_falls"}

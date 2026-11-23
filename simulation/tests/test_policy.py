@@ -29,7 +29,7 @@ from config import CONFIG
 from tuning import Evaluator
 
 ROOT = Path(__file__).resolve().parents[2]
-REFERENCE = json.loads((ROOT / "results/lqr_comparison/20261108-225341/comparison.json").read_text())
+REFERENCE = json.loads((ROOT / CONFIG.learning.reference_pid_file).read_text())   # the reference every ratio is against
 REFERENCE_PID = REFERENCE["results"]["PID, ML-tuned"]
 GAINS = REFERENCE_PID["gains"]                     # kp, ki, kd, kv_p every ratio in the paper is against
 
@@ -209,8 +209,9 @@ def test_gate_a_linear_policy_is_exactly_the_pid_with_policy_integrators(config)
 
 
 def test_gate_b_policy_integrators_stay_within_one_percent_of_the_real_pid():
-    """Bound stated in the plan before measuring here: 1%. Measured 2026-11-09: +0.68% on the
-    training objective, -0.66% on the 60 s development score. This gap is reported in the paper."""
+    """Bound stated in the plan before measuring here: 1%. Measured 2026-11-23 against the re-tuned
+    reference PID (2.5-20 ms latency): +0.63% on the training objective, -0.68% on the 60 s
+    development score (+0.68% / -0.66% against the earlier PID). This gap is reported in the paper."""
     robust = CONFIG.build_robustness()
     weights = pid_equivalent_weights(LINEAR, GAINS)
     for config, seeds in ((CONFIG.build_eval_config(), None),

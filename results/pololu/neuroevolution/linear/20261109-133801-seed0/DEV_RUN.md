@@ -9,5 +9,9 @@ quote its numbers.
   was that of commit dc66b36.
 - The final L result is 10 run seeds made from a clean commit (plan 2.7). Its seed-0 run replaces
   this one in the paper's table.
+- Trained and scored under an earlier config: latency drawn from 5-20 ms (2.5-20 ms since PR #9) and
+  the earlier reference PID (`results/pololu/lqr_comparison/20261108-225341`). Not to be pooled with runs
+  made since; `compare_controllers.py` flags it. Re-scored on dev under the current config by the
+  PR #10 review: still 0.870 against the earlier PID, and the re-tuned PID itself 0.999.
 - Its dev comparison (including the weight sensitivity and side metrics) and the knock-out script
-  are in `results/comparison/20261109-dev-L-seed0/`.
+  are in `results/pololu/comparison/20261109-dev-L-seed0/`.

@@ -2,7 +2,7 @@
 
 Nov 9, 2026 · @Evan Moore
 
-Working notes for drafting the Results and Conclusions of the balancing-robot paper. Numbers come from `results/lqr_comparison/20261109-000021` (latency drawn from 2.5–20 ms, LQR gain search with a guarded integral gain), validated on a third held-out set, seeds 3000–3099. Two earlier sets were retired: one informed the scenario design, and results on the other were seen before those two changes.
+Working notes for drafting the Results and Conclusions of the balancing-robot paper. Numbers come from `results/pololu/lqr_comparison/20261109-000021` (latency drawn from 2.5–20 ms, LQR gain search with a guarded integral gain), validated on a third held-out set, seeds 3000–3099. Two earlier sets were retired: one informed the scenario design, and results on the other were seen before those two changes.
 
 ## Central thesis
 
@@ -55,3 +55,5 @@ Validation on 300 unseen robots and noise seeds, 60 s runs, sorted by median cos
 - [ ] Optional re-run: LQR weight search with all weights free (the guarded integral gain is done)
 - [ ] Decide whether to re-run the pivot side project on the new scenario or leave it out of the paper
 - [ ] Why the linear policy L beats the PID: constrained re-training without its command history, and with velocity only as goal minus v (docs/ml-baselines-plan.md 12.1)
+- [ ] Disclose that the existing PID and LQR controllers were scored on the current validation set (seeds 3000-3099, `results/pololu/lqr_comparison/20261109-000021`) before the learned controllers were frozen; no selection used it (PR #10 review, finding 4)
+- [ ] State L's result with its latency limit: lower typical cost inside the trained 2.5-20 ms range, worse than the PID from about 25 ms, smaller delay margin (28 ms vs 37.5); the sweep's cost metric shows it, the fall metric alone would not (docs/ml-baselines-plan.md 3.4 and 11.3)

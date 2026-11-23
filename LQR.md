@@ -8,7 +8,7 @@ simulation/balance_sim/lqr.py          LQRWeights, discrete_model, lqr_gain, LQR
 simulation/balance_sim/stability.py    exact stability of the sampled, delayed linear loop, for either controller
 simulation/batch_sim/controller.py     lqr_update: the same controller for a batch (NumPy and GPU)
 optimization/tuning/search_space.py    what the tuner searches: LQR weights, or LQR gains directly
-optimization/run_lqr_comparison.py     the comparison; output in results/lqr_comparison/
+optimization/run_lqr_comparison.py     the comparison; output in results/pololu/lqr_comparison/
 simulation/tests/test_lqr.py           65 tests
 config.py (LQRConfig)                  search bounds; the cost-matched weights come from CostConfig
 ```
@@ -66,13 +66,13 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 | LQR, ML-tuned weights | the 4 weights, searched |
 | LQR, ML-tuned gains | the 5 gains, searched around the cost-matched design, kept nominally stable |
 
-**One score for everyone.** The project's default cost measures pitch error from the lean the PID commands. The LQR commands no lean, so that would score the two kinds of controller against different references. Every controller here is scored, and every search minimizes, the configured cost with pitch measured from upright (`pitch_reference="upright"`, the convention `run_pivot_tuning.py` already uses). So the ML-tuned PID here is tuned for that score, and its numbers aren't directly comparable with `results/batch_tuning/`.
+**One score for everyone.** The project's default cost measures pitch error from the lean the PID commands. The LQR commands no lean, so that would score the two kinds of controller against different references. Every controller here is scored, and every search minimizes, the configured cost with pitch measured from upright (`pitch_reference="upright"`, the convention `run_pivot_tuning.py` already uses). So the ML-tuned PID here is tuned for that score, and its numbers aren't directly comparable with `results/pololu/batch_tuning/`.
 
 **Same treatment for the three searches.** Robust scoring from config.py (50 seeds × 3 tilts, randomized robots, chaos penalty: 300 simulations per candidate). CMA-ES and differential evolution each run at the same budget, about 4,800 candidates, and the better result is kept. Validation then uses 100 unseen seeds with unseen robots (300 scenarios) in float64.
 
 ### Results
 
-**Current: 2.5–20 ms latency, an integral gain in the direct search, third held-out set (2026-11-09).** Run `results/lqr_comparison/20261109-000021/`. Two method changes, then a fresh validation set: robust scoring now draws latency from 2.5–20 ms (it was 5–20 ms, which missed the 1.7–5.6 ms hardware estimate), and the direct LQR gain search now also searches an integral gain (log scale, 10⁻³–10), with any candidate that has integral action required to keep the nominal loop's spectral radius below 0.999 (`LQRConfig.direct_integral_bounds`, `direct_max_spectral_radius`). Because results on the second held-out set (seeds 2000–2099) had been seen before these changes, validation uses a third set, seeds 3000–3099, fixed after them.
+**Current: 2.5–20 ms latency, an integral gain in the direct search, third held-out set (2026-11-09).** Run `results/pololu/lqr_comparison/20261109-000021/`. Two method changes, then a fresh validation set: robust scoring now draws latency from 2.5–20 ms (it was 5–20 ms, which missed the 1.7–5.6 ms hardware estimate), and the direct LQR gain search now also searches an integral gain (log scale, 10⁻³–10), with any candidate that has integral action required to keep the nominal loop's spectral radius below 0.999 (`LQRConfig.direct_integral_bounds`, `direct_max_spectral_radius`). Because results on the second held-out set (seeds 2000–2099) had been seen before these changes, validation uses a third set, seeds 3000–3099, fixed after them.
 
 | Controller | Validation cost | vs ML PID (median per scenario) | Falls (of 300) | Worst run | Effort term | Stable latency (linear) |
 |---|---:|---:|---:|---:|---:|---|
@@ -85,12 +85,12 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 | LQR, ML-tuned gains | 2.536 | 1.09x | 0 | 5.48 | 1.840 | 0-35.00 ms |
 
 - **The integral gain closes most of the LQR gap.** The directly tuned LQR is now 9% behind the ML-tuned PID (34% without an integral term), with no falls. Its integral gain settled at 0.27, and its nominal spectral radius sits exactly on the 0.999 margin: the best candidates were pulled back to the guard, so the margin is binding.
-- **The ML-tuned PID still wins and never falls.** Its gains moved by at most 1.2% with the wider latency range (kp 1.615, ki 1.746, kd 0.298, kv_p 0.626; the batch tuner finds the same, `results/batch_tuning/20261108-234630/`).
+- **The ML-tuned PID still wins and never falls.** Its gains moved by at most 1.2% with the wider latency range (kp 1.615, ki 1.746, kd 0.298, kv_p 0.626; the batch tuner finds the same, `results/pololu/batch_tuning/20261108-234630/`).
 - **The model-based PID did not fall on this set** (median 1.34x); it fell 2 and 1 times on the two retired sets. Its weakness is delay: linearly stable only to 23.75 ms, and in the sweep it falls from 20 ms (1 at 20 ms, 29 at 30 ms), where the ML-tuned PID holds to 30 ms (2.62) and falls 3 times at 40 ms.
 - **Falls:** weight-tuned LQR 3, hand-tuned PID 1, cost-matched LQR 1; the rest none.
 - **Latency sweeps** (60 scenarios per point): the directly tuned LQR holds to 30 ms (3.83) and falls 26 times at 40 ms; the latency-ignoring LQR falls once at 40 ms.
 
-**Earlier: second held-out set (2026-11-09).** Run `results/lqr_comparison/20261108-225341/`. The searches are identical to the run below (same training seeds, same results), but validation now uses noise seeds 2000–2099 and the robots they draw. The earlier validation set (seeds 1000–1099) was used while sizing the 20 s scenario's push and blend times, so it was retired; the new set was fixed after the scenario, search bounds and model-based design were frozen and is used for nothing else.
+**Earlier: second held-out set (2026-11-09).** Run `results/pololu/lqr_comparison/20261108-225341/`. The searches are identical to the run below (same training seeds, same results), but validation now uses noise seeds 2000–2099 and the robots they draw. The earlier validation set (seeds 1000–1099) was used while sizing the 20 s scenario's push and blend times, so it was retired; the new set was fixed after the scenario, search bounds and model-based design were frozen and is used for nothing else.
 
 | Controller | Validation cost | vs ML PID (median per scenario) | Falls (of 300) | Worst run | Effort term | Stable latency (linear) |
 |---|---:|---:|---:|---:|---:|---|
@@ -107,7 +107,7 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 - **Falls:** hand-tuned PID 4, weight-tuned LQR 4, cost-matched LQR 3, model-based PID 1; the ML-tuned PID, tuned LQR gains and latency-ignoring LQR none.
 - **Latency sweeps** (60 scenarios per point): the ML-tuned PID stays within 6% of its 10 ms cost up to 20 ms (1.55 against 1.47), reaches 2.24 at 30 ms and falls 4 times at 40 ms. The model-based PID falls twice at 20 ms and 37 times at 30 ms. The latency-ignoring LQR never falls up to 40 ms (10.1). The cost-matched LQR falls in one scenario at every latency, including zero.
 
-**Earlier: 20 s scenario, retired validation set (2026-11-08, later).** Run `results/lqr_comparison/20261108-220417/`, which adds the model-based PID; every other row reproduces the first run on this scenario (`20261108-182234/`) exactly. Same protocol as the run below, on the redesigned scenario (`ScenarioConfig`: start tilts up to 0.30 rad, a 1.6 s speed-up to a 1.3 m/s cruise, two 2.9 N pushes, braking and reversing; 20 s training runs, 60 s validation runs). Same robot, cost and robust scoring.
+**Earlier: 20 s scenario, retired validation set (2026-11-08, later).** Run `results/pololu/lqr_comparison/20261108-220417/`, which adds the model-based PID; every other row reproduces the first run on this scenario (`20261108-182234/`) exactly. Same protocol as the run below, on the redesigned scenario (`ScenarioConfig`: start tilts up to 0.30 rad, a 1.6 s speed-up to a 1.3 m/s cruise, two 2.9 N pushes, braking and reversing; 20 s training runs, 60 s validation runs). Same robot, cost and robust scoring.
 
 | Controller | Validation cost | vs ML PID (median per scenario) | Falls (of 300) | Worst run | Effort term | Stable latency (linear) |
 |---|---:|---:|---:|---:|---:|---|
@@ -122,13 +122,13 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 - **The PID still wins, by more.** The tuned LQR gains are 35% behind (18% on the 12 s scenario), the tuned weights 66%, the cost-matched LQR 4.3x.
 - **A textbook PID design is close on typical runs but not robust.** The model-based PID, designed from the linear model with no tuning and no simulation (PHYSICS.md 6.5), has a median cost per scenario 1.36x the ML-tuned PID's: level with the tuned LQR gains, and far ahead of the hand-tuned PID (6.2x) and the cost-matched LQR (4.3x). But it falls on 2 of the 300 robots, and its linear loop tolerates only 23.75 ms of latency against the tuned PID's 37.25 ms (in the sweep it falls twice at 20 ms and 25 times at 30 ms). What the ML tuning adds over a competent model-based design is mostly robustness: no falls and about 1.6 times the delay margin.
 - **Falls now separate the controllers.** Four of the seven fall at least once on the 300 unseen robots: the hand-tuned PID (2), the model-based PID (2), the cost-matched LQR (2) and the weight-tuned LQR (7). The ML-tuned PID, the tuned LQR gains and the latency-ignoring LQR never fall. A single fall costs 1000-2000, so mean costs with falls are dominated by them; the median ratio is the fairer comparison of the rest.
-- **The PID search confirms the batch tuner.** It lands on kp 1.635, ki 1.767, kd 0.299, kv_p 0.620, the same gains `run_batch_tuning.py` found on this scenario (`results/batch_tuning/20261108-153813/`).
+- **The PID search confirms the batch tuner.** It lands on kp 1.635, ki 1.767, kd 0.299, kv_p 0.620, the same gains `run_batch_tuning.py` found on this scenario (`results/pololu/batch_tuning/20261108-153813/`).
 - **The weight search can't avoid falls.** Its training objective (38.6) includes falls, and its one free parameter (`w_integral`, settled at 6.21) is not enough: with the pitch, velocity and pitch-rate weights held at 0 (the 2026-11-06 normalization below), no design it can reach survives every push. Re-opening those weights (`LQRConfig.w_*_fixed = None`) is the next thing to try.
 - **Ignoring the latency in the design helps again** (7.08 against 22.3 for the delay-aware design, and no falls).
 - **Tuned LQR gain scales:** 3.08 (velocity), 0.861 (pitch), 1.71 (pitch rate), against 3.02, 0.757 and 1.59 on the 12 s scenario.
 - **Latency sweeps** (60 scenarios per point): the tuned PID stays within 5% of its 10 ms cost up to 20 ms (1.58 against 1.50), reaches 2.61 at 30 ms, and falls 3 times at 40 ms. The tuned LQR gains hold to 20 ms, fall once at 30 ms and 32 times at 40 ms. The cost-matched LQR is flat to 15 ms, then falls once from 20 ms. The latency-ignoring LQR is the most delay-tolerant here: no falls up to 40 ms (cost 10.9). The hand-tuned PID falls twice at 20 ms and 50 times at 25 ms.
 
-**Earlier: datasheet robot, 12 s scenario (2026-11-08).** Run `results/lqr_comparison/20261108-133118/`, same protocol as the 2026-11-06 run below. The robot is now config.py's datasheet values (DATASHEET.md): the motors' reflected rotor inertia in the dynamics, a gearbox efficiency of 0.78, 0.34 N m of torque, a 0.01 rad pitch-estimate offset, and robust scoring with Coulomb friction 0.02–0.08 N m, viscous 0–0.0015 N m s/rad, rotor inertia ±50% and gear efficiency ±10%. No controller fell in validation, and no search ended on a bound.
+**Earlier: datasheet robot, 12 s scenario (2026-11-08).** Run `results/pololu/lqr_comparison/20261108-133118/`, same protocol as the 2026-11-06 run below. The robot is now config.py's datasheet values (DATASHEET.md): the motors' reflected rotor inertia in the dynamics, a gearbox efficiency of 0.78, 0.34 N m of torque, a 0.01 rad pitch-estimate offset, and robust scoring with Coulomb friction 0.02–0.08 N m, viscous 0–0.0015 N m s/rad, rotor inertia ±50% and gear efficiency ±10%. No controller fell in validation, and no search ended on a bound.
 
 | Controller | Validation cost | vs ML PID (median per scenario) | Worst run | Effort term | Stable latency (linear) |
 |---|---:|---:|---:|---:|---|
@@ -146,7 +146,7 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 - **Ignoring the latency in the design helps again** (1.66 against 2.24 for the delay-aware design), as on 2026-10-24.
 - **Latency sweeps** (60 scenarios per point): the tuned PID holds within 5% of its 10 ms cost up to 25 ms (0.61), reaches 0.78 at 30 ms and 2.26 at 40 ms with no falls (it fell 12 times at 40 ms before). The tuned LQR gains and weights fall once and 3 times at 40 ms. The cost-matched LQR is flat out to 30 ms (2.23) and survives 40 ms (2.84). The hand-tuned PID falls once at 20 ms and 15 times at 25 ms.
 
-**Earlier: friction and latency randomized (2026-11-06), robot before the datasheet update.** Run `results/lqr_comparison/20261106-154350/`, same protocol as below (GPU float32 searches, 300 unseen scenarios in float64). Robust scoring now also draws each scenario's viscous friction (0–0.001 N m s/rad), Coulomb friction (0–0.02 N m) and latency (5–20 ms in whole 2.5 ms steps). Every controller is still designed or tuned for the nominal robot's 10 ms. The weight search is torque-normalized, with only the integral weight searched (see the corner finding below). No controller fell in validation, and no search ended on a bound.
+**Earlier: friction and latency randomized (2026-11-06), robot before the datasheet update.** Run `results/pololu/lqr_comparison/20261106-154350/`, same protocol as below (GPU float32 searches, 300 unseen scenarios in float64). Robust scoring now also draws each scenario's viscous friction (0–0.001 N m s/rad), Coulomb friction (0–0.02 N m) and latency (5–20 ms in whole 2.5 ms steps). Every controller is still designed or tuned for the nominal robot's 10 ms. The weight search is torque-normalized, with only the integral weight searched (see the corner finding below). No controller fell in validation, and no search ended on a bound.
 
 | Controller | Validation cost | vs ML PID (median per scenario) | Worst run | Effort term | Stable latency (linear) |
 |---|---:|---:|---:|---:|---|
@@ -163,7 +163,7 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 - **Modeling the latency matters again.** The latency-ignoring design now costs 0.93, against 0.63 for the delay-aware one (on 2026-10-24 it was slightly ahead). In the sweep it degrades past 15 ms (2.8 at 20 ms), while the delay-aware design holds 0.63 up to 25 ms.
 - **Latency sweeps** (60 scenarios per point, friction still randomized): all four tuned or designed controllers hold within 10% of their 10 ms cost up to 20 ms. At 30 ms the tuned PID is at 0.78, the tuned LQR gains at 1.34, the tuned weights at 0.99 and the cost-matched LQR at 2.70. At 40 ms only the cost-matched LQR survives every scenario (21.9, no falls); the tuned PID falls 12 times out of 60.
 
-**Earlier: re-run on the Bryson cost, fixed 10 ms latency, no friction (2026-10-24).** The table and findings further down were produced with the earlier cost ($w_v = 1$, $w_u = 0.01$, step-shaped goal, $k_{v,p} \le 0.4$) and are kept as a record. `config.py` now has $w_v = 2.25$, $w_u = 9$ (Bryson's rule), a smooth goal, $k_{v,p} \le 0.9$, wider LQR search ranges, and the pitch-rate weight and the gains on the commands in flight held at off (`LQRConfig.w_pitch_rate_fixed`, `direct_commands_scale`), so the weight search has 3 parameters and the gain search has 3. Run `results/lqr_comparison/20261024-142418/` (GPU, same protocol: 300 unseen scenarios, no controller fell):
+**Earlier: re-run on the Bryson cost, fixed 10 ms latency, no friction (2026-10-24).** The table and findings further down were produced with the earlier cost ($w_v = 1$, $w_u = 0.01$, step-shaped goal, $k_{v,p} \le 0.4$) and are kept as a record. `config.py` now has $w_v = 2.25$, $w_u = 9$ (Bryson's rule), a smooth goal, $k_{v,p} \le 0.9$, wider LQR search ranges, and the pitch-rate weight and the gains on the commands in flight held at off (`LQRConfig.w_pitch_rate_fixed`, `direct_commands_scale`), so the weight search has 3 parameters and the gain search has 3. Run `results/pololu/lqr_comparison/20261024-142418/` (GPU, same protocol: 300 unseen scenarios, no controller fell):
 
 | Controller | Validation cost | vs ML PID (median per scenario) | Worst run | Effort term | Stable latency (linear) |
 |---|---:|---:|---:|---:|---|
@@ -193,7 +193,7 @@ The batched evaluator takes `controller="lqr"` and a `to_gains` map from search-
 
 Old table (earlier cost):
 
-Run `results/lqr_comparison/20261014-165757/` (GPU, float32 searches, float64 validation; `lqr_comparison.png`, `example_runs.png`, `comparison.json`). Validation: 300 unseen scenarios. "vs ML PID" is the paired difference on the same 300 scenarios (same noise, same robot), with a 95% interval.
+Run `results/pololu/lqr_comparison/20261014-165757/` (GPU, float32 searches, float64 validation; `lqr_comparison.png`, `example_runs.png`, `comparison.json`). Validation: 300 unseen scenarios. "vs ML PID" is the paired difference on the same 300 scenarios (same noise, same robot), with a 95% interval.
 
 | Controller | Validation cost | vs ML PID | Better on | Effort term | Stable latency (linear) | Cost at 0 / 20 / 25 / 30 ms (falls of 60) |
 |---|---:|---:|---:|---:|---|---|
@@ -226,7 +226,7 @@ What the searches found:
 ### Caveats and next steps
 
 - **One scenario.** The scores come from a single goal profile of velocity steps. Smooth goal profiles (to-do item 2) and deliberately chosen weights (PHYSICS.md 10.5, to-do item 3) would make the cost measure balance quality more and physics limits less, and might separate the controllers further.
-- **Different scoring from earlier runs.** The ML-tuned PID here is tuned for pitch measured from upright, so its gains differ from those in `results/batch_tuning/`.
+- **Different scoring from earlier runs.** The ML-tuned PID here is tuned for pitch measured from upright, so its gains differ from those in `results/pololu/batch_tuning/`.
 - **Latency was fixed at 10 ms during tuning** in these runs. *Done 2026-11-06:* latency and friction are now randomized (see the current results at the top of this section).
 - **Give the direct gain search integral action, safely.** With friction it is now 18% behind the PID, for lack of an integral term. Searching the integral gain again needs a guard against the slow runaway described above, for example requiring the nominal loop's spectral radius to stay below about 0.999, or running longer validation scenarios.
 - **The LQR knows nothing about noise.** A Kalman filter in front of it (LQG) is the natural next permutation. So is an LQR with the PID's lean cap, which would test finding 6.
@@ -236,7 +236,7 @@ What the searches found:
 
 ```
 python optimization/run_lqr_comparison.py --backend torch --float32          the full run, ~7 min on the GPU
-python optimization/run_lqr_comparison.py --replot results/lqr_comparison/<run>   redraw the figures only
-python simulation/animate.py --csv results/lqr_comparison/<run>/trajectories/PID_ML-tuned.csv results/lqr_comparison/<run>/trajectories/LQR_cost-matched.csv
+python optimization/run_lqr_comparison.py --replot results/pololu/lqr_comparison/<run>   redraw the figures only
+python simulation/animate.py --csv results/pololu/lqr_comparison/<run>/trajectories/PID_ML-tuned.csv results/pololu/lqr_comparison/<run>/trajectories/LQR_cost-matched.csv
 python -m pytest simulation/tests/test_lqr.py
 ```
