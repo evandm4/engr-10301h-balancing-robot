@@ -84,12 +84,10 @@ All of this runs on the Pi. The first two are also the robot code's drivers (pha
 - **Still open:**
   - the balance point (`robot.calibrate balance`) and `discharge` (backlash measured: port B5);
   - B1b is done; still open is the slow-PWM pulse ripple at low duty (re-run `pwm_probe` with the robot secured);
-  - **re-deriving the scenario (A3) for the measured robot.** `legobot_scenario.py` now gives a
-    0.51 m/s cruise (was 0.27), a 0.35 rad catchable start tilt (was 0.18) and smaller forward pushes
-    (0.014 N s at the higher speed). It also flags two inconsistencies to resolve first: the goal profile's
-    0.292 rad lean exceeds the 0.262 rad lean cap, and the worst run without a fall costs 1532, above the
-    1000 fall penalty;
-  - new hand-tuned gains (A4_BASELINES.md, "Measured motor").
+  - ~~re-deriving the scenario (A3) and new hand-tuned gains~~ *done 2026-11-23*: lean cap 25°, cruise 0.40 m/s
+    (the user's choice; the rule's 0.47 left no headroom for the acceleration overshoot), acceleration softened
+    to half of Pololu's lean shares, pushes 1.02 N, start tilts 0.05/−0.15/0.30 rad, cost limits 0.30/0.06/0.09;
+    hand-tuned PID (2.5, 1.5, 0.2, 0.5) in 13 trials. The LQR is dropped for this robot. A4_BASELINES.md.
 
 ### Phase D: Robot code (needs C1, C2; uses B's filter)
 

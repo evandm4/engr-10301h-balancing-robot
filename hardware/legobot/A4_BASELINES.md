@@ -286,3 +286,63 @@ HAT's ticks are locked to its own clock, not the robot's loop (DATASHEET 8.7, `t
 Robust scores now average over the phase instead of resting on one value. The model-based PID is
 unaffected, and the LQR falls in about a fifth of the scenarios. That is the design's fragility under
 pulse-density PWM, not luck with the phase.
+
+## Re-derived scenario for the measured robot (A3 again, 2026-11-23)
+
+`legobot_scenario.py` repeats config.py's method with the measured motor. **Lean cap 25°** (config.py's own:
+top speed × lean-cap acceleration still rises at 25°, so the smaller cap the estimated motor needed is gone).
+Start tilts 0.05 / −0.15 / 0.30 rad. Cost limits 0.30 rad / 0.06 m/s / 0.09 N m, which are Pololu's
+proportions; pitch_limit is the smaller of 77% of the catchable tilt (0.35) and 69% of the cap (0.30).
+
+**Top speed.** config.py's rule (every corner still has the lean-cap torque at the cruise speed) gives
+0.47 m/s, and every baseline fell there: to accelerate, a balancing robot first drives its wheels well past
+the goal speed (+66–79% for the model-based PID), and this voltage-limited motor loses torque linearly with
+speed. Model-based PID, robust training seeds, falls of 150: 118 at 0.47 m/s, 56 at 0.40, 3 at 0.33. The
+lean cap made no difference (12–25°). **Decided (the user): cruise 0.40 m/s** (Pololu's 53% of no-load), and
+the speed changes softened as needed. Each asks for f × Pololu's lean share. Model-based PID at 0.40 m/s with
+the old 0.57 N pushes, robust training falls of 150: f = 1.0: 56, 0.8: 34, 0.65: 19, 0.6: 13, 0.55: 2,
+**0.5: 0**. So f = 0.5: 0 → 0.40 m/s in 1.25 s (0.70 m/s², 0.125 rad), → −0.15 m/s in 2.4 s, → 0 in 2.0 s.
+At 0.40 m/s the catchable forward push is larger, so the pushes are 1.02 N × 50 ms (98% of the 0.0523 N s
+caught on every corner). The worst run without a fall costs 994 < 1000.
+
+**The cost-matched LQR is dropped for this robot** (decided by the user). It fell in most robust scenarios
+at every cruise speed tried (69 of 150 even at 0.33 m/s), and under pulse-density PWM its cost swung 26–445
+with the tick phase alone.
+
+### Hand-tuned PID, picked again
+
+The earlier gains (6, 2, 0.5, 0.3) fall in 4 of 9 plain runs on the measured robot. Same protocol as before:
+plain scenario plus the 10 smoke seeds (5000–5009, robust, 30 runs), round numbers, no search.
+
+| Trial | kp, ki, kd, kv_p | Plain | Smoke (falls of 30) | Note |
+|---|---|---|---|---|
+| 0 | 6.0, 2.0, 0.5, 0.3 | 845 (4) | 652 (10) | the old gains |
+| 1 | 2.6, 0.85, 0.21, 0.34 | 11.8 | 12.4 (0) | old × 0.43 (critical pitch gain 0.268 / 0.627); kv_p × (0.27/0.40) × (25°/15°) |
+| 2 | 2.6, 0.85, 0.21, 0.5 | 10.2 | 10.9 (0) | more kv_p helps |
+| 3 | 2.6, 1.7, 0.21, 0.34 | 11.3 | 11.3 (0) | more ki helps a little |
+| 4 | 2.0, 0.85, 0.21, 0.34 | 13.3 | 73.3 (1) | less kp: a fall |
+| 5 | 2.6, 0.85, 0.3, 0.34 | 21.5 | 257 (4) | more kd hurts (it amplifies the PWM pulses) |
+| 6 | 3.5, 0.85, 0.21, 0.34 | 12.6 | 12.6 (0) | more kp: slightly worse |
+| 7 | 2.6, 0.85, 0.21, 0.7 | 15.0 | 16.2 (0) | too much kv_p |
+| 8 | 2.6, 1.7, 0.21, 0.5 | 10.7 | 10.3 (0) | |
+| 9 | 2.6, 0.85, 0.15, 0.5 | 8.6 | 127 (2) | less kd: falls |
+| 10 | 2.6, 1.7, 0.15, 0.7 | 1349 (7) | 1593 (26) | |
+| **11** | **2.5, 1.5, 0.2, 0.5** | **10.0** | **10.0 (0)** | **chosen**: round numbers, best smoke |
+| 12 | 3.0, 1.5, 0.2, 0.5 | 11.3 | 11.5 (0) | |
+| 13 | 2.5, 2.0, 0.2, 0.5 | 9.4 | 66.3 (1) | more ki: a fall |
+
+The model-based design scores 6.3 plain and 6.3 on the smoke seeds here, so the hand-tuned set is the
+weaker baseline on this robot.
+
+### Baselines on the re-derived scenario
+
+`python hardware/legobot/legobot_baselines.py` (pulse-density PWM, tick phase drawn per scenario):
+
+| Baseline | Plain (seeds 1–3, 9 runs) | Robust train (1–50, 150) | Robust dev (5000–5049, 150) | Dev worst | Dev chaos |
+|---|---|---|---|---|---|
+| Hand-tuned PID (2.5, 1.5, 0.2, 0.5) | 9.996 (0) | 32.22 (2) | 32.24 (2) | 1698 | 46 |
+| Model-based PID (1.55, 1.75, 0.14, 0.52) | 6.181 (0) | 39.80 (3) | 28.59 (2) | 1680 | 23 |
+
+The few robust falls come from the 1.02 N pushes on the weakest corners: the profile with the old 0.57 N
+pushes had none for the model-based PID. The pushes are sized at 98% of what an ideal full-torque response
+catches on every corner, so some falls are expected from linear controllers. Tuning (E1/E2) starts here.

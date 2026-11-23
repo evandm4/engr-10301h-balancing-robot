@@ -73,8 +73,14 @@ def corner_robots(cfg: ProjectConfig, driver: str = None) -> BatchRobot:
     signs = np.array(list(itertools.product((-1.0, 1.0), repeat=n_rel + n_rng)))
     changes = {name: getattr(base, name) * (1 + s * signs[:, j]) for j, (name, s) in enumerate(r.randomize)}
     changes.update({name: np.where(signs[:, n_rel + j] > 0, hi, lo)
-                    for j, (name, lo, hi) in enumerate(r.randomize_range)})
+                    for j, (name, lo, hi) in enumerate(r.randomize_range) if name not in NOT_IN_CORNERS})
     return replace(base, **changes)
+
+
+# Robustness ranges the catch tests here don't see: the pulse-density tick phase only matters to a closed
+# loop at the control rate, and these tests apply full torque. Held at the base value (both corner signs
+# then give the same robot, so the batch has duplicates rather than fewer corners: harmless).
+NOT_IN_CORNERS = ("pwm_tick_phase",)
 
 
 def size(robot: BatchRobot) -> int:
@@ -234,6 +240,8 @@ def describe_worst(cfg, R, index):
     for name, _ in cfg.robustness.randomize:
         out.append(f"{name} {'+' if np.ravel(getattr(R, name))[index] > getattr(base, name) else '-'}")
     for name, lo, hi in cfg.robustness.randomize_range:
+        if name in NOT_IN_CORNERS:
+            continue
         out.append(f"{name} {'hi' if np.ravel(getattr(R, name))[index] > 0.5 * (lo + hi) else 'lo'}")
     return ", ".join(out)
 
@@ -270,6 +278,18 @@ POLOLU_START_TILT_SHARES = (0.05 / 0.30, -0.15 / 0.30, 1.0)   # of pitch_limit
 POLOLU_REVERSE_SHARE = 0.5 / 1.3              # reverse cruise speed / top speed
 POLOLU_VELOCITY_LIMIT_SHARE = 0.2 / 1.3       # velocity_limit / top speed
 POLOLU_TORQUE_LIMIT_OF_CAP = 0.1 / 0.135      # torque_limit / nominal lean-cap torque
+POLOLU_LEAN_CAP_DEG = 25.0                    # config.py's lean cap
+POLOLU_PITCH_LIMIT_OF_CAP = 0.30 / math.radians(25.0)   # pitch_limit = 69% of the lean cap
+
+# Decided 2026-11-23 (the user), after the derived 0.47 m/s made every baseline fall: to accelerate, a
+# balancing robot drives its wheels well past the goal speed first (+66-79% for the model-based PID), and
+# this voltage-limited motor loses torque linearly with speed, so the top-speed rule above (lean-cap torque
+# AT the cruise speed) leaves no headroom. The cruise is set to 0.40 m/s (Pololu's 53% of no-load), and the
+# speed changes are softened: each asks for LEAN_SOFTENING x Pololu's lean share (longer blends), the least
+# softening at which the model-based PID, an untuned reference design, has no falls on the robust training
+# set (0.65: 19 of 150 fall, 0.6: 13, 0.55: 2, 0.5: none; A4_BASELINES.md).
+TOP_SPEED_CHOICE = 0.40
+LEAN_SOFTENING = 0.5
 POLOLU_PUSH_SHARE = 0.145 / 0.149             # push / largest catchable on every corner
 # What a full run of the catch simulations gives for legobot_config.py as of 2026-11-22
 # (DATASHEET 2 values with the measured body, voltage-mode driver), for --quick. Re-run without --quick after changing the config.
@@ -312,12 +332,20 @@ def derive_legobot(full=True):
     print("     cap deg | accel nom | torque nom | torque corners | top speed (min corner) | v x a (limiting corner)")
     for cap, xn, tn, tlo, thi, v, va in lean_cap_table(N, R, (25, 20, 17.5, 15, 14, 13, 12.5, 12, 11, 10, 7.5)):
         print(f"     {cap:7.1f} | {xn:5.2f}     | {tn:6.3f}     | {tlo:.3f}-{thi:.3f}    | {v:6.3f}                 | {va:.3f}")
-    fine = lean_cap_table(N, R, np.arange(10.0, 15.01, 0.25))
+    # The search runs up to config.py's own 25 deg: when the weakest robot's v x a still rises at 25 deg,
+    # the LEGO robot can afford the Pololu cap, and the top speed then comes from config.py's own rule
+    # (the highest speed at which every corner still has the lean-cap torque). Before the motor was
+    # measured the optimum was 12-15 deg; the search stopped at 15 deg, which hid that the measured motor
+    # no longer needs a smaller cap.
+    fine = lean_cap_table(N, R, np.arange(10.0, POLOLU_LEAN_CAP_DEG + 0.01, 0.25))
     best = max(fine, key=lambda row: row[-1])
-    cap_deg = round(best[0] * 2) / 2
+    cap_deg = min(round(best[0] * 2) / 2, POLOLU_LEAN_CAP_DEG)
     cap = math.radians(cap_deg)
     v_limit = [row for row in fine if abs(row[0] - cap_deg) < 1e-9][0][5]
-    top = math.floor(v_limit * 100) / 100
+    derived_top = math.floor(v_limit * 100) / 100
+    top = min(derived_top, TOP_SPEED_CHOICE)
+    print(f"     top speed: derived {derived_top} m/s; chosen {top} m/s (TOP_SPEED_CHOICE: headroom for the speed "
+          f"overshoot of the acceleration step)")
     _, tau_cap = lean_acceleration(N, cap)
     tau_cap = float(tau_cap)
     print(f"     v x a peaks at {best[0]:.2f} deg -> lean cap {cap_deg} deg ({cap:.3f} rad); top speed {v_limit:.3f} "
@@ -343,13 +371,18 @@ def derive_legobot(full=True):
     print(f"     start tilt: {tilt:.3f} rad on every corner (worst: {worst_tilt}); nominal at 10 ms {tn:.3f}")
 
     # 3. Cost limits, start tilts and pushes, in Pololu's proportions.
-    pitch_limit = round(POLOLU_PITCH_LIMIT_OF_TILT * tilt * 100) / 100
+    # Pololu's pitch_limit is both 77% of its catchable tilt and 69% of its lean cap. When the two disagree,
+    # take the smaller: above the cap's share, the goal profile (whose leans are shares of pitch_limit) would
+    # ask for more lean than the controller is allowed.
+    by_tilt = round(POLOLU_PITCH_LIMIT_OF_TILT * tilt * 100) / 100
+    by_cap = round(POLOLU_PITCH_LIMIT_OF_CAP * cap * 100) / 100
+    pitch_limit = min(by_tilt, by_cap)
     tilts = tuple(round(s * pitch_limit, 4) for s in POLOLU_START_TILT_SHARES)
     velocity_limit = round(POLOLU_VELOCITY_LIMIT_SHARE * top * 100) / 100
     torque_limit = round(POLOLU_TORQUE_LIMIT_OF_CAP * tau_cap * 100) / 100
     push_force = round(POLOLU_PUSH_SHARE * jf / 0.05, 2)
-    print(f"\n  3. pitch_limit_rad: 77% of the catchable tilt {tilt:.3f} -> {pitch_limit} "
-          f"({pitch_limit / cap:.0%} of the lean cap; Pololu 69%)")
+    print(f"\n  3. pitch_limit_rad: 77% of the catchable tilt {tilt:.3f} -> {by_tilt}; 69% of the lean cap -> {by_cap}; "
+          f"the smaller: {pitch_limit} ({pitch_limit / cap:.0%} of the cap, {pitch_limit / tilt:.0%} of the tilt)")
     print(f"     start tilts {tilts} rad (Pololu's shares of pitch_limit: 1/6, -1/2, 1)")
     print(f"     velocity_limit: {POLOLU_VELOCITY_LIMIT_SHARE:.3f} x top speed -> {velocity_limit} m/s")
     print(f"     torque_limit: {POLOLU_TORQUE_LIMIT_OF_CAP:.2f} x nominal lean-cap torque {tau_cap:.3f} -> {torque_limit} N m "
@@ -362,7 +395,7 @@ def derive_legobot(full=True):
     changes = {"aggressive": top, "brake": top - reverse, "gentle": -reverse}
     blends, accels, leans = {}, {}, {}
     for name, dv in changes.items():
-        leans[name] = POLOLU_LEAN_SHARES[name] * pitch_limit
+        leans[name] = LEAN_SOFTENING * POLOLU_LEAN_SHARES[name] * pitch_limit
         xdd, _ = lean_acceleration(N, leans[name])
         blends[name] = round(BLEND_PEAK * dv / float(xdd) * 20) / 20     # to 0.05 s
         accels[name] = BLEND_PEAK * dv / blends[name]

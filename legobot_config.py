@@ -172,82 +172,82 @@ ROBUSTNESS = replace(
 )
 
 # ------------------------------------------- CONTROLLER, SCENARIO, COST ---
-# SOFTWARE_PLAN A3. Every number below is printed, with its derivation, by
+# SOFTWARE_PLAN A3, re-derived 2026-11-23 for the bench-measured motor (C3/C4). Every number
+# below is printed, with its derivation, by
 #     python hardware/legobot/legobot_scenario.py          (--check re-derives config.py's)
 # which repeats config.py's ScenarioConfig/CostConfig method on this robot. "Corner" means
-# every corner of ROBUSTNESS above (2048 robots); latency 25 ms, the top of its range.
+# every corner of ROBUSTNESS above (the tick phase held: it only matters in closed loop);
+# latency 25 ms, the top of its range. Catch tests use the averaged slow-PWM actuator at full
+# torque.
 #
-# Lean cap and top speed. config.py fixed the lean cap at 25 deg and took the top speed as
-# the highest at which every randomized motor still has the torque that leaning at the cap
-# needs. On this robot that speed is 0.017 m/s at 25 deg: the output-side rotor inertia
-# (2.05 kg of equivalent mass at r = 34.5 mm) doubles the torque per unit acceleration and
-# the motors are slow. So the cap and the speed are chosen together: the cap that maximizes
-# top speed x lean-cap acceleration on the limiting corner (the weakest robot's peak power),
-# 15 deg (0.262 rad: 1.46 m/s^2, 0.128 N m nominal), and its top speed, 0.279 m/s -> 0.27.
-# (12-13 deg before the body's mass, COM height and inertia were measured, 2026-11-22.)
+# Lean cap and top speed. config.py fixed the lean cap at 25 deg and took the top speed as the
+# highest at which every randomized motor still has the torque that leaning at the cap needs.
+# With the estimated motor (2.05 kg of equivalent rotor mass) that left 0.017 m/s, so the cap was
+# chosen to maximize top speed x lean-cap acceleration (15 deg, 0.27 m/s). The measured motor
+# (0.92 kg equivalent, 1.8x the stall torque) no longer needs that: v x a still rises at 25 deg,
+# so the cap is config.py's 25 deg (0.436 rad: 2.46 m/s^2, 0.119 N m nominal), and the rule gives
+# 0.474 m/s. That made every baseline fall: to accelerate, a balancing robot first drives its
+# wheels well past the goal speed (+66-79% for the model-based PID), and this voltage-limited
+# motor loses torque linearly with speed, so a rule with no headroom fails. Decided 2026-11-23
+# (the user): cruise 0.40 m/s (Pololu's 53% of the no-load speed), and speed changes softened to
+# half of Pololu's lean shares, the least softening at which the model-based PID has no falls on
+# the robust training set (legobot_scenario.TOP_SPEED_CHOICE, LEAN_SOFTENING). The cost-matched
+# LQR is dropped for this robot (A4_BASELINES.md).
 #
-# Baselines (A4). The model-based design (pid_design) keeps config.py's design choices; on
-# this robot it gives (3.64, 3.46, 0.38, 0.36), stable for latencies 0-80 ms. config.py's
-# hand-tuned gains are linearly unstable here at 10 ms, so the LEGO robot has its own,
-# picked by hand in 11 trials (hardware/legobot/A4_BASELINES.md): config.py's scaled by the
-# ratio of critical pitch gains (2.1), then kp down and kd up until the 20 s scenario stopped
-# oscillating, kv_p up for the slower goal, ki up; stable for latencies 0-67 ms.
+# Baselines (A4): see hardware/legobot/A4_BASELINES.md. The model-based design (pid_design)
+# re-designs itself from the robot; the hand-tuned gains were picked again for the measured
+# robot and this scenario (13 trials, round numbers, no search).
 CONTROLLER = replace(
     ControllerConfig(),
-    max_lean_deg=15.0,
-    hand_tuned_gains=(6.0, 2.0, 0.5, 0.3),     # kp, ki, kd, kv_p
+    max_lean_deg=25.0,
+    hand_tuned_gains=(2.5, 1.5, 0.2, 0.5),     # kp, ki, kd, kv_p: picked by hand in 13 trials (A4_BASELINES.md)
 )
 
-# The Pololu scenario's proportions and start times, sized from this robot with its
-# voltage-mode driver (the robot code's constants nominal, the true ones at the corner)
-# and the measured body (0.362 kg, COM 0.060 m, 8.8e-4 kg m^2):
+# The Pololu scenario's start times, sized from this robot (slow-PWM driver, the robot code's
+# constants nominal and the true ones at the corner):
 #   t = 0-2 s        start tilt, goal 0.
-#   t = 2-2.7 s      0 -> 0.27 m/s in 0.7 s: peak 0.84 m/s^2, a 0.150 rad lean (Pololu's
-#                    0.25 / 0.30 of pitch_limit_rad); 58% of the lean-cap acceleration.
-#   t = 2.7-9.5 s    cruise at 0.27 m/s, 42% of the nominal no-load speed (Pololu 53%). Every
-#                    corner still has, after friction, its own lean-cap torque here.
-#   t = 5.5, 7.5 s   pushes, forward then backward: 0.63 N for 50 ms = 0.0315 N s, 97% of the
-#                    largest forward push a full-torque response catches at 0.27 m/s on every
-#                    corner (0.0325 N s: light, tall, high rotor inertia, weakest motor at high
-#                    speed, most friction; 0.105 nominal at 10 ms). 50 ms is under the 121 ms
-#                    fastest unstable time constant (131 ms nominal). Backward: 0.135 catchable,
-#                    easy (braking is helped by back-EMF), as on the Pololu robot.
-#   t = 9.5-10.85 s  0.27 -> -0.10 m/s in 1.35 s: 0.60 m/s^2, 0.110 rad (Pololu's share).
-#   t = 10.85-14 s   cruise backward at -0.10 m/s (Pololu's 0.5/1.3 of top speed); 2.9 rad/s
-#                    at the wheels, so Coulomb friction has fully flipped.
-#   t = 14-15.1 s    -0.10 -> 0 in 1.1 s: 0.20 m/s^2, 0.036 rad.
-#   t = 15.1-20 s    standing still.
-# Start tilts 0.03, -0.09, 0.18 rad: Pololu's shares (1/6, -1/2, 1) of pitch_limit_rad,
-# whose 0.18 is 77% of the 0.233 rad a full-torque response catches on every corner (heavy,
-# tall, high rotor inertia, weakest motor; 0.450 nominal at 10 ms), as 0.30 was of 0.39.
+#   t = 2-3.25 s     0 -> 0.40 m/s in 1.25 s: peak 0.70 m/s^2, a 0.125 rad lean (half of
+#                    Pololu's 0.25 / 0.30 of pitch_limit_rad).
+#   t = 3.25-9.5 s   cruise at 0.40 m/s, 53% of the nominal no-load speed (Pololu 53%).
+#   t = 5.5, 7.5 s   pushes, forward then backward: 1.02 N for 50 ms = 0.051 N s, 98% of the
+#                    largest forward push a full-torque response catches at 0.40 m/s on every
+#                    corner (0.0523 N s: light, tall, high rotor inertia, weakest motor, most
+#                    friction; 0.108 nominal at 10 ms). 50 ms is under the 119 ms fastest unstable
+#                    time constant (123 ms nominal). Backward: 0.325 catchable, easy (braking is
+#                    helped by back-EMF), as on the Pololu robot.
+#   t = 9.5-11.9 s   0.40 -> -0.15 m/s in 2.4 s: 0.50 m/s^2, 0.092 rad.
+#   t = 11.9-14 s    cruise backward at -0.15 m/s (Pololu's 0.5/1.3 of top speed).
+#   t = 14-16 s      -0.15 -> 0 in 2.0 s: 0.16 m/s^2, 0.030 rad.
+#   t = 16-20 s      standing still.
+# Start tilts 0.05, -0.15, 0.30 rad: Pololu's shares (1/6, -1/2, 1) of pitch_limit_rad.
 SCENARIO = replace(
     ScenarioConfig(),
     goal_steps=(
-        (2.0, 0.27, 0.7),     # aggressive: 0.84 m/s^2, 0.150 rad of lean
-        (9.5, -0.10, 1.35),   # brake and reverse: 0.60 m/s^2
-        (14.0, 0.0, 1.1),     # gentle stop: 0.20 m/s^2
+        (2.0, 0.40, 1.25),    # aggressive (softened): 0.70 m/s^2, 0.125 rad of lean
+        (9.5, -0.15, 2.4),    # brake and reverse: 0.50 m/s^2
+        (14.0, 0.0, 2.0),     # gentle stop: 0.16 m/s^2
     ),
     pushes=(
-        (5.5, 0.05, 0.63),    # from behind at 0.27 m/s
-        (7.5, 0.05, -0.63),   # from the front at 0.27 m/s
+        (5.5, 0.05, 1.02),    # from behind at 0.40 m/s
+        (7.5, 0.05, -1.02),   # from the front at 0.40 m/s
     ),
-    start_pitches_deg=(1.7189, -5.1566, 10.3132),    # 0.03, -0.09, 0.18 rad
+    start_pitches_deg=(2.8648, -8.5944, 17.1887),    # 0.05, -0.15, 0.30 rad
 )
 
 # Cost limits (CostConfig's Bryson rule), in the Pololu cost's proportions:
-#   pitch_limit_rad 0.18: 77% of the catchable start tilt; between the 0.150 rad the goal
-#     profile needs and the 0.262 rad lean cap (69% of it, as on the Pololu robot).
-#   velocity_limit 0.04 m/s: Pololu's 0.2/1.3 of the top speed.
-#   torque_limit 0.09 N m: Pololu's 0.1/0.135 of the nominal lean-cap torque (0.128), so
-#     pitch and effort trade as they do there; 18% of max_torque. Holding the cruise
-#     against the friction the robustness test draws takes 0.03-0.09 N m.
-# Weights: velocity (0.18/0.04)^2 = 20.25, effort (0.18/0.09)^2 = 4.0. Fall penalty: the
-# worst non-fall 20 s run costs 21.9 (pitch) + 20.0 (effort) + 489.5 (velocity, fastest
-# corner's 0.829 m/s no-load speed + 0.27) = 531, under 1000 (PHYSICS.md 8.3).
+#   pitch_limit_rad 0.30: Pololu's is both 77% of its catchable start tilt and 69% of its lean
+#     cap. Here those give 0.35 (of the 0.454 rad caught on every corner; 0.628 nominal at 10 ms)
+#     and 0.30; the smaller keeps the goal profile's leans (shares of it) under the cap.
+#   velocity_limit 0.06 m/s: Pololu's 0.2/1.3 of the top speed.
+#   torque_limit 0.09 N m: Pololu's 0.1/0.135 of the nominal lean-cap torque (0.119), so pitch
+#     and effort trade as they do there; 10% of max_torque.
+# Weights: velocity (0.30/0.06)^2 = 25.0, effort (0.30/0.09)^2 = 11.1. Fall penalty: the worst
+# non-fall 20 s run costs 21.9 (pitch) + 180.0 (effort) + 791.7 (velocity, fastest corner's
+# 0.858 m/s no-load speed + 0.40) = 994, under 1000 (PHYSICS.md 8.3).
 COST = replace(
     CostConfig(),
-    pitch_limit_rad=0.18,
-    velocity_limit=0.04,
+    pitch_limit_rad=0.30,
+    velocity_limit=0.06,
     torque_limit=0.09,
     fall_penalty=1000.0,
 )

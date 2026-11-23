@@ -1,7 +1,8 @@
 """
 Baseline scores on the LEGO robot (SOFTWARE_PLAN A4): the hand-tuned and
-model-based cascaded PIDs and the cost-matched LQR, none of them tuned by
-search. Re-run after the config changes (e.g. after the bench measurements).
+model-based cascaded PIDs, neither tuned by search. The cost-matched LQR is
+dropped for this robot (decided 2026-11-23: it fell in most robust scenarios
+under the measured slow-PWM drive at every cruise speed tried; A4_BASELINES.md). Re-run after the config changes (e.g. after the bench measurements).
 
     python hardware/legobot/legobot_baselines.py
 
@@ -21,11 +22,10 @@ from config import CONFIG as C
 from batch_tuning import BatchEvaluator
 assert C.name == "legobot"
 ec = C.build_eval_config(); rb = C.build_robustness()
-pid_space, lqr_space = C.build_search_space(), C.build_lqr_space()
+pid_space = C.build_search_space()
 DEV = tuple(range(5000, 5050))
 rows = [("hand-tuned PID", "cascaded", pid_space, np.array(C.controller.hand_tuned_gains)),
-        ("model-based PID", "cascaded", pid_space, np.array(C.model_based_gains())),
-        ("cost-matched LQR", "lqr", lqr_space, np.array(C.build_lqr_gain()))]
+        ("model-based PID", "cascaded", pid_space, np.array(C.model_based_gains()))]
 print(f"{'baseline':<18}{'plain (seeds 1-3)':>20}{'robust train (1-50)':>22}{'robust dev (5000-5049)':>26}{'dev worst':>11}{'dev chaos':>11}")
 for name, kind, space, g in rows:
     plain = BatchEvaluator(ec, space, controller=kind).evaluate_population([g])

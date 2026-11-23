@@ -179,8 +179,7 @@ def main():
     seeds = (1,) if a.quick else (1, 2, 3)
     scen = [(p, s) for p in ev.config.start_pitches for s in seeds]
     ctrls = [("hand-tuned PID", np.array(C.controller.hand_tuned_gains)),
-             ("model-based PID", np.array(C.model_based_gains())),
-             ("cost-matched LQR", None)]
+             ("model-based PID", np.array(C.model_based_gains()))]   # LQR dropped for this robot (A4_BASELINES)
     periods = [None] + sorted(set([best] + list(a.periods[-2:])))
     print(f"   {len(scen)} runs each; cost (falls), and the sd of the pitch rate (rad/s)")
     print("   " + " " * 18 + "".join(f"{'averaged' if T is None else f'pulsed {T * 1e3:.0f} ms':>26}" for T in periods))
@@ -189,7 +188,7 @@ def main():
         for T in periods:
             costs, falls, rates = [], 0, []
             for p, s in scen:
-                ctrl = g if g is not None else C.build_lqr_controller()
+                ctrl = g
                 cst, fell, rate_sd = run(ctrl, ev, p, s, T, 0.0005)
                 costs.append(cst)
                 falls += fell

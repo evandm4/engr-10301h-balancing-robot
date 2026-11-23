@@ -764,8 +764,13 @@ engines before final tuning (E2).
 
 *The pulses are locked to the data stream* (`tick_lock`, duty 0.05, 60 pulses over 12 s, with 1200 data
 lines). The pulse period is 199.828 ± 0.022 ms, against 20 × the data-line period of 199.825 ms: equal
-within 15 ± 110 ppm. Both run 880 ppm off the Pi's clock (a line every 9.9912 ms by the Pi), so an
-independent clock would have drifted visibly. Relative to the earliest line arrivals, the detected pulse
+within 15 ± 110 ppm. (The HAT's clock rate against the Pi's changes between power-ups: the Phase D session's loop measured
+−14 to −21 ppm one morning, then +226, +308 and +404 ppm after battery swaps, so this run's −880 ppm may
+well be real. Over a 20 s run, 400 ppm is 8 ms, most of a tick, so the phase drifts unless the loop locks
+to the line arrivals, which it now does. The simulator holds the phase fixed within a run.) Its lock sweep confirms the lock independently: the delay from a write to motion has a
+sharp cliff at a fixed phase of the line grid over 10 s runs, at 8.3 ms on the left port and 10.3 ms on
+the right. **The two ports tick about 2 ms apart.** The simulator drives both motors from one pulse train,
+so it leaves this out; with 10 ms pulses the two still overlap by about 8 ms. Relative to the earliest line arrivals, the detected pulse
 onsets sit at 0.47 of a tick (4.7 ms), with no trend. The spread (onset detection, sd 2.7 ms) and the
 unknown lag between the electrical pulse and the vibration envelope leave the tick's exact offset uncertain
 by a few ms. So the robot loop can lock to the line arrivals (SOFTWARE_PLAN D2) and fix the tick phase. The
