@@ -2,7 +2,7 @@
 
 from .params import RobotParams
 from .actuators import (Actuator, DCMotorActuator, IdealActuator, MotorParams, SlowPwmActuator, VoltageModeActuator,
-                        pdm_update, pwm_steps_per_tick)
+                        pdm_update, pwm_steps_per_tick, pwm_tick_offset)
 from .sensors import ComplementaryFilter, Encoder, IMUSensor, SensorNoise, accelerometer_tilt
 from .dynamics import Dynamics
 from .planar2d import Planar2D, critical_pitch_gain, linearize

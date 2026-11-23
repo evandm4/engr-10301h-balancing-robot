@@ -72,6 +72,7 @@ class EvalConfig:
     # sends a duty) instead of the linear voltage mode.
     slow_pwm: bool = False
     pwm_tick: float = 0.0                      # slow PWM's pulse-density tick, s; 0 = averaged
+    pwm_tick_phase: float = 0.25               # where the ticks fall against the control loop, fraction of a tick
 
 
 @dataclass
@@ -100,7 +101,8 @@ class Evaluator:
             kwargs = dict(max_torque=c.params.max_torque, feedforward=c.voltage_feedforward,
                           feedforward_gain=c.voltage_feedforward_gain)
             if c.slow_pwm:
-                actuator = SlowPwmActuator(c.motor, c.voltage_estimate, pwm_tick=c.pwm_tick, **kwargs)
+                actuator = SlowPwmActuator(c.motor, c.voltage_estimate, pwm_tick=c.pwm_tick,
+                                           pwm_tick_phase=c.pwm_tick_phase, **kwargs)
             else:
                 actuator = VoltageModeActuator(c.motor, c.voltage_estimate, **kwargs)
         else:

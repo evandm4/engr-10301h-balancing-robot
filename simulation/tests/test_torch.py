@@ -207,6 +207,28 @@ def test_pdm_float64_matches_numpy(device):
     np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
 
 
+@pytest.mark.parametrize("device", DEVICES)
+def test_pdm_per_simulation_phase_float64_matches_numpy(device):
+    evaluator = BatchEvaluator(replace(SHORT, voltage_estimate=_estimate(SHORT.motor), slow_pwm=True,
+                                       pwm_tick=0.01), SPACE)
+    G, pitch, seed_index, noise = _flat(evaluator, _near_hand_tuned(32))
+    rng = np.random.default_rng(3)
+    robot = replace(evaluator.robot, pwm_tick_phase=rng.uniform(0, 1, len(G)))
+    ref = simulate_batch(evaluator.spec, robot, G, pitch, noise, seed_index, evaluator.schedule, record=True)
+    sim = TorchSimulator(evaluator.spec, robot, len(G), noise, evaluator.schedule, device=device,
+                         dtype=torch.float64, record=True)
+    got = sim.run(G, pitch, seed_index)
+    np.testing.assert_array_equal(got.fell, ref.fell)
+    up = ~ref.fell
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
+    # New per-simulation phases on the same simulator (run(robot=...)) must take effect too.
+    robot2 = replace(robot, pwm_tick_phase=rng.uniform(0, 1, len(G)))
+    ref2 = simulate_batch(evaluator.spec, robot2, G, pitch, noise, seed_index, evaluator.schedule)
+    got2 = sim.run(G, pitch, seed_index, robot=robot2)
+    np.testing.assert_array_equal(got2.fell, ref2.fell)
+    np.testing.assert_allclose(got2.cost[~ref2.fell], ref2.cost[~ref2.fell], rtol=1e-9)
+
+
 def test_voltage_feedforward_gain_float64_matches_numpy():
     evaluator = BatchEvaluator(replace(SHORT, voltage_estimate=_estimate(SHORT.motor),
                                        voltage_feedforward_gain=1.2), SPACE)

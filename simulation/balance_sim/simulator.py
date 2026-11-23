@@ -6,7 +6,7 @@ from typing import Callable, Optional
 
 import numpy as np
 
-from .actuators import pdm_update, pwm_steps_per_tick
+from .actuators import pdm_update, pwm_steps_per_tick, pwm_tick_offset
 from .controllers import Controller
 from .dynamics import Dynamics
 from .sensors import SensorNoise
@@ -95,11 +95,8 @@ def simulate(
     applied = 0.0       # what reaches the motor this step: drive, or its pulse-density quantization
     pdm_steps = pwm_steps_per_tick(getattr(getattr(dynamics, "actuator", None), "pwm_tick", 0.0), dt)
     pdm_total = 0.0
-    # The HAT's ticks are not synchronized with the robot's loop. Starting them half a control period
-    # after the control samples keeps every sample off a pulse edge (a tick at the sample itself would
-    # make the IMU see either the ending or the starting pulse, and that choice alone moves the scores).
-    pdm_offset = getattr(getattr(dynamics, "actuator", None), "pwm_tick_offset_steps", None)
-    pdm_offset = spc // 2 if pdm_offset is None else pdm_offset   # the attribute: a reference-only sensitivity knob
+    # Where the HAT's ticks fall against the control loop (SlowPwmActuator.pwm_tick_phase).
+    pdm_offset = pwm_tick_offset(getattr(getattr(dynamics, "actuator", None), "pwm_tick_phase", 0.25), pdm_steps)
     to_drive = getattr(dynamics, "drive", None)
     imu = sensor is not None and getattr(sensor, "needs_accelerations", False)
     encoder = sensor is not None and getattr(sensor, "has_encoder", False)

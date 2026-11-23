@@ -140,6 +140,9 @@ class ActuatorConfig:
     # "slow_pwm" only: the Build HAT's pulse-density tick (SlowPwmActuator.pwm_tick); 0 = the averaged
     # model. Must be a whole number of physics steps.
     pwm_tick_s: float = 0.0
+    # "slow_pwm" with pwm_tick_s only: where the ticks fall against the control loop, as a fraction of a
+    # tick (SlowPwmActuator.pwm_tick_phase). Robust scoring can draw it per scenario (randomize_range).
+    pwm_tick_phase: float = 0.25
 
     # Pololu 20.4:1 Metal Gearmotor 25Dx65L mm HP 6V with 48 CPR encoder (item 4803), run
     # from a 2S LiPo. Constants derived from Pololu's catalogue numbers (DATASHEET.md 3.1, 5.1).
@@ -184,7 +187,8 @@ class ActuatorConfig:
         if self.model == "slow_pwm":
             motor = self.build_motor_params()
             return SlowPwmActuator(motor, motor, max_torque=robot.max_torque, feedforward=self.voltage_feedforward,
-                                   feedforward_gain=self.voltage_feedforward_gain, pwm_tick=self.pwm_tick_s)
+                                   feedforward_gain=self.voltage_feedforward_gain, pwm_tick=self.pwm_tick_s,
+                                   pwm_tick_phase=self.pwm_tick_phase)
         raise ValueError(f"Unknown actuator model {self.model!r}; use 'ideal', 'dc_motor', 'voltage' or 'slow_pwm'")
 
     @property
@@ -713,6 +717,7 @@ class ProjectConfig:
             voltage_feedforward_gain=self.actuator.voltage_feedforward_gain,
             slow_pwm=self.actuator.model == "slow_pwm",
             pwm_tick=self.actuator.pwm_tick_s if self.actuator.model == "slow_pwm" else 0.0,
+            pwm_tick_phase=self.actuator.pwm_tick_phase,
         )
 
     def snapshot(self) -> dict:

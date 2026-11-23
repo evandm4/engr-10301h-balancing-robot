@@ -159,3 +159,12 @@ def pwm_steps_per_tick(pwm_tick: float, dt: float) -> int:
     if n < 1 or abs(n * dt - pwm_tick) > 1e-9:
         raise ValueError(f"pwm_tick {pwm_tick} s is not a whole number of physics steps of {dt} s")
     return n
+
+
+def pwm_tick_offset(phase, steps_per_tick):
+    """balance_sim.pwm_tick_offset for a plain phase or a (B,) array of phases (int64 steps)."""
+    if not steps_per_tick:
+        return 0
+    if isinstance(phase, np.ndarray):
+        return np.clip(np.floor(phase * steps_per_tick + 1e-9), 0, steps_per_tick - 1).astype(np.int64)
+    return min(steps_per_tick - 1, max(0, int(np.floor(phase * steps_per_tick + 1e-9))))

@@ -29,7 +29,8 @@ from typing import Optional
 import numpy as np
 
 from .controller import LQR_STATE_GAINS, cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
-from .physics import accelerometer_tilt, derivatives, pdm_update, pwm_steps_per_tick, rk4_step, voltage_drive
+from .physics import (accelerometer_tilt, derivatives, pdm_update, pwm_steps_per_tick, pwm_tick_offset, rk4_step,
+                      voltage_drive)
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule, encoder_steps, per_sim_ring_size
 from .simulate import BatchResult
@@ -118,7 +119,9 @@ class TorchSimulator:
         self.pdm_steps = pwm_steps_per_tick(robot.pwm_tick, spec.dt)
         self.pdm_total = zeros() if self.pdm_steps else None
         self.pdm_out = zeros() if self.pdm_steps else None
-        self.pdm_offset = self.schedule.steps_per_control // 2   # as simulate_batch
+        offset = pwm_tick_offset(robot.pwm_tick_phase, self.pdm_steps)   # robot: the NumPy BatchRobot given
+        self.pdm_offset = (torch.as_tensor(offset, dtype=torch.long, device=device) if isinstance(offset, np.ndarray)
+                           else offset)   # as simulate_batch: an int, or a (B,) tensor of per-simulation offsets
         # IMU mode: the complementary filter's estimate, and the drive/torque applied during the previous step.
         self.estimate, self.applied = zeros(), zeros()
         tau = spec.filter_time_constant
@@ -332,6 +335,9 @@ class TorchSimulator:
                 raise ValueError(f"robot must give per-simulation values for exactly {per_sim}, got {given}")
             for name in per_sim:
                 getattr(self.robot, name).copy_(torch.as_tensor(np.asarray(getattr(robot, name)), dtype=self.dtype))
+            if self.pdm_steps and isinstance(self.pdm_offset, torch.Tensor):
+                self.pdm_offset.copy_(torch.as_tensor(
+                    pwm_tick_offset(np.asarray(robot.pwm_tick_phase, dtype=float), self.pdm_steps), dtype=torch.long))
         self.gains.copy_(torch.as_tensor(gains.T, dtype=self.dtype))
         self.start_pitch.copy_(torch.as_tensor(np.broadcast_to(start_pitch, (self.B,)).copy(), dtype=self.dtype))
         if seed_index is not None:

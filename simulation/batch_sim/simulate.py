@@ -24,7 +24,8 @@ import math
 import numpy as np
 
 from .controller import cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
-from .physics import accelerometer_tilt, derivatives, pdm_update, pwm_steps_per_tick, rk4_step, voltage_drive
+from .physics import (accelerometer_tilt, derivatives, pdm_update, pwm_steps_per_tick, pwm_tick_offset, rk4_step,
+                      voltage_drive)
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule, encoder_steps, per_sim_ring_size
 
@@ -109,7 +110,8 @@ def simulate_batch(
     drive = zeros() if voltage else None
     pdm_steps = pwm_steps_per_tick(robot.pwm_tick, dt)   # slow PWM's pulse-density ticks; 0 = averaged
     pdm_total = zeros() if pdm_steps else None
-    pdm_offset = spc // 2   # ticks start half a control period after the samples (balance_sim.simulate)
+    pdm_offset = pwm_tick_offset(robot.pwm_tick_phase, pdm_steps)   # steps to the first tick: int or (B,) ints
+    pdm_per_sim = isinstance(pdm_offset, np.ndarray)
     applied = zeros()      # what reached the motor during the last step (drive or torque, or its PDM pulse)
     estimate = None   # the IMU complementary filter's pitch estimate; set on the first tick
     alpha = spec.filter_time_constant / (spec.filter_time_constant + control_dt)   # as ComplementaryFilter
@@ -202,6 +204,13 @@ def simulate_batch(
 
         if not pdm_steps:
             applied = drive if voltage else torque
+        elif pdm_per_sim:
+            since = k - pdm_offset
+            tick = (since >= 0) & (since % pdm_steps == 0)
+            if tick.any():
+                total, out = pdm_update(pdm_total, drive)
+                pdm_total = np.where(tick, total, pdm_total)
+                applied = np.where(tick, out, applied)
         elif k >= pdm_offset and (k - pdm_offset) % pdm_steps == 0:
             pdm_total, applied = pdm_update(pdm_total, drive)
         stepped = rk4_step(robot, state, applied, dt, np, float(schedule.force_per_step[k]))

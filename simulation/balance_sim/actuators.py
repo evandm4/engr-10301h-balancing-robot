@@ -221,18 +221,26 @@ class SlowPwmActuator(VoltageModeActuator):
     otherwise the motor coasts (duty 0). The quantized duty then goes to torque() (see
     pdm_update). pwm_tick = 0 is the averaged model.
 
+    pwm_tick_phase: where the ticks fall against the control loop, as a fraction of a
+    tick: the first tick starts floor(pwm_tick_phase x steps per tick) physics steps
+    after the first control sample (pwm_tick_offset). The HAT's ticks are locked to its
+    own clock, not the robot's loop (DATASHEET 8.7), and the scores depend strongly on
+    this phase, so robust scoring draws it per scenario. 0.25 puts the ticks half a
+    control period after the samples when a tick is two control periods.
+
     Not modeled: regeneration through the diodes above the no-load speed, and the
     `minpwm` 0.01 cut-off.
     """
 
     def __init__(self, motor: MotorParams, estimate: Optional[MotorParams] = None,
                  max_torque: Optional[float] = None, feedforward: bool = True, feedforward_gain: float = 1.0,
-                 pwm_tick: float = 0.0):
+                 pwm_tick: float = 0.0, pwm_tick_phase: float = 0.25):
         super().__init__(motor, estimate, max_torque=max_torque, feedforward=feedforward,
                          feedforward_gain=feedforward_gain)
         if pwm_tick < 0:
             raise ValueError("pwm_tick must be non-negative")
         self.pwm_tick = pwm_tick
+        self.pwm_tick_phase = pwm_tick_phase
 
     def drive(self, command: float, measured_wheel_speed: float) -> float:
         e = self.estimate
@@ -277,3 +285,10 @@ def pwm_steps_per_tick(pwm_tick: float, dt: float) -> int:
     if n < 1 or abs(n * dt - pwm_tick) > 1e-9:
         raise ValueError(f"pwm_tick {pwm_tick} s is not a whole number of physics steps of {dt} s")
     return n
+
+
+def pwm_tick_offset(phase: float, steps_per_tick: int) -> int:
+    """Physics steps from the first control sample to the first PDM tick, for a phase in [0, 1)."""
+    if not steps_per_tick:
+        return 0
+    return min(steps_per_tick - 1, max(0, int(math.floor(phase * steps_per_tick + 1e-9))))

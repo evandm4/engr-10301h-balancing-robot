@@ -163,6 +163,10 @@ ROBUSTNESS = replace(
         # COM offset e: a pitch offset of atan(e / l), 0.011 rad per mm at l = 90 mm. Last in the
         # list, so the draws above are unchanged. Plain (non-robust) runs keep +b.
         ("pitch_bias", -0.015, 0.015),        # rad
+        # B1b: the HAT's pulse-density ticks are locked to its own clock, not the robot's loop
+        # (DATASHEET 8.7), and the scores swing widely with where they fall, so each scenario draws the
+        # phase (fraction of a 10 ms tick). Plain runs keep ActuatorConfig.pwm_tick_phase (0.25).
+        ("pwm_tick_phase", 0.0, 1.0),
     ),
     latency_range_s=(0.005, 0.025),           # 2.5 ms is not reachable on this hardware
 )

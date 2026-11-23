@@ -81,6 +81,7 @@ def robot_from_eval_config(config: EvalConfig, **overrides) -> BatchRobot:
         slow_pwm=config.slow_pwm and config.motor is not None and config.voltage_estimate is not None,
         pwm_tick=(config.pwm_tick if config.slow_pwm and config.motor is not None
                   and config.voltage_estimate is not None else 0.0),
+        pwm_tick_phase=config.pwm_tick_phase,
         **{"pitch_bias": config.sensor.pitch_bias, **overrides})
 
 

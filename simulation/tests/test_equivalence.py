@@ -595,3 +595,38 @@ def test_pdm_tick_must_be_whole_steps():
     with pytest.raises(ValueError):
         BatchEvaluator(replace(PDM_CONFIGS["pdm_10ms"], pwm_tick=SHORT.dt * 1.5), SPACE).evaluate_population(
             _candidates(n=4))
+
+
+
+@pytest.mark.parametrize("phase", [0.0, 0.25, 0.5, 0.99])
+def test_pdm_phase_matches_reference(phase):
+    config = replace(PDM_CONFIGS["pdm_10ms"], pwm_tick_phase=phase)
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    gains = _candidates(n=8, seed=4)
+    result = batched.evaluate_population(gains)
+    for i, g in enumerate(gains):
+        np.testing.assert_allclose(result.costs[i], ref.evaluate_gains(g).costs, rtol=COST_RTOL)
+
+
+def test_pdm_per_simulation_phase_matches_separate_reference_runs():
+    """Robust scoring draws the tick phase per scenario: a (B,) array, each matching its own reference run."""
+    config = PDM_CONFIGS["pdm_10ms"]
+    phases = np.linspace(0.0, 0.95, 8)
+    batched = BatchEvaluator(config, SPACE)
+    robot = replace(batched.robot, pwm_tick_phase=phases)
+    pitch, seed = batched.scenarios()[0]
+    run = simulate_batch(batched.spec, robot, np.tile(HAND_TUNED, (len(phases), 1)), pitch,
+                         noise=batched.noise_for((seed,)), seed_index=np.zeros(len(phases), dtype=int),
+                         schedule=batched.schedule)
+    for i, ph in enumerate(phases):
+        ref = Evaluator(replace(config, pwm_tick_phase=float(ph)), SPACE)
+        expected = ref.run(HAND_TUNED, pitch, seed)
+        np.testing.assert_allclose(run.cost[i], ref.score(expected), rtol=COST_RTOL)
+        np.testing.assert_array_equal(run.final_state[i], expected.states[-1])
+
+
+def test_pdm_phase_changes_the_result():
+    gains = _candidates(n=6, seed=5)
+    a = BatchEvaluator(replace(PDM_CONFIGS["pdm_10ms"], pwm_tick_phase=0.0), SPACE).evaluate_population(gains).costs
+    b = BatchEvaluator(replace(PDM_CONFIGS["pdm_10ms"], pwm_tick_phase=0.6), SPACE).evaluate_population(gains).costs
+    assert not np.allclose(a, b, rtol=1e-6)

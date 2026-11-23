@@ -103,3 +103,14 @@ def test_pwm_steps_per_tick():
     assert pwm_steps_per_tick(0.01, 0.0025) == 4
     with pytest.raises(ValueError):
         pwm_steps_per_tick(0.01, 0.003)
+
+
+
+def test_pwm_tick_offset():
+    from balance_sim import pwm_tick_offset
+    assert pwm_tick_offset(0.25, 4) == 1
+    assert pwm_tick_offset(0.0, 4) == 0
+    assert pwm_tick_offset(0.999, 4) == 3
+    assert pwm_tick_offset(1.0, 4) == 3       # clipped into the tick
+    assert pwm_tick_offset(0.25, 20) == 5
+    assert pwm_tick_offset(0.5, 0) == 0

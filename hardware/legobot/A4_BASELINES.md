@@ -270,3 +270,19 @@ control loop, which is not synchronized on the robot. Nine plain runs, with the 
 
 So the tick phase should be drawn per scenario in robust scoring (SOFTWARE_PLAN B1b, next step) before
 any final tuning. Until then, gains tuned with this config are tuned for one phase.
+
+### With the tick phase drawn per scenario (2026-11-23)
+
+`ROBUSTNESS.randomize_range` now draws `pwm_tick_phase` uniformly over a whole tick for each scenario. The
+HAT's ticks are locked to its own clock, not the robot's loop (DATASHEET 8.7, `tick_lock`). Plain runs keep
+0.25.
+
+| Baseline | Plain (9) | Robust train (150) | Robust dev (150) | Dev worst | Dev chaos |
+|---|---|---|---|---|---|
+| Hand-tuned PID | 39.94 (0) | 61.07 (2) | 92.19 (5) | 1822 | 81 |
+| Model-based PID | 3.755 (0) | 3.695 (0) | 3.677 (0) | 5.02 | 0.16 |
+| Cost-matched LQR | 241.2 (1) | 402.2 (31) | 368.5 (28) | 1859 | 230 |
+
+Robust scores now average over the phase instead of resting on one value. The model-based PID is
+unaffected, and the LQR falls in about a fifth of the scenarios. That is the design's fragility under
+pulse-density PWM, not luck with the phase.
