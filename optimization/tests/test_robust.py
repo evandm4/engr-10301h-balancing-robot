@@ -224,3 +224,18 @@ def test_torch_backend_matches_numpy_in_robust_mode(space):
     got = gpu.evaluate_population(gains)
     np.testing.assert_allclose(got.costs, ref.costs, rtol=1e-9)
     np.testing.assert_allclose(got.sensitivity, ref.sensitivity, rtol=1e-6, atol=1e-12)
+
+
+def test_checking_tier_keeps_the_frozen_validation_seeds_behind_final():
+    from batch_tuning import checking_tier
+
+    robust = CONFIG.build_robustness()
+    dev_config, tier = checking_tier(robust, final=False)
+    assert tier == "dev" and dev_config.validation_seeds == robust.dev_seeds
+    assert not set(dev_config.validation_seeds) & set(robust.validation_seeds)
+    final_config, tier = checking_tier(robust, final=True)
+    assert tier == "validation" and final_config is robust
+    # 2000-2099 are retired: the overlap check refuses them as a scored tier.
+    assert set(range(2000, 2100)) <= set(robust.retired_seeds)
+    with pytest.raises(ValueError):
+        replace(robust, dev_seeds=(2000,), smoke_seeds=())

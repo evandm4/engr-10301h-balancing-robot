@@ -48,6 +48,7 @@ import numpy as np
 from config import CONFIG, add_robot_argument, results_dir
 from batch_tuning import (
     BatchEvaluator,
+    checking_tier,
     cma_es_search,
     differential_evolution_search,
     random_search,
@@ -121,6 +122,8 @@ def main():
                         help="weight of the chaos penalty (default: config.py; 0 turns it off)")
     parser.add_argument("--no-plot", action="store_true", help="skip the plots")
     parser.add_argument("--no-show", action="store_true", help="save the plots without opening a window")
+    parser.add_argument("--final", action="store_true",
+                        help="score the frozen validation seeds (only for the final comparison, once every controller is final); without it, results are checked on the development seeds")
     args = parser.parse_args()
 
     robustness = None
@@ -132,6 +135,11 @@ def main():
             robustness = replace(robustness, randomize=(), randomize_range=(), latency_range=None)
         if args.sensitivity_weight is not None:
             robustness = replace(robustness, sensitivity_weight=args.sensitivity_weight)
+        # The validation seeds are frozen (docs/ml-baselines-plan.md 2.5): without --final, the robust
+        # "validation" runs on the development seeds, and comparison.json says so.
+        robustness, checked_on = checking_tier(robustness, args.final)
+        print(f"Checking results on the {checked_on} seeds"
+              + ("" if args.final else " (the frozen validation seeds need --final)"))
 
     space = CONFIG.build_search_space()
     eval_config = CONFIG.build_eval_config()
@@ -230,6 +238,7 @@ def main():
         "simulations_per_evaluation": sims_per_eval,
         "train_duration_s": eval_config.duration,
         "validation_duration_s": val_config.duration,
+        "robust_checked_on": None if args.plain else checked_on,   # seeds behind the robust_validation fields
         "results": comparison,
         "robustness": robust_snapshot,
         "config": snapshot}, indent=2))
