@@ -727,6 +727,42 @@ smaller, but the averaged `SlowPwmActuator` leaves it out. The next check is a r
 with the duty applied as a pulse train. (An earlier run, with the wheel dragging after the robot fell off
 its stand, seemed to show 100 × duty Hz; it is superseded.)
 
+*Does it matter? (`pwm_pulse_check.py`, reference engine.)* The duty is modelled as full-voltage on-time |d|T
+at the start of each free-running period T, coasting otherwise. Fitted to the bench ripple through a
+simulated 100 Hz, 1° encoder (adding the bench's 1.2 rad/s floor in quadrature), the best fit is
+T ≈ 200 ms (rms misfit 0.9 rad/s; 1.4 at 100 ms, 1.25 at 300 ms). The 10–15 Hz ripple frequency points
+nearer 100 ms, so T is uncertain. LEGO scenario, nominal robot, 9 runs, dt 0.5 ms, cost (falls):
+
+| Baseline | Averaged | Pulsed, T = 100 ms (3 runs) | T = 200 ms | T = 300 ms |
+|---|---|---|---|---|
+| Hand-tuned PID | 27.7 (0) | 29.5 (0) | 29.2 (0) | 28.6 (0) |
+| Model-based PID | 2.25 (0) | 3.80 (0) | 403 (2) | 1916 (9) |
+| Cost-matched LQR | 28.5 (0) | 31.0 (0) | 1555 (8) | 1764 (9) |
+
+So if the pulse period is 200 ms or longer, slow PWM can make the stiffer controllers fall; at 100 ms it
+costs the model-based PID 70%. The pulse train has to be measured directly before relying on slow PWM.
+
+*Measured directly (`pulse_imu`, IMU at 1.5 kHz with its filters opened, left wheel on the stand).* At duty
+0.05 the chassis shows one pulse every **199 ms** (autocorrelation 0.79, spectral peak 5.2 Hz, envelope
+contrast 6×). At higher duties the pulses blur together, but the encoder's 10 and 15 Hz at 0.10 and 0.15
+fit the same rule: **pulse-density modulation**, with full-voltage pulses one HAT tick (10 ms) long at a
+rate of about 100 × duty per second. The library mode (`0.65 0.01`) shows no clear pulse train (contrast
+about 2). The fixed-period ("block") model above is therefore the wrong shape. Pulse-density modulation
+keeps a running sum, so the delivered impulse tracks the command to within one pulse
+(`pwm_pulse_check.py --model pdm`; 9 runs, cost (falls), pitch-rate sd in rad/s):
+
+| Baseline | Averaged | PDM, 10 ms ticks (matches the IMU) | PDM, 20 ms ticks |
+|---|---|---|---|
+| Hand-tuned PID | 27.7 (0), 0.80 | 32.6 (0), 1.15 | 46.8 (0), 1.71 |
+| Model-based PID | 2.25 (0), 0.17 | 3.70 (0), 0.60 | 9.21 (0), 1.29 |
+| Cost-matched LQR | 28.5 (0), 0.86 | 25.9 (0), 1.05 | 28.4 (0), 1.57 |
+
+Nothing falls. With the measured 10 ms ticks the pitch jitters 3–4× more and the model-based PID's cost rises
+65% (still the best baseline); the other two change by −9 to +18%. **Slow PWM is usable for balancing.** The
+averaged model overstates how well a controller will do, so the pulse-density actuator should go into the
+engines before final tuning (E2). The bench's ripple sizes are only matched to within about 1 rad/s by
+either model; stiction between pulses is the likely remainder.
+
 *Backlash* (`backlash`, left motor, beam still on, rocked by hand with the motor in slow PWM at duty 0): the
 encoder on the output shaft moved 5–6° peak-to-peak, and the two ends of the play were 2.6° apart. That is
 the gearbox, matching LEGO's ±3° figure. By eye the beam tip moved 19 mm at 96 mm, or **11.3° in total**: the
