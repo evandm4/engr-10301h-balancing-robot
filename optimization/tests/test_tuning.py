@@ -131,7 +131,11 @@ def test_pitch_reference_option_changes_the_score():
                     train_seeds=(1,), sensor=replace(BASE.sensor, pitch_bias=0.0))
     a = Evaluator(replace(short, pitch_reference="commanded"), SPACE).evaluate_gains(BASELINE).mean_cost
     b = Evaluator(replace(short, pitch_reference="upright"), SPACE).evaluate_gains(BASELINE).mean_cost
-    assert a < b   # leaning to accelerate is only penalized by the "upright" reference
+    assert a != pytest.approx(b, rel=1e-6)
+    if CONFIG.name == "pololu":
+        assert a < b   # leaning to accelerate is only penalized by the "upright" reference
+    # The LEGO robot scores higher under "commanded" here (its pitch lags the commanded lean more than it
+    # strays from upright), with or without the pulses; its CostConfig uses "upright".
 
 
 # ---- optimizers ------------------------------------------------------------

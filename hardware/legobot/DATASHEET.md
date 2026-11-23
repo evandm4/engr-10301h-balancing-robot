@@ -498,6 +498,12 @@ would make it about 0.3 ms for that port, but the two ports' lines arrive at unr
 The sim's 10 ms nominal latency fits this budget. Its current randomization (2.5–20 ms) reaches below what this
 hardware can do; 5–25 ms covers the budget with margin.
 
+*Superseded 2026-11-23 (review G6):* the 5–25 ms range was set before the slow-PWM pulse ticks were found,
+and the sim then added up to a tick (10 ms) of wait on top. With the loop locked to the HAT's ticks (SOFTWARE_PLAN
+D2) the whole sample-to-pulse delay is about 9 ms (left motor) to 11 ms (right), 15 ms at worst: IMU filter ~3 ms
+(est.), read and compute 1.3 ms (3.6 worst), write to tick 1.8 / 3.8 ms (lock_sweep), L/R ~3 ms (est.). The sim
+now draws 7.5–15 ms with the ticks locked (`legobot_config`), and the robot won't arm or run without the lock.
+
 ## 7. Where the current model doesn't match this robot
 
 In order of how much each changes the robot the sim sees. None of these require new hardware; several can be

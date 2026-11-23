@@ -30,6 +30,8 @@ from batch_tuning import BatchEvaluator, decode_units, robot_from_eval_config, s
 from config import CONFIG, CostConfig, ProjectConfig
 
 pololu_only = pytest.mark.skipif(CONFIG.name != "pololu", reason="checks numbers or gains specific to config.py's Pololu robot")
+if CONFIG.name == "legobot":
+    pytest.skip("the LQR is dropped for the LEGO robot (hardware/legobot/A4_BASELINES.md)", allow_module_level=True)
 from tuning import Evaluator, LQRGainScaling, LQRWeightDesigner, lqr_weights
 
 P = CONFIG.build_robot_params()

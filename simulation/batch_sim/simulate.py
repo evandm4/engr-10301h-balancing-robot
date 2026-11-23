@@ -81,7 +81,10 @@ def simulate_batch(
     delay_steps (B,) integers: each simulation's own latency, in physics steps, in place
                 of spec.latency. A command issued at step k reaches the motor at step
                 k + delay_steps, which is what the CPU simulator does with
-                latency = delay_steps * dt (see per_sim_ring_size).
+                latency = delay_steps * dt (see per_sim_ring_size). The pulse ticks' phase
+                stays robot.pwm_tick_phase: for ticks locked to the loop
+                (ActuatorConfig.pwm_tick_locked) pass the matching per-simulation phase,
+                balance_sim.locked_pwm_tick_phase(delay_steps, ...), as BatchEvaluator does.
 
     spec.controller "policy": gains is (P, n_params), one parameter vector per network, and
     scenarios_per_candidate S says how many simulations each runs: B = P x S, candidate-major

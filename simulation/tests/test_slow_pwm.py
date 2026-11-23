@@ -54,11 +54,24 @@ def test_drive_inverts_the_model_with_exact_constants(tau, w):
         assert abs(act.torque(d, w)) <= abs(tau) + 1e-12
 
 
-def test_drive_saturates_above_no_load_speed():
-    act = SlowPwmActuator(MOTOR)
+def test_drive_coasts_at_or_above_no_load_speed_in_the_commanded_direction():
+    """No duty gives torque toward the command there (a duty of its sign brakes), so drive() coasts.
+    It used to send full duty of the command's sign: full braking for any command >= 0, zero included."""
+    act = SlowPwmActuator(MOTOR, max_torque=0.9)
     w_nl = MOTOR.supply_voltage / MOTOR.torque_constant
-    assert act.drive(0.1, w_nl * 1.1) == 1.0
-    assert act.drive(-0.1, -w_nl * 1.1) == -1.0
+    for tau in (0.0, -0.0, 1e-6, 0.1, 0.9):
+        assert act.drive(tau, w_nl * 1.1) == 0.0
+        assert act.drive(-tau, -w_nl * 1.1) == 0.0
+    assert act.drive(0.1, w_nl) == 0.0                 # exactly at the no-load speed: den = 0
+    assert act.drive(-0.1, w_nl * 1.1) < 0.0           # the other direction still drives: it has the headroom
+
+
+@pytest.mark.parametrize("w", [-30.0, -21.9, 21.9, 30.0])
+@pytest.mark.parametrize("tau", [-0.9, -0.1, 0.0, 0.1, 0.9])
+def test_drive_never_gives_torque_against_the_command(tau, w):
+    """Delivered torque has the command's sign or is zero, at any speed (exact constants)."""
+    act = SlowPwmActuator(MOTOR, max_torque=0.9)
+    assert act.torque(act.drive(tau, w), w) * tau >= -1e-12
 
 
 def test_constant_mismatch_gives_an_error_proportional_to_the_command():
@@ -114,3 +127,54 @@ def test_pwm_tick_offset():
     assert pwm_tick_offset(1.0, 4) == 3       # clipped into the tick
     assert pwm_tick_offset(0.25, 20) == 5
     assert pwm_tick_offset(0.5, 0) == 0
+
+
+class _Constant:
+    """A controller that asks for a fixed torque from the first sample on (above duty 0.5, so the first tick pulses)."""
+
+    def __init__(self, torque):
+        self.torque = torque
+
+    def reset(self):
+        pass
+
+    def update(self, measured, dt):
+        return self.torque
+
+    def pitch_reference(self):
+        return 0.0
+
+    def goal_velocity(self, t):
+        return 0.0
+
+
+@pytest.mark.parametrize("delay_steps", [3, 4, 5, 6, 7])
+def test_locked_ticks_fall_where_each_command_takes_effect(delay_steps):
+    """Review G6: with the loop locked to the HAT (pwm_tick_locked), the first pulse starts on the step the
+    first command arrives, at every latency: the latency is the whole delay. A fixed phase instead waits
+    for the next tick, up to a tick later."""
+    from balance_sim import Planar2D, RobotParams, locked_pwm_tick_phase, simulate
+
+    dt, control_dt, tick = 0.0025, 0.005, 0.010
+    robot = RobotParams(body_mass=0.36, body_com_height=0.06, body_inertia=8.8e-4, wheel_mass=0.078,
+                        wheel_radius=0.0345, wheel_inertia=6e-5, rotor_inertia=1.09e-3, max_torque=0.9, wheel_friction=0.0,
+                        coulomb_friction=0.0, coulomb_friction_speed=1.0, gravity=9.81)
+
+    def first_motion(phase):
+        act = SlowPwmActuator(MOTOR, max_torque=0.9, pwm_tick=tick, pwm_tick_phase=phase)
+        run = simulate(Planar2D(robot, fall_angle=1.5, actuator=act), _Constant(0.8), duration=0.06, dt=dt,
+                       control_dt=control_dt, latency=delay_steps * dt)
+        moving = [k for k, s in enumerate(run.states) if s[1] != 0.0]
+        return moving[0] - 1          # the step whose torque first moved the wheel
+
+    assert first_motion(locked_pwm_tick_phase(delay_steps, 4, 2)) == delay_steps
+    late = first_motion(0.25 if delay_steps % 4 != 1 else 0.0)   # a phase that misses the arrival step
+    assert delay_steps < late < delay_steps + 4
+
+
+def test_locked_tick_must_be_whole_control_periods():
+    from balance_sim import locked_pwm_tick_phase
+
+    assert locked_pwm_tick_phase(6, 4, 2) == pytest.approx(2.5 / 4)
+    with pytest.raises(ValueError):
+        locked_pwm_tick_phase(6, 3, 2)

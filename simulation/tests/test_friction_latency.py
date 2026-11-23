@@ -20,8 +20,12 @@ from tuning import Evaluator
 P = CONFIG.build_robot_params()
 HAND_TUNED = np.array(CONFIG.controller.hand_tuned_gains)
 SPACE = CONFIG.build_search_space()
+# Ticks unlocked (a fixed phase): these tests compare simulate_batch's per-simulation delays with reference runs
+# at each latency, and simulate_batch takes the robot's tick phase as given. Under a locked config (the LEGO
+# robot) BatchEvaluator derives each scenario's phase from its delay; calling simulate_batch directly with
+# per-simulation delays, pass that phase too (balance_sim.locked_pwm_tick_phase).
 SHORT = replace(CONFIG.build_eval_config(), duration=2.0, goal_steps=((0.3, 0.3), (1.2, -0.2)),
-                start_pitches=(0.1, -0.08), train_seeds=(1, 2))
+                start_pitches=(0.1, -0.08), train_seeds=(1, 2), pwm_tick_locked=False)
 DT = SHORT.dt
 
 
@@ -66,7 +70,8 @@ def test_linearize_includes_coulomb_slope():
 
 def test_energy_balance_with_coulomb_friction():
     """Free motion with friction: the energy lost is the friction's work, to integrator accuracy."""
-    params = P.with_changes(coulomb_friction=0.01, coulomb_friction_speed=0.5)
+    # viscous friction off: `lost` below counts only the Coulomb term (the LEGO robot has wheel_friction > 0)
+    params = P.with_changes(coulomb_friction=0.01, coulomb_friction_speed=0.5, wheel_friction=0.0)
     dyn = Planar2D(params, fall_angle=2.0)
     state, h, lost = np.array([0.0, 0.5, 0.05, 0.0]), 1e-4, 0.0
     e0 = dyn.energy(state)

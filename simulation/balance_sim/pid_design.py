@@ -15,10 +15,13 @@ simulation and no tuning:
    non-minimum-phase plant (Skogestad & Postlethwaite).
 
 The defaults are the most common choices that leave the full loop stable with
-the configured 10 ms latency: an inner loop critically damped at 2p, and an
-outer bandwidth of z/3. Check any design with stability.stable_latency_range;
-z/2, or an underdamped inner loop, is linearly unstable at 10 ms for this robot
-(cascade bound, PHYSICS.md 6.3).
+the configured 10 ms latency on the Pololu robot: an inner loop critically damped
+at 2p, and an outer bandwidth of z/3. Check any design with
+stability.stable_latency_range; z/2, or an underdamped inner loop, is linearly
+unstable at 10 ms for that robot (cascade bound, PHYSICS.md 6.3). The rule also
+needs the outer loop slower than the integral pole: on the LEGO robot (z/p 1.05,
+against 0.80) the default integral ratio 0.1 is unstable at every latency, and
+legobot_config raises it to 0.3 (the smallest stable step).
 """
 
 import math

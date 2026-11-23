@@ -120,7 +120,7 @@ log records.
   - a wheel stalled (|duty| ≥ 0.5, or 0.8 × the cap on the bench, for 1 s with the wheel's mean speed in the
     duty's direction under 3 rad/s; see the hands-on checks below);
   - a wheel turning fast against its duty (a sign error);
-  - 3 vin replies below 6.6 V, or no vin reply for 2 s;
+  - 3 vin replies below 6.8 V (6.6 V until the 2026-11-23 review: the sim's lowest supply is 6.8 V), or no vin reply for 2 s;
   - "Motor power fault";
   - motor data older than 50 ms;
   - the serial reader thread dying;
@@ -235,6 +235,22 @@ log records.
 | E2 | Final tuning on the measured config (C4), full rigor, then the frozen validation set once | M (mostly compute) | Validated LEGO gains |
 | E3 | **Sim-to-real comparison:** replay a logged run's measured start state and commands through the simulator in short windows (about 0.5 s, re-initialized from the log each window, since an unstable system diverges in open loop), and compare closed-loop runs statistically (pitch and velocity spectra, push recovery) | M | A sim-vs-real figure for the paper |
 | E4 | First balancing tests with progressively harder tasks: stand still, small pushes, then the scenario | — | — |
+
+### External review before phase E (2026-11-23)
+
+An adversarial review by a second model (prompt and bundle in `docs/legobot-review/`) raised G1–G11;
+`docs/legobot-review/triage.md` records each one's status. Fixed: the slow-PWM `drive()` above no-load speed
+(G3), the LEGO `kv_p` search bound (G1), the vin cutoff against the simulated supply range (G7), robot-side
+I²C errors, crash logging, cleanup order and a repeating watchdog (G2, G11), a runaway trip for a lifted robot
+(G11), and the tests that only ever ran against the Pololu robot (G10: under `ROBOT=legobot`, 10 failures
+fixed and a full-pipeline LEGO test added that runs under either robot). Then G4/G6: the simulation models
+the robot loop's lock to the HAT's pulse ticks (`ActuatorConfig.pwm_tick_locked`; the phase follows each
+scenario's latency instead of being drawn), the latency range is 7.5–15 ms (was 5–25 ms plus up to 10 ms of
+tick wait), the robot won't arm or keep running without the lock (`--inject unlock` tests it), and the catch
+bound adds a tick to the push reaction (the scenario re-derives unchanged). A4_BASELINES has the new scores.
+**Before E1:** run the bench checks in the triage (re-run `lock_sweep` after a power cycle, coast vs brake at
+duty 0, the motor rail at 8.4 V, the right motor's lever test). Run the LEGO searches in float64 (G5). Score
+the final gains on a wider latency sweep as an evaluation.
 
 ## 4. Order and dependencies
 

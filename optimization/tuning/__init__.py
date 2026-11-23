@@ -12,7 +12,7 @@ from .search_space import (
     lqr_weight_space,
     lqr_weights,
 )
-from .evaluation import EvalConfig, EvalResult, Evaluator
+from .evaluation import EvalConfig, EvalResult, Evaluator, tick_phase
 from .optimizers import (
     TuningResult,
     bayesian_optimization_search,

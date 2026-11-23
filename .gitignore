@@ -8,3 +8,6 @@ venv/
 Thumbs.db
 desktop.ini
 ~$*
+
+# repomix output for the external LEGO review
+docs/legobot-review/legobot-review-bundle.xml

@@ -109,7 +109,8 @@ def test_twins_share_their_scenario_latency(space):
 def test_project_config_randomizes_friction_and_latency():
     r = CONFIG.build_robustness()
     names = {name for name, _, _ in r.randomize_range}
-    assert {"wheel_friction", "coulomb_friction"} <= names <= {"wheel_friction", "coulomb_friction", "pitch_bias"}
+    assert {"wheel_friction", "coulomb_friction"} <= names <= {"wheel_friction", "coulomb_friction", "pitch_bias",
+                                                               "pwm_tick_phase"}
     assert r.latency_range is not None and r.latency_range[0] <= CONFIG.timing.latency_s <= r.latency_range[1]
 
 
@@ -159,11 +160,14 @@ def test_randomized_robot_scores_match_reference_runs_with_those_parameters(spac
     ev = BatchEvaluator(SHORT, space, robustness=replace(ROBUST, train_seeds=(1, 2), sensitivity_weight=0.0))
     result = ev.evaluate_population([HAND_TUNED])
     robots, delays = ev.robots(), ev.delay_steps()
+    # The LEGO robot also draws the pulse phase per scenario (B1b); the reference needs it too.
+    phases = np.broadcast_to(np.asarray(robots.pwm_tick_phase, dtype=float), (len(ev.scenarios()),))
     for i, (pitch, seed) in enumerate(ev.scenarios()):
         params, motor = robot_at(robots, i)
         bias = pitch_bias_at(robots, i)   # drawn per scenario when randomize_range has pitch_bias (B6)
         sensor = SHORT.sensor if bias is None else replace(SHORT.sensor, pitch_bias=bias)
-        ref = Evaluator(replace(SHORT, params=params, motor=motor, sensor=sensor, latency=delays[i] * SHORT.dt), space)
+        ref = Evaluator(replace(SHORT, params=params, motor=motor, sensor=sensor, latency=delays[i] * SHORT.dt,
+                                pwm_tick_phase=float(phases[i])), space)
         assert result.costs[0, i] == pytest.approx(ref.score(ref.run(HAND_TUNED, pitch, seed)), rel=1e-12)
 
 

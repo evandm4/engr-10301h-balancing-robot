@@ -95,17 +95,22 @@ def test_simulator_rejects_a_filter_at_another_rate():
 
 def test_balances_through_the_scenario_with_the_imu():
     """The configured robot and its hand-tuned gains, noise off, IMU on: no fall, and the pitch
-    estimate's error stays at the size the accelerations explain (under 0.05 rad here)."""
+    estimate's error stays at the size the accelerations explain. With noise and biases off, the filter's
+    error is a low-pass of the raw accelerometer tilt's error (the gyro path is exact but for its Euler
+    step), so it can't exceed that error's peak. A fixed 0.05 rad limit, set for the 0.27 m/s scenario,
+    failed at 0.063 rad once the LEGO cruise became 0.40 m/s (peaks in the speed changes, not the pushes)."""
     cfg = replace(CONFIG, sensor=replace(CONFIG.sensor, model="imu", pitch_std=0.0, pitch_bias=0.0,
                                          pitch_rate_std=0.0, pitch_rate_bias=0.0, position_std=0.0,
                                          velocity_std=0.0))
     dyn = cfg.build_dynamics()
-    errors = []
+    errors, raw = [], []
 
     class Recording(IMUSensor):
         def measure(self, state, accelerations=(0.0, 0.0)):
             out = super().measure(state, accelerations)
             errors.append(out[2] - state[2])
+            raw.append(accelerometer_tilt(state[2], state[3], *accelerations, self.imu_height, self.gravity)
+                       - state[2])
             return out
 
     s = cfg.build_sensor()
@@ -118,4 +123,4 @@ def test_balances_through_the_scenario_with_the_imu():
                       disturbance=cfg.build_disturbance())
     if CONFIG.name == "legobot":   # sized for this robot's gentle scenario
         assert not result.fell
-        assert 0.0 < np.max(np.abs(errors)) < 0.05
+        assert 0.0 < np.max(np.abs(errors)) <= np.max(np.abs(raw)) + 0.005     # + the gyro's Euler step

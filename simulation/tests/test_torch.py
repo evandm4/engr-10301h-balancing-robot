@@ -23,6 +23,9 @@ from balance_sim import IMUSensor, SensorNoise
 from config import CONFIG
 
 HAS_CUDA = torch.cuda.is_available()
+# Pulse-density ticks (the LEGO robot): last-bit differences move whole 10 ms pulses, so long runs and float32 diverge.
+PULSES = CONFIG.actuator.model == "slow_pwm" and CONFIG.actuator.pwm_tick_s > 0
+no_pulses = pytest.mark.skipif(PULSES, reason="pulse-density ticks (the LEGO robot) turn last-bit differences into whole pulses, so runs diverge like the chaos penalty's nudged twins; the LEGO engines are compared on short runs in optimization/tests/test_legobot_pipeline.py")
 DEVICES = ["cuda", "cpu"] if HAS_CUDA else ["cpu"]
 needs_cuda = pytest.mark.skipif(not HAS_CUDA, reason="needs a CUDA GPU")
 
@@ -246,6 +249,7 @@ def test_voltage_feedforward_gain_float64_matches_numpy():
 
 
 @needs_cuda
+@no_pulses
 def test_full_default_scenario_float64_matches_numpy():
     from config import CONFIG
     config, space = CONFIG.build_eval_config(), CONFIG.build_search_space()
@@ -281,6 +285,7 @@ def test_every_disagreement_on_random_gains_is_chaos(short_eval):
 
 
 @pytest.mark.parametrize("device", DEVICES)
+@no_pulses
 def test_float32_close_to_float64_for_well_behaved_gains(device, short_eval):
     G, pitch, seed_index, noise = _flat(short_eval, _near_hand_tuned(32))
     ref = simulate_batch(short_eval.spec, short_eval.robot, G, pitch, noise, seed_index, short_eval.schedule)
@@ -354,7 +359,8 @@ def test_torch_chunking_padding_and_cache(short_eval):
 
 @needs_cuda
 def test_differential_evolution_on_gpu(short_eval):
-    ev = BatchEvaluator(SHORT, short_eval.space, backend="torch", dtype=np.float32)
+    # float64 with pulse-density ticks: float32 can't rank close candidates there (run_batch_tuning warns)
+    ev = BatchEvaluator(SHORT, short_eval.space, backend="torch", dtype=np.float64 if PULSES else np.float32)
     result = differential_evolution_search(ev, max_iter=3, pop_multiplier=4, seed=1)
     assert result.n_evals == 4 * SPACE.dim * 4
     assert short_eval.evaluate_gains(result.gains).mean_cost == pytest.approx(result.best_cost, rel=1e-3)

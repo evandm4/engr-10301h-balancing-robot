@@ -296,6 +296,7 @@ class Safety:
         n = max(1, int(round(lc.STALL_S / dt)))
         self._stall = [deque(maxlen=n), deque(maxlen=n)]   # speed in the duty's direction, while |duty| is high
         self.wrong_way_ticks = [0, 0]
+        self.runaway_ticks = 0
         self.vin_low = 0
         self._last_vin_t = None
         self.first_vin_t = None
@@ -343,6 +344,14 @@ class Safety:
                                        if abs(d) >= self.stall_duty and d * w < 0 and abs(w) > 5.0 else 0)
             if self.wrong_way_ticks[i] * self.dt >= 0.2:
                 return f"{side} wheel turns against its duty (duty {d:+.2f}, {w:+.2f} rad/s): sign error?"
+        # Runaway: both wheels near the no-load speed the same way for RUNAWAY_S. On the floor that is past
+        # 0.59 m/s for 1.5 s, beyond anything the scenario asks; lifted while armed (held upright, so no tilt
+        # trip) the free wheels spin up to the no-load speed and the stall trip can't see it (review G11).
+        wl, wr = speeds
+        fast = min(abs(wl), abs(wr)) >= lc.RUNAWAY_SPEED and wl * wr > 0
+        self.runaway_ticks = self.runaway_ticks + 1 if fast else 0
+        if self.runaway_ticks * self.dt >= lc.RUNAWAY_S:
+            return f"wheels running away ({wl:+.1f}, {wr:+.1f} rad/s for {lc.RUNAWAY_S} s): lifted?"
         return None
 
 

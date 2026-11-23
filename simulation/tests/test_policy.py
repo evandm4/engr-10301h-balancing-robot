@@ -29,6 +29,10 @@ from config import CONFIG
 from tuning import Evaluator
 
 ROOT = Path(__file__).resolve().parents[2]
+if CONFIG.learning.reference_pid_file is None:
+    pytest.skip("no tuned reference PID for this robot yet (the LEGO robot's comes from E2; "
+                "optimization/tests/test_legobot_learning.py covers its learned-controller setup)",
+                allow_module_level=True)
 REFERENCE = json.loads((ROOT / CONFIG.learning.reference_pid_file).read_text())   # the reference every ratio is against
 REFERENCE_PID = REFERENCE["results"]["PID, ML-tuned"]
 GAINS = REFERENCE_PID["gains"]                     # kp, ki, kd, kv_p every ratio in the paper is against

@@ -105,6 +105,10 @@ class Watchdog(threading.Thread):
                     self.hat.emergency_coast()
                 finally:
                     self.fired = time.perf_counter() - last
+                # Keep coasting until the run ends: a command the stuck loop was writing could land after
+                # the first coast and drive a motor again (review G11).
+                while not self._stop.wait(lc.WATCHDOG_REPEAT_S):
+                    self.hat.emergency_coast()
                 return
 
     def stop(self):
@@ -134,8 +138,11 @@ def calibrate_gyro(imu, clock, dt, say=lambda m: print(m, flush=True)):
 
 
 def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, drive=True, inject=None,
-        inject_at=1.0, say=print, line_clock=None, pacer=None):
+        inject_at=1.0, say=print, line_clock=None, pacer=None, rows=None, stats=None):
     """The loop. Returns (raw rows, stop reason, arm time from the start or None).
+
+    rows (a list) and stats (a dict) are filled as the loop goes, so the caller still has them if the loop
+    raises: stats gets "t_arm" (s from the start) when it arms and "IMU read errors" (bridged or not).
 
     pacer (control.Pacer) sets the tick times: locked to line_clock's HAT data-line grid when it has a lock,
     else every dt. line_clock is re-estimated from the left port's line arrivals every LINE_UPDATE_TICKS
@@ -143,7 +150,8 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
     in s after the grid's latest line (lower envelope of arrivals)."""
     dt = brain.dt
     c = brain.controller
-    rows = []
+    rows = [] if rows is None else rows
+    stats = {} if stats is None else stats
     reason = None
     phase = 0                     # 0 arming, 1 running
     t_arm = None
@@ -153,11 +161,13 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
     last_vin_request = -1e9
     vin_used_t = None
     injected = False
+    r_prev, imu_errors, imu_injected = None, 0, 0
     t0 = clock.now()
     deadline = t0
     tick = 0
     pacer = pacer or control.Pacer(dt)
     locked = False
+    need_lock = line_clock is not None      # --no-line-lock runs unlocked, on purpose (not what the sim tuned for)
     say(f"hold the robot upright at its balance point to arm (|pitch| < {lc.ARM_TILT} rad, still for "
         f"{lc.ARM_HOLD_S} s)")
     while True:
@@ -180,6 +190,9 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
                 safety.vin_cutoff = 99.0
             elif inject == "fault":
                 hat.fault = (t, "Motor power fault (injected)")
+            # "imu": the next IMU_ERROR_LIMIT reads raise OSError (below)
+            elif inject == "unlock" and line_clock is not None:
+                line_clock.stale = -1.0       # locked() is false from now on
             if inject in ("loop", "hang"):
                 late += clock.now() - t
                 t = clock.now()
@@ -191,7 +204,23 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
         elif late > lc.STALL_LOOP_S and phase == 1:
             reason = f"loop stalled: tick {late * 1e3:.1f} ms late"
 
-        r = imu.read()
+        # An I2C error (motor noise can NACK a read) is bridged with the last sample for up to IMU_ERROR_LIMIT - 1
+        # ticks, then trips like any fault, so the motors coast and the logs are written (review G2).
+        try:
+            if inject == "imu" and injected and imu_injected < lc.IMU_ERROR_LIMIT:
+                imu_injected += 1
+                raise OSError(121, "Remote I/O error (injected)")
+            r = imu.read()
+            imu_errors = 0
+        except OSError as e:
+            imu_errors += 1
+            stats["IMU read errors"] = stats.get("IMU read errors", 0) + 1
+            if r_prev is None or imu_errors >= lc.IMU_ERROR_LIMIT:
+                reason = reason or f"IMU read failed {imu_errors} times in a row: {e}"
+                hat.coast()
+                break
+            r = r_prev
+        r_prev = r
         pl, pr = hat.pair(LEFT), hat.pair(RIGHT)
         state, ex = brain.sense(r.pitch_rate, r.acc_fwd, r.acc_up, pl, pr)
         theta, gyro = state[2], state[3]
@@ -210,13 +239,19 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
 
         reason = reason or safety.check(t, theta, duties if drive else (0.0, 0.0), (ex["w_left"], ex["w_right"]),
                                         ages, vr, hat.fault, hat.reader_alive(), phase == 1)
+        # The simulator the gains were tuned in assumes the loop is locked to the HAT's pulse ticks
+        # (legobot_config ACTUATOR.pwm_tick_locked, review G6): unlocked, a command can wait up to a whole
+        # extra tick. So no arming without the lock, and losing it while armed ends the run.
+        if not reason and phase == 1 and need_lock and not locked:
+            reason = "lost the lock to the HAT's line grid (the tuned gains assume it)"
         if reason:
             hat.coast()
         elif phase == 0:
-            if abs(theta) < lc.ARM_TILT and abs(gyro) < lc.ARM_RATE:
+            if abs(theta) < lc.ARM_TILT and abs(gyro) < lc.ARM_RATE and (locked or not need_lock):
                 still_since = t if still_since is None else still_since
                 if t - still_since >= lc.ARM_HOLD_S:
                     phase, t_arm = 1, t
+                    stats["t_arm"] = t - t0
                     c.reset()
                     if on_arm is not None:
                         on_arm()
@@ -227,7 +262,8 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
                 still_since = None
             if phase == 0 and tick % 200 == 0:     # once a second: how far from the arming window
                 say(f"  waiting to arm: pitch {theta:+.3f} rad (need |pitch| < {lc.ARM_TILT}), "
-                    f"rate {gyro:+.2f} rad/s (need < {lc.ARM_RATE})")
+                    f"rate {gyro:+.2f} rad/s (need < {lc.ARM_RATE})"
+                    + ("" if locked or not need_lock else "; no lock to the HAT's lines yet"))
             if phase == 0 and t - t0 > lc.ARM_TIMEOUT_S:
                 reason = f"not armed within {lc.ARM_TIMEOUT_S:.0f} s"
         t_cmd = None
@@ -325,9 +361,10 @@ def coast_check(hat, wait=1.0, window=0.1):
     """Wheel speeds (deg/s, forward-positive) `wait` s after the loop stopped: ~0 if the trip really coasted."""
     hat.coast()
     time.sleep(wait)
-    p0 = [hat.latest(p).pos for p in (LEFT, RIGHT)]
+    p0 = [hat.latest(p) for p in (LEFT, RIGHT)]
     time.sleep(window)
-    return [round((hat.latest(p).pos - a) / window, 1) for p, a in zip((LEFT, RIGHT), p0)]
+    p1 = [hat.latest(p) for p in (LEFT, RIGHT)]
+    return [None if a is None or b is None else round((b.pos - a.pos) / window, 1) for a, b in zip(p0, p1)]
 
 
 # ------------------------------------------------------------------------------------ main ---
@@ -352,10 +389,11 @@ def main(argv=None):
     ap.add_argument("--calibration", default=lc.CALIBRATION_FILE)
     ap.add_argument("--no-calibration", action="store_true", help="pitch zero 0 (no calibration.json)")
     ap.add_argument("--pitch-zero", type=float, help="override the pitch zero (rad), e.g. the tilt on a bench stand")
-    ap.add_argument("--no-line-lock", action="store_true", help="tick on the Pi's clock, not the HAT's line grid")
+    ap.add_argument("--no-line-lock", action="store_true",
+                    help="tick on the Pi's clock, not the HAT's line grid (bench experiments only: tuned gains assume the lock)")
     ap.add_argument("--line-phase", type=float, help=f"command write phase after the line grid, s "
                     f"(default loop_config.LINE_WRITE_PHASE_S = {lc.LINE_WRITE_PHASE_S})")
-    ap.add_argument("--inject", choices=("loop", "hang", "stale", "vin", "fault"))
+    ap.add_argument("--inject", choices=("loop", "hang", "stale", "vin", "fault", "imu", "unlock"))
     ap.add_argument("--inject-at", type=float, default=1.0, help="s after arming")
     ap.add_argument("--sim", action="store_true", help="closed loop with the simulator instead of hardware")
     ap.add_argument("--sim-pitch", type=float, default=0.03, help="--sim: pitch the robot is held at (rad)")
@@ -452,12 +490,18 @@ def main(argv=None):
     gc.collect()
     gc.freeze()
     gc.disable()
+    rows, stats, crash = [], {}, None
     try:
         rows, reason, t_arm = run(hat, imu, clock, brain, safety, a.seconds, watchdog, on_arm,
                                   drive=not a.no_drive, inject=a.inject, inject_at=a.inject_at,
-                                  line_clock=line_clock, pacer=pacer)
+                                  line_clock=line_clock, pacer=pacer, rows=rows, stats=stats)
+    except Exception as e:          # any bug or I/O error in the loop: still coast, then write the logs (review G2)
+        crash = e
+        reason, t_arm = f"crashed: {type(e).__name__}: {e}", stats.get("t_arm")
     finally:
         gc.enable()
+        if not a.sim:
+            hat.emergency_coast()   # first, before the watchdog stops, and without the write lock
         if watchdog is not None:
             watchdog.stop()
         if not a.sim:
@@ -467,6 +511,8 @@ def main(argv=None):
                 hat.close()
                 imu.close()
     print(f"stopped: {reason}")
+    if stats.get("IMU read errors"):
+        notes["IMU read errors"] = stats["IMU read errors"]
     if line_clock is not None and line_clock.t_ref is not None:
         notes["line period at end"] = (f"{line_clock.period * 1e3:.5f} ms "
                                        f"({(line_clock.period / hat_period - 1) * 1e6:+.0f} ppm vs nominal)")
@@ -482,6 +528,8 @@ def main(argv=None):
     for line in write_logs(base, rows, reason, t_arm, meta, notes):
         print(line)
     print(f"logs: {base}_*")
+    if crash is not None:
+        raise crash
     return reason
 
 
