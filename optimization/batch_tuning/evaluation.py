@@ -76,7 +76,8 @@ def robot_from_eval_config(config: EvalConfig, **overrides) -> BatchRobot:
     return BatchRobot.from_params(
         config.params, config.motor,
         voltage_estimate=config.voltage_estimate if config.motor is not None else None,
-        voltage_feedforward=config.voltage_feedforward, **overrides)
+        voltage_feedforward=config.voltage_feedforward,
+        voltage_feedforward_gain=config.voltage_feedforward_gain, **overrides)
 
 
 def decode_units(space: SearchSpace, units) -> np.ndarray:

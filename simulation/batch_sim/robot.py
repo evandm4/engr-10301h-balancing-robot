@@ -39,13 +39,14 @@ class BatchRobot:
     # n_motors, gear_ratio and max_torque are the robot's own). Needs dc_motor.
     voltage_mode: bool = False
     voltage_feedforward: bool = True
+    voltage_feedforward_gain: object = 1.0   # share of the back-EMF the robot code cancels; a plain number, never randomized
     est_torque_constant: object = None
     est_resistance: object = None
     est_gear_efficiency: object = None
 
     @classmethod
     def from_params(cls, params, motor=None, voltage_estimate=None, voltage_feedforward=True,
-                    **overrides) -> "BatchRobot":
+                    voltage_feedforward_gain=1.0, **overrides) -> "BatchRobot":
         """Build from balance_sim's RobotParams and (optional) MotorParams.
 
         motor=None means the ideal actuator, as in the CPU code. Keyword
@@ -68,6 +69,7 @@ class BatchRobot:
             if motor is None:
                 raise ValueError("voltage_estimate needs a motor")
             values.update(voltage_mode=True, voltage_feedforward=voltage_feedforward,
+                          voltage_feedforward_gain=voltage_feedforward_gain,
                           est_torque_constant=voltage_estimate.torque_constant,
                           est_resistance=voltage_estimate.resistance,
                           est_gear_efficiency=voltage_estimate.gear_efficiency)

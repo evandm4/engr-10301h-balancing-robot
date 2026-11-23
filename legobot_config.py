@@ -41,7 +41,7 @@ from config import (
 # DATASHEET 2.1. The motor housings ride with the body; the motors' output-side
 # inertia is ActuatorConfig.rotor_inertia below, not wheel_inertia.
 ROBOT = RobotConfig(
-    body_mass=0.55,                # kg, Est. (section 4): motors, Pi, both HATs, battery, frame
+    body_mass=0.44,                # kg, measured 2026-11-22 (gram scale): motors, Pi, both HATs, battery, frame
     body_com_height=0.09,          # m, Est. (design choice: where the battery sits)
     body_inertia=0.0035,           # kg m^2 about the body's own COM, Est. (section 4)
     wheel_mass=0.078,              # kg, both wheels, measured: 39 g each with axle
@@ -120,7 +120,7 @@ TIMING = TimingConfig(
 ROBUSTNESS = replace(
     RobustnessSettings(),
     randomize=(
-        ("body_mass", 0.15),
+        ("body_mass", 0.01),           # measured (gram scale; DATASHEET 2.1)
         ("body_com_height", 0.15),
         ("body_inertia", 0.30),
         ("wheel_inertia", 0.20),
@@ -149,7 +149,8 @@ ROBUSTNESS = replace(
 # (2.05 kg of equivalent mass at r = 34.5 mm) doubles the torque per unit acceleration and
 # the motors are slow. So the cap and the speed are chosen together: the cap that maximizes
 # top speed x lean-cap acceleration on the limiting corner (the weakest robot's peak power),
-# 12 deg (0.209 rad: 1.41 m/s^2, 0.132 N m nominal), and its top speed, 0.266 m/s -> 0.26.
+# 13 deg (0.227 rad: 1.50 m/s^2, 0.136 N m nominal), and its top speed, 0.263 m/s -> 0.26.
+# (12 deg before the body mass was measured: 0.55 -> 0.44 kg, 2026-11-22.)
 #
 # Baselines (A4). The model-based design (pid_design) keeps config.py's design choices; on
 # this robot it gives (3.64, 3.46, 0.38, 0.36), stable for latencies 0-80 ms. config.py's
@@ -159,51 +160,51 @@ ROBUSTNESS = replace(
 # oscillating, kv_p up for the slower goal, ki up; stable for latencies 0-67 ms.
 CONTROLLER = replace(
     ControllerConfig(),
-    max_lean_deg=12.0,
+    max_lean_deg=13.0,
     hand_tuned_gains=(6.0, 2.0, 0.5, 0.3),     # kp, ki, kd, kv_p
 )
 
 # The Pololu scenario's proportions and start times, sized from this robot with its
-# voltage-mode driver (the robot code's constants nominal, the true ones at the corner;
-# with current mode the push and tilt were 0.0482 N s and 0.193 rad, 4% and 8% more):
+# voltage-mode driver (the robot code's constants nominal, the true ones at the corner)
+# and the measured 0.44 kg body:
 #   t = 0-2 s        start tilt, goal 0.
 #   t = 2-2.75 s     0 -> 0.26 m/s in 0.75 s: peak 0.76 m/s^2, a 0.117 rad lean (Pololu's
-#                    0.25 / 0.30 of pitch_limit_rad); 54% of the lean-cap acceleration.
+#                    0.25 / 0.30 of pitch_limit_rad); 51% of the lean-cap acceleration.
 #   t = 2.75-9.5 s   cruise at 0.26 m/s, 41% of the nominal no-load speed (Pololu 53%). Every
 #                    corner still has, after friction, its own lean-cap torque here.
-#   t = 5.5, 7.5 s   pushes, forward then backward: 0.90 N for 50 ms = 0.045 N s, 97% of the
+#   t = 5.5, 7.5 s   pushes, forward then backward: 0.85 N for 50 ms = 0.0425 N s, 98% of the
 #                    largest forward push a full-torque response catches at 0.26 m/s on every
-#                    corner (0.0462 N s: light, tall, high rotor inertia, weakest motor at high
-#                    speed, most friction; 0.158 nominal at 10 ms). 50 ms is under the 124 ms
-#                    fastest unstable time constant (145 ms nominal). Backward: 0.18 catchable,
+#                    corner (0.0434 N s: light, tall, high rotor inertia, weakest motor at high
+#                    speed, most friction; 0.129 nominal at 10 ms). 50 ms is under the 136 ms
+#                    fastest unstable time constant (153 ms nominal). Backward: 0.17 catchable,
 #                    easy (braking is helped by back-EMF), as on the Pololu robot.
 #   t = 9.5-10.9 s   0.26 -> -0.10 m/s in 1.4 s: 0.56 m/s^2, 0.086 rad (Pololu's share).
 #   t = 10.9-14 s    cruise backward at -0.10 m/s (Pololu's 0.5/1.3 of top speed); 2.9 rad/s
 #                    at the wheels, so Coulomb friction has fully flipped.
-#   t = 14-15.15 s   -0.10 -> 0 in 1.15 s: 0.19 m/s^2, 0.028 rad.
-#   t = 15.15-20 s   standing still.
+#   t = 14-15.2 s    -0.10 -> 0 in 1.2 s: 0.18 m/s^2, 0.028 rad.
+#   t = 15.2-20 s    standing still.
 # Start tilts 0.0233, -0.07, 0.14 rad: Pololu's shares (1/6, -1/2, 1) of pitch_limit_rad,
-# whose 0.14 is 77% of the 0.178 rad a full-torque response catches on every corner (heavy,
-# tall, high rotor inertia, weakest motor; 0.343 nominal at 10 ms), as 0.30 was of 0.39.
+# whose 0.14 is 77% of the 0.184 rad a full-torque response catches on every corner (heavy,
+# tall, high rotor inertia, weakest motor; 0.344 nominal at 10 ms), as 0.30 was of 0.39.
 SCENARIO = replace(
     ScenarioConfig(),
     goal_steps=(
         (2.0, 0.26, 0.75),    # aggressive: 0.76 m/s^2, 0.117 rad of lean
         (9.5, -0.10, 1.4),    # brake and reverse: 0.56 m/s^2
-        (14.0, 0.0, 1.15),    # gentle stop: 0.19 m/s^2
+        (14.0, 0.0, 1.2),     # gentle stop: 0.18 m/s^2
     ),
     pushes=(
-        (5.5, 0.05, 0.90),    # from behind at 0.26 m/s
-        (7.5, 0.05, -0.90),   # from the front at 0.26 m/s
+        (5.5, 0.05, 0.85),    # from behind at 0.26 m/s
+        (7.5, 0.05, -0.85),   # from the front at 0.26 m/s
     ),
     start_pitches_deg=(1.335, -4.0107, 8.0214),    # 0.0233, -0.07, 0.14 rad
 )
 
 # Cost limits (CostConfig's Bryson rule), in the Pololu cost's proportions:
 #   pitch_limit_rad 0.14: 77% of the catchable start tilt; between the 0.117 rad the goal
-#     profile needs and the 0.209 rad lean cap (67% of it; Pololu 69%).
+#     profile needs and the 0.227 rad lean cap (62% of it; Pololu 69%).
 #   velocity_limit 0.04 m/s: Pololu's 0.2/1.3 of the top speed.
-#   torque_limit 0.10 N m: Pololu's 0.1/0.135 of the nominal lean-cap torque (0.132), so
+#   torque_limit 0.10 N m: Pololu's 0.1/0.135 of the nominal lean-cap torque (0.136), so
 #     pitch and effort trade as they do there; 20% of max_torque. Holding the cruise
 #     against the friction the robustness test draws takes 0.03-0.09 N m.
 # Weights: velocity (0.14/0.04)^2 = 12.25, effort (0.14/0.10)^2 = 1.96. Fall penalty: the

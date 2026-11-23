@@ -156,13 +156,14 @@ class VoltageModeActuator(Actuator):
     """
 
     def __init__(self, motor: MotorParams, estimate: Optional[MotorParams] = None,
-                 max_torque: Optional[float] = None, feedforward: bool = True):
+                 max_torque: Optional[float] = None, feedforward: bool = True, feedforward_gain: float = 1.0):
         if max_torque is not None and max_torque <= 0:
             raise ValueError("max_torque must be positive")
         self.m = motor
         self.estimate = motor if estimate is None else estimate
         self.max_torque = max_torque
         self.feedforward = feedforward
+        self.feedforward_gain = feedforward_gain   # share of the back-EMF the robot code cancels (1 = all)
 
     def drive(self, command: float, measured_wheel_speed: float) -> float:
         e = self.estimate
@@ -170,7 +171,8 @@ class VoltageModeActuator(Actuator):
             command = _clip(command, -self.max_torque, self.max_torque)
         volts = e.resistance * (command / (e.n_motors * e.gear_ratio * e.gear_efficiency * e.torque_constant))
         if self.feedforward:
-            volts = volts + e.torque_constant * (e.gear_ratio * measured_wheel_speed)
+            back_emf = e.torque_constant * (e.gear_ratio * measured_wheel_speed)
+            volts = volts + (back_emf if self.feedforward_gain == 1.0 else self.feedforward_gain * back_emf)
         return float(_clip(volts, -self.m.supply_voltage, self.m.supply_voltage))
 
     def torque(self, command: float, relative_wheel_speed: float) -> float:

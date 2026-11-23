@@ -53,7 +53,9 @@ def voltage_drive(robot: BatchRobot, command, x_dot, theta_dot, xp=np):
     volts = robot.est_resistance * xp.divide(
         c, robot.n_motors * robot.gear_ratio * robot.est_gear_efficiency * robot.est_torque_constant)
     if robot.voltage_feedforward:
-        volts = volts + robot.est_torque_constant * (robot.gear_ratio * w_hat)
+        back_emf = robot.est_torque_constant * (robot.gear_ratio * w_hat)
+        gain = robot.voltage_feedforward_gain
+        volts = volts + (back_emf if gain == 1.0 else gain * back_emf)
     return xp.clip(volts, -robot.supply_voltage, robot.supply_voltage)
 
 

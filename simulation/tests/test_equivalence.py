@@ -43,11 +43,12 @@ CONFIGS = {
 }
 
 
-def _voltage_config(feedforward=True, base=SHORT):
+def _voltage_config(feedforward=True, base=SHORT, gain=1.0):
     """Voltage-mode driver whose constants (resistance x 0.9, torque constant x 1.1) differ from the true motor."""
     estimate = replace(base.motor, resistance=base.motor.resistance * 0.9,
                        torque_constant=base.motor.torque_constant * 1.1)
-    return replace(base, voltage_estimate=estimate, voltage_feedforward=feedforward)
+    return replace(base, voltage_estimate=estimate, voltage_feedforward=feedforward,
+                   voltage_feedforward_gain=gain)
 
 
 VOLTAGE_CONFIGS = {
@@ -55,6 +56,8 @@ VOLTAGE_CONFIGS = {
     "no_feedforward": _voltage_config(False),
     "exact_constants": replace(SHORT, voltage_estimate=SHORT.motor),
     "latency_between_steps": _voltage_config(True, replace(SHORT, latency=0.0037)),
+    "gain_1p2": _voltage_config(True, gain=1.2),
+    "gain_0p9": _voltage_config(True, gain=0.9),
     "current_limited": _voltage_config(True, replace(SHORT, motor=replace(SHORT.motor, current_limit=0.8))),
 }
 
@@ -100,7 +103,7 @@ def test_voltage_mode_costs_and_falls_match_reference(name):
     assert 0 < result.n_fell.sum() < result.costs.size
 
 
-@pytest.mark.parametrize("name", ["feedforward", "no_feedforward", "latency_between_steps"])
+@pytest.mark.parametrize("name", ["feedforward", "no_feedforward", "latency_between_steps", "gain_1p2", "gain_0p9"])
 def test_voltage_mode_trajectories_match_reference_exactly(name):
     config = VOLTAGE_CONFIGS[name]
     ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
@@ -122,6 +125,13 @@ def test_voltage_mode_differs_from_current_mode():
     current = BatchEvaluator(SHORT, SPACE).evaluate_population(gains).costs
     voltage = BatchEvaluator(VOLTAGE_CONFIGS["no_feedforward"], SPACE).evaluate_population(gains).costs
     assert not np.allclose(current, voltage, rtol=1e-6)
+
+
+def test_voltage_feedforward_gain_changes_the_result():
+    gains = _candidates(n=6, seed=5)
+    base = BatchEvaluator(VOLTAGE_CONFIGS["feedforward"], SPACE).evaluate_population(gains).costs
+    scaled = BatchEvaluator(VOLTAGE_CONFIGS["gain_1p2"], SPACE).evaluate_population(gains).costs
+    assert not np.allclose(base, scaled, rtol=1e-6)
 
 
 @pytest.mark.parametrize("feedforward", [True, False])

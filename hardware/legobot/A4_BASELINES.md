@@ -4,7 +4,41 @@ SOFTWARE_PLAN A4, 2026-11-22. The LEGO robot (`legobot_config.py`) on its derive
 `legobot_scenario.py`), with the voltage-mode driver since B1, the simulated IMU since B2 and the encoder model since B3. These are the reference points the
 LEGO tuning runs (E1, E2) are compared against. Re-score with `python hardware/legobot/legobot_baselines.py`.
 
-## Scores with the encoder model (B3; current)
+## Scores with the measured body mass (current)
+
+Body mass measured at 0.44 kg (was the 0.55 kg estimate; spread now ±1%). The scenario was re-derived
+for it: lean cap 13° (was 12°), pushes 0.85 N (was 0.90 N; 98% of the 0.0434 N s catchable on every
+corner), gentle stop 1.2 s. The model-based design follows the robot; the hand-tuned gains don't.
+
+| Baseline | Plain (seeds 1–3, 9 runs) | Robust, train seeds 1–50 (150) | Robust, dev seeds 5000–5049 (150) | Dev chaos |
+|---|---|---|---|---|
+| Hand-tuned PID (6, 2, 0.5, 0.3) | 2.405 (0) | 2.716 (0) | 2.668 (0) | 4.5e-3 |
+| Model-based PID (3.44, 3.09, 0.38, 0.34) | 2.136 (0) | 111.4 (9) | 109.0 (9) | 0.068 |
+| Cost-matched LQR | 2.039 (0) | 3.185 (0) | 27.42 (2) | 0.15 |
+
+### Feedforward fixes tried (dev seeds, 0.55 kg body, before the mass update)
+
+All 150 development scenarios in the reference engine (it reproduces the batched scores exactly).
+Mean cost (falls of 150):
+
+| Robot code | Hand-tuned PID | Model-based PID | Cost-matched LQR |
+|---|---|---|---|
+| Feedforward as configured (gain 1) | 2.64 (0) | 99.4 (8) | 39.5 (3) |
+| Velocity from the encoder plus the gyro averaged over the same 10 ms | 2.62 (0) | 99.2 (8) | 38.5 (3) |
+| Feedforward gain 0.8 / 0.9 | 13.1 (1) / 3.08 (0) | 269 (23) / 158 (13) | 39.9 (3) / 39.7 (3) |
+| Feedforward gain 1.05 / 1.1 / 1.2 / 1.3 | 2.48 / 2.35 / 2.16 / 2.05 (0) | 74.9 (6) / 48.2 (4) / 39.0 (3) / 132 (11) | 39.4 (3) / 39.4 (3) / 49.4 (4) / 112 (9) |
+| Oracle: feedforward given the true wheel speed at the tick | 2.58 (0) | 50.7 (4) | 26.2 (2) |
+| Oracle speed and the robot's exact constants | 2.53 (0) | 26.2 (2) | 1.98 (0) |
+
+The stale wheel speed in the feedforward is half of the problem and the constants' mismatch the other
+half. Leaving some back-EMF uncancelled (gain < 1) is worse: the drag that remains feeds the velocity
+loop's runaway (PHYSICS.md 9.4). Over-cancelling a little offsets the stale speed, but the best gain
+depends on the controller (hand-tuned keeps improving to 1.3, model-based is best near 1.2, the LQR at
+1.0–1.1). So `ActuatorConfig.voltage_feedforward_gain` (default 1.0) is a robot-code setting to tune
+together with each controller's gains in E1. Syncing the gyro to the encoder interval changed nothing
+and was not kept.
+
+## Scores with the encoder model (B3, superseded by the mass update)
 
 Since B3 the velocity the controller (and the feedforward) sees comes from the motors' encoders as the
 Build HAT reports them: 1° counts sampled at 100 Hz, 5 ms in transit, held, differenced 10 ms apart.

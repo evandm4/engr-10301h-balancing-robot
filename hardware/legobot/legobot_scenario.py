@@ -53,7 +53,8 @@ def nominal_robot(cfg: ProjectConfig, driver: str = None) -> BatchRobot:
     motor = cfg.actuator.build_motor_params()
     voltage = (cfg.actuator.model == "voltage") if driver is None else driver == "voltage"
     return BatchRobot.from_params(cfg.build_robot_params(), motor, voltage_estimate=motor if voltage else None,
-                                  voltage_feedforward=cfg.actuator.voltage_feedforward)
+                                  voltage_feedforward=cfg.actuator.voltage_feedforward,
+                                  voltage_feedforward_gain=cfg.actuator.voltage_feedforward_gain)
 
 
 def drive(R: BatchRobot, command, x_dot, theta_dot):
@@ -269,8 +270,8 @@ POLOLU_VELOCITY_LIMIT_SHARE = 0.2 / 1.3       # velocity_limit / top speed
 POLOLU_TORQUE_LIMIT_OF_CAP = 0.1 / 0.135      # torque_limit / nominal lean-cap torque
 POLOLU_PUSH_SHARE = 0.145 / 0.149             # push / largest catchable on every corner
 # What a full run of the catch simulations gives for legobot_config.py as of 2026-11-22
-# (DATASHEET 2 values, voltage-mode driver), for --quick. Re-run without --quick after changing the config.
-RECORDED_CATCH = dict(forward=0.0462, backward=0.1805, tilt=0.178, nominal_forward=0.158, nominal_tilt=0.343)
+# (DATASHEET 2 values with the measured 0.44 kg body, voltage-mode driver), for --quick. Re-run without --quick after changing the config.
+RECORDED_CATCH = dict(forward=0.0434, backward=0.1702, tilt=0.184, nominal_forward=0.129, nominal_tilt=0.344)
 
 
 def lean_cap_table(N, R, caps_deg):

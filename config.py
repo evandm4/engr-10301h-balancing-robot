@@ -127,6 +127,11 @@ class ActuatorConfig:
 
     model: str = "dc_motor"            # "ideal", "dc_motor" or "voltage"
     voltage_feedforward: bool = True   # "voltage" only: add k N w^ to the drive voltage
+    # "voltage" only: the share of the estimated back-EMF the robot code adds. 1 cancels it as
+    # estimated. The wheel speed it uses is 5-15 ms old on the LEGO robot, and slightly more
+    # than 1 helped some controllers and hurt others (hardware/legobot/A4_BASELINES.md), so it
+    # is a robot-code setting to tune with each controller's gains.
+    voltage_feedforward_gain: float = 1.0
 
     # Pololu 20.4:1 Metal Gearmotor 25Dx65L mm HP 6V with 48 CPR encoder (item 4803), run
     # from a 2S LiPo. Constants derived from Pololu's catalogue numbers (DATASHEET.md 3.1, 5.1).
@@ -166,7 +171,8 @@ class ActuatorConfig:
             return DCMotorActuator(self.build_motor_params(), max_torque=robot.max_torque)
         if self.model == "voltage":
             motor = self.build_motor_params()
-            return VoltageModeActuator(motor, motor, max_torque=robot.max_torque, feedforward=self.voltage_feedforward)
+            return VoltageModeActuator(motor, motor, max_torque=robot.max_torque, feedforward=self.voltage_feedforward,
+                                       feedforward_gain=self.voltage_feedforward_gain)
         raise ValueError(f"Unknown actuator model {self.model!r}; use 'ideal', 'dc_motor' or 'voltage'")
 
     @property
@@ -691,6 +697,7 @@ class ProjectConfig:
             velocity_integral_limit=self.controller.velocity_integral_limit,
             voltage_estimate=self.actuator.build_motor_params() if self.actuator.model == "voltage" else None,
             voltage_feedforward=self.actuator.voltage_feedforward,
+            voltage_feedforward_gain=self.actuator.voltage_feedforward_gain,
         )
 
     def snapshot(self) -> dict:

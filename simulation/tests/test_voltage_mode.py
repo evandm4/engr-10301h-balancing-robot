@@ -27,6 +27,20 @@ def test_exact_feedforward_matches_the_current_mode_motor(command, speed):
     assert volt.torque(volt.drive(command, speed), speed) == pytest.approx(current.torque(command, speed), abs=1e-12)
 
 
+def test_feedforward_gain_scales_the_back_emf_term():
+    """Exact constants: torque = current-mode torque + (gain - 1) n N eta k (k N w) / R."""
+    m = big_current_limit(MOTOR)
+    gain = 1.2
+    volt = VoltageModeActuator(m, m, max_torque=LIMIT, feedforward=True, feedforward_gain=gain)
+    current = DCMotorActuator(m, max_torque=LIMIT)
+    k, N = m.torque_constant, m.gear_ratio
+    for command in (-0.2, 0.0, 0.15):
+        for w in (-8.0, 0.0, 5.0):
+            extra = (gain - 1) * m.n_motors * N * m.gear_efficiency * k * (k * N * w) / m.resistance
+            assert volt.torque(volt.drive(command, w), w) == pytest.approx(current.torque(command, w) + extra,
+                                                                           abs=1e-12)
+
+
 def test_plain_voltage_mode_is_viscous_drag_below_the_limits():
     """Feedforward off: tau = tau_c - c_m w, c_m = n N^2 eta k^2 / R (PHYSICS.md 9.3)."""
     m = big_current_limit(MOTOR)

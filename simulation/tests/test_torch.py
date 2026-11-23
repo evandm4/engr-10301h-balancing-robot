@@ -174,6 +174,22 @@ def test_voltage_mode_float64_matches_numpy(device, feedforward):
     np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
 
 
+def test_voltage_feedforward_gain_float64_matches_numpy():
+    evaluator = BatchEvaluator(replace(SHORT, voltage_estimate=_estimate(SHORT.motor),
+                                       voltage_feedforward_gain=1.2), SPACE)
+    assert evaluator.robot.voltage_feedforward_gain == 1.2
+    G, pitch, seed_index, noise = _flat(evaluator, _near_hand_tuned(32))
+    ref = simulate_batch(evaluator.spec, evaluator.robot, G, pitch, noise, seed_index, evaluator.schedule,
+                         record=True)
+    got = TorchSimulator(evaluator.spec, evaluator.robot, len(G), noise, evaluator.schedule, device="cpu",
+                         dtype=torch.float64, record=True).run(G, pitch, seed_index)
+    up = ~ref.fell
+    assert up.sum() >= 0.5 * len(G)
+    assert not got.fell[up].any()
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
+    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
+
+
 @needs_cuda
 def test_full_default_scenario_float64_matches_numpy():
     from config import CONFIG

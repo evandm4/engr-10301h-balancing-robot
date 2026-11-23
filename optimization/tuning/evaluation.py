@@ -66,6 +66,7 @@ class EvalConfig:
     # DC motor: the robot code's motor constants (its estimate of `motor`); None = current mode.
     voltage_estimate: Optional[MotorParams] = None
     voltage_feedforward: bool = True           # back-EMF feedforward on (voltage mode only)
+    voltage_feedforward_gain: float = 1.0      # share of the estimated back-EMF added (voltage mode only)
 
 
 @dataclass
@@ -92,7 +93,8 @@ class Evaluator:
             actuator = None
         elif c.voltage_estimate is not None:
             actuator = VoltageModeActuator(c.motor, c.voltage_estimate, max_torque=c.params.max_torque,
-                                           feedforward=c.voltage_feedforward)
+                                           feedforward=c.voltage_feedforward,
+                                           feedforward_gain=c.voltage_feedforward_gain)
         else:
             actuator = DCMotorActuator(c.motor, max_torque=c.params.max_torque)
         return Planar2D(c.params, fall_angle=c.fall_angle, actuator=actuator)
