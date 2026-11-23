@@ -22,6 +22,7 @@ fault (a fake "Motor power fault"). The tilt and stall trips are tested by hand 
 import argparse
 import gc
 import math
+import signal
 import os
 import statistics as st
 import threading
@@ -332,6 +333,9 @@ def main(argv=None):
     ap.add_argument("--export-gains", metavar="PATH",
                     help="write --controller's gains as a JSON the robot can load, and exit (LQR designs need scipy)")
     a = ap.parse_args(argv)
+    # run_safe.sh starts Python as a background job, which inherits SIGINT as ignored: restore Ctrl-C now,
+    # so it works while the HAT opens; install_safety() replaces this handler once the HAT is open.
+    signal.signal(signal.SIGINT, signal.default_int_handler)
 
     cfg = control.load_robot_config()
     controller, desc = control.build_controller(cfg, a.controller, a.goal)

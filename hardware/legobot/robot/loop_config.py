@@ -16,8 +16,8 @@ CPU = 3                    # pin the loop (and the threads it starts) to this co
 CALIBRATION_FILE = "calibration.json"   # in ~/legobot; written by robot.calibrate
 GYRO_CAL_S = 2.0           # robot still for this long at startup: gyro bias = mean pitch rate
 GYRO_CAL_MAX_SD = 0.05     # rad/s: refuse the bias (robot moved) above this sd; the sim assumes 0.02 of noise, a hand adds tremor
-GYRO_CAL_MAX_BIAS = 0.05   # rad/s: refuse a bias this large (2.9 deg/s; the chip's spec is +-5 deg/s raw,
-                           # but a large one usually means the robot was turning)
+GYRO_CAL_MAX_BIAS = 0.10   # rad/s: refuse a larger bias. The ICM-20948's zero-rate offset is spec'd at +-5 deg/s
+                           # (0.087 rad/s); this chip reads 0.044-0.047 at rest (2026-11-23). Motion is caught by the sd
 ACCEL_G_TOLERANCE = 0.05   # |specific force| must be within 5% of g during calibration (robot still)
 
 # ---- arming (D3) ----

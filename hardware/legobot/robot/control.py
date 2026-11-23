@@ -8,8 +8,9 @@ runs what was tuned:
     as balance_sim.Encoder computes it (B3), and velocity = r (wheel speed + gyro rate) as SensorNoise does;
   - the controller is balance_sim's CascadedPIDController (or LQRController), built by legobot_config's
     ProjectConfig with its torque cap, lean cap and integral limits;
-  - the drive voltage is balance_sim.VoltageModeActuator.drive with the config's nominal constants (B1),
-    per wheel with that wheel's speed, as a duty of the measured battery voltage.
+  - the duty is the config's actuator model's own drive() (B1, B1b) with its nominal constants and the
+    measured battery voltage, per wheel with that wheel's speed: SlowPwmActuator's inverse of the HAT's slow
+    PWM ("slow_pwm"), or VoltageModeActuator's voltage divided by vin ("voltage").
 
 Nothing here touches the hardware, so robot.sim_hw can run it in closed loop with the simulator.
 
@@ -23,6 +24,9 @@ from dataclasses import replace
 from pathlib import Path
 
 from . import loop_config as lc
+
+
+DRIVER_MODELS = ("slow_pwm", "voltage")   # actuator models whose drive() the robot can send to the HAT
 
 
 def import_config():
@@ -39,10 +43,10 @@ def import_config():
 
 
 def load_robot_config():
-    """legobot_config's ProjectConfig. Refuses one whose actuator isn't the voltage-mode model."""
+    """legobot_config's ProjectConfig. Refuses an actuator model the Build HAT can't run (ideal, dc_motor)."""
     cfg = import_config().load_config("legobot")
-    if cfg.actuator.model != "voltage":
-        raise ValueError(f"legobot actuator model is {cfg.actuator.model!r}; the robot code needs 'voltage' (B1)")
+    if cfg.actuator.model not in DRIVER_MODELS:
+        raise ValueError(f"legobot actuator model is {cfg.actuator.model!r}; the robot code runs {DRIVER_MODELS}")
     return cfg
 
 
@@ -135,20 +139,24 @@ class PitchEstimator:
 
 # ---------------------------------------------------------------------------------- actuation ---
 class Feedforward:
-    """Torque command -> duty per wheel, by VoltageModeActuator.drive (B1) with the config's nominal motor
-    constants, the robot's torque cap, and the config's feedforward on/off and gain:
+    """Torque command -> duty per wheel, by the config actuator model's drive() with the config's nominal
+    motor constants, the robot's torque cap, and the config's feedforward on/off and gain. Per wheel, with
+    a^ = eta^ k^ / R^ and w that wheel's measured speed:
 
-        V = R^ tau_c / (n eta^ k^) + gain k^ w_wheel,   clipped to +-supply;   duty = V / (vin plimit)
+      "slow_pwm" (B1b, pwmparams 1 0.01): d = (tau_c / n) / (a^ (V -+ gain k^ w)), - for tau >= 0, + below
+      "voltage"  (B1):  V_drive = R^ tau_c / (n eta^ k^) + gain k^ w, clipped to +-V;  d = V_drive / V
 
-    Each wheel gets half the torque (the n in the formula) and its own back-EMF. supply is the battery
-    voltage the HAT reports (set_supply), so the clip and the duty use the real voltage as in the sim.
-    Assumes the HAT's output voltage is duty x vin x plimit: the pwmparams slow/fast PWM switch makes
-    the real map nonlinear at small duty (DATASHEET 3.3); C3 measures it."""
+    Each wheel gets half the torque (the n) and its own back-EMF. V is the battery voltage the HAT reports
+    (set_supply) times port_plimit, so the duty uses the real voltage as the sim's true supply does."""
 
     def __init__(self, cfg, gain=None, plimit=1.0):
         sim = import_config()  # noqa: F841
-        from balance_sim import VoltageModeActuator
-        self._cls = VoltageModeActuator
+        import balance_sim
+        self.model = cfg.actuator.model
+        if self.model not in DRIVER_MODELS:
+            raise ValueError(f"no robot-side driver for actuator model {self.model!r}")
+        self._cls = balance_sim.SlowPwmActuator if self.model == "slow_pwm" else balance_sim.VoltageModeActuator
+        self._per_volt = self.model == "voltage"     # its drive() returns volts, not a duty
         self.motor = cfg.actuator.build_motor_params()
         self.max_torque = cfg.build_robot_params().max_torque
         self.enabled = cfg.actuator.voltage_feedforward
@@ -164,7 +172,9 @@ class Feedforward:
 
     def duties(self, torque, w_left, w_right):
         d = self.actuator.drive
-        return d(torque, w_left) / self.supply, d(torque, w_right) / self.supply
+        if self._per_volt:
+            return d(torque, w_left) / self.supply, d(torque, w_right) / self.supply
+        return d(torque, w_left), d(torque, w_right)
 
 
 # ------------------------------------------------------------------------------------- the brain ---

@@ -18,6 +18,7 @@ The gyro's bias is measured at every start (balance.py), and the IMU axes by rob
 import argparse
 import json
 import math
+import signal
 import statistics as st
 import time
 
@@ -123,6 +124,9 @@ def main(argv=None):
         p.add_argument("--save", action="store_true")
         p.add_argument("--file", default=lc.CALIBRATION_FILE)
     a = ap.parse_args(argv)
+    # run_safe.sh starts Python as a background job, which inherits SIGINT as ignored: restore Ctrl-C now,
+    # so it works while the HAT opens; install_safety() replaces this handler once the HAT is open.
+    signal.signal(signal.SIGINT, signal.default_int_handler)
     {"balance": balance, "signs": signs}[a.cmd](a)
 
 

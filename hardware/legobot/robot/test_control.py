@@ -29,17 +29,18 @@ def test_wheel_speed_matches_encoder_differencing():
 
 
 def test_feedforward_is_the_simulators_drive(cfg):
-    from balance_sim import VoltageModeActuator
+    """The robot's duty is the config actuator's own drive() (a duty for slow_pwm, volts / V for voltage)."""
     ff = control.Feedforward(cfg)
     act = cfg.build_actuator()
-    assert isinstance(act, VoltageModeActuator)
-    for tau, w in [(0.0, 0.0), (0.1, 3.0), (-0.2, -5.0), (0.5, 15.0)]:
+    scale = cfg.actuator.supply_voltage if cfg.actuator.model == "voltage" else 1.0
+    for tau, w in [(0.0, 0.0), (0.1, 3.0), (-0.2, -5.0), (0.3, -4.0), (0.5, 15.0)]:
         dl, dr = ff.duties(tau, w, w)
         assert dl == dr
-        assert dl * cfg.actuator.supply_voltage == pytest.approx(act.drive(tau, w))
-    # each wheel its own back-EMF; the torque term is common
+        assert dl * scale == pytest.approx(act.drive(tau, w))
+    # each wheel its own back-EMF
     dl, dr = ff.duties(0.1, 2.0, 4.0)
-    assert (dr - dl) * ff.supply == pytest.approx(ff.gain * cfg.actuator.torque_constant * 2.0)
+    assert dl * scale == pytest.approx(act.drive(0.1, 2.0)) and dr * scale == pytest.approx(act.drive(0.1, 4.0))
+    assert dr > dl
 
 
 def test_feedforward_uses_measured_battery(cfg):
@@ -140,8 +141,9 @@ def test_injected_trips(tmp_path, inject, expect):
     assert expect in reason
 
 
-def test_plain_voltage_mode_falls_and_trips(tmp_path):
-    reason = balance.main(["--sim", "--goal", "scenario", "--ff-gain", "0", "--seconds", "20",
+def test_too_weak_to_balance_falls_and_trips(tmp_path):
+    """With the duty capped far below what balancing needs, the robot falls and the tilt trip ends the run."""
+    reason = balance.main(["--sim", "--duty-cap", "0.02", "--sim-pitch", "0.045", "--seconds", "10",
                            "--outdir", str(tmp_path)])
     assert reason.startswith("tilt")
 

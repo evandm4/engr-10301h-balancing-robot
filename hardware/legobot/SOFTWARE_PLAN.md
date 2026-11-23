@@ -158,9 +158,24 @@ log records.
     where without it the HAT keeps driving), stale motor data, battery low, and motor power fault. After every one,
     both wheels were at 0 deg/s 1 s after the stop.
   - **D5:** a bench `_run.csv` replays in `simulation/animate.py --robot legobot --csv`.
-- **Still to do on hardware (needs hands):** the tilt trip (tilt past 40°) and the stall trip (hold a wheel with
-  `--bench` and a pitch offset), `robot.calibrate balance --save` and `robot.calibrate signs --wheels-off --save`.
-  The feedforward's duty formula waits on the B1 decision about the HAT's PWM mode (C3).
+- **Slow PWM (B1b), 2026-11-23:**
+  - **Feedforward:** the robot sends `SlowPwmActuator.drive()`'s duty directly, d = (τ/2)/(a(V ∓ kω)) per wheel,
+    with V = vin. `"voltage"` still works (volts / vin).
+  - **Duty check (no-drive run):** θ = −0.031 rad gave τ = −0.183 N m, and the loop sent d = −0.201 =
+    −0.0915/(0.0597 × 7.63), as the formula gives.
+  - **On the stand (cap 0.3, pwmparams 1 0.01):** both wheels turned with the duty's sign and settled at
+    14–17.5 rad/s, against about 18.5 from the measured a, k and friction. The library mode gave about 8 rad/s
+    at the same duty. Timing was unchanged: period sd 0.003 ms, 0 overruns.
+  - **Fixes:**
+    - SIGINT is restored at startup: run_safe.sh's background start leaves it ignored until `install_safety`
+      runs (C3's finding). A SIGINT at 1.5 s or 2.5 s into startup now exits within 0.34 s.
+    - The gyro-bias rejection limit was raised to 0.10 rad/s. This chip reads 0.044–0.047 at rest (spec
+      ±0.087); motion is still caught by the sd check.
+  - **Calibration:** the pitch zero in `~/legobot/calibration.json` (−0.010 ± 0.010 rad) came from C3's
+    release test, not `calibrate balance`.
+- **Still to do on hardware (needs hands):** the tilt trip (tilt past 40°), the stall trip (hold a wheel with
+  `--bench` and a pitch offset), and `robot.calibrate signs --wheels-off --save` (asks whether each wheel turned
+  forward).
 
 ### Phase E: Retune and compare
 

@@ -4,8 +4,8 @@
 
 balance.py runs its real loop against these: the IMU reads the specific force and pitch rate of
 balance_sim's Planar2D model of legobot_config's robot, the HAT reports encoder counts sampled every
-10 ms and delivered 5 ms later, and a duty command reaches the motors `latency` later as
-duty x supply volts into the voltage-mode motor model. The clock is virtual, so a run takes milliseconds.
+10 ms and delivered 5 ms later, and a duty command reaches the motor model `latency` later (the duty
+itself for "slow_pwm", duty x supply volts for "voltage"). The clock is virtual, so a run takes milliseconds.
 This checks signs, units, the estimator, feedforward and the loop's logic end to end; it is not a
 substitute for the simulator's own scoring.
 """
@@ -31,7 +31,8 @@ class SimWorld:
         self.state = self.dyn.initial_state(pitch)
         self.h = cfg.timing.dt_s
         self.t = 0.0
-        self.volts = 0.0
+        self.drive = 0.0                      # what the dynamics' actuator takes: a duty, or volts
+        self.per_volt = cfg.actuator.model == "voltage"
         self.supply = cfg.actuator.supply_voltage
         self.latency, self.encoder_delay = latency, encoder_delay
         self.period = 0.010
@@ -39,7 +40,7 @@ class SimWorld:
         self.noise = noise
         self.rng = np.random.default_rng(seed)
         self.s = cfg.sensor
-        self._pending = deque()               # (time due, volts)
+        self._pending = deque()               # (time due, drive)
         self._next_sample = 0.0
         self._encoder = deque()               # (arrival time, pos deg)
         self._pair = (None, None)
@@ -54,7 +55,7 @@ class SimWorld:
     def advance(self, target):
         while self.t + 0.5 * self.h <= target:
             while self._pending and self._pending[0][0] <= self.t + 1e-12:
-                self.volts = self._pending.popleft()[1]
+                self.drive = self._pending.popleft()[1]
             if self.t >= self._next_sample - 1e-12:
                 self._encoder.append((self.t + self.encoder_delay, math.floor(self._relative_deg())))
                 self._next_sample += self.period
@@ -62,7 +63,7 @@ class SimWorld:
                 t_arr, pos = self._encoder.popleft()
                 self._pair = (self._pair[1], MotorReading(t_arr, 0, pos, pos))
             if not self.held and abs(self.state[2]) < 1.4:
-                self.state = self._rk4(self.dyn, self.state, self.volts, self.h)
+                self.state = self._rk4(self.dyn, self.state, self.drive, self.h)
             self.t += self.h
 
     def specific_force(self):
@@ -71,7 +72,7 @@ class SimWorld:
         if self.held:
             x_dd = th_dd = th_dot = 0.0
         else:
-            d = self.dyn.derivatives(self.state, self.volts)
+            d = self.dyn.derivatives(self.state, self.drive)
             x_dd, th_dd = float(d[1]), float(d[3])
         h, g = self.s.imu_height, self.cfg.robot.gravity
         s, c = math.sin(th), math.cos(th)
@@ -130,11 +131,12 @@ class SimHat:
 
     def set_pwm(self, left, right, drain=False):
         w = self.w
-        w._pending.append((w.t + w.latency, 0.5 * (left + right) * w.supply))
+        d = 0.5 * (left + right)
+        w._pending.append((w.t + w.latency, d * w.supply if w.per_volt else d))
 
     def coast(self):
         self.w._pending.clear()
-        self.w.volts = 0.0
+        self.w.drive = 0.0
 
     emergency_coast = coast
 
