@@ -90,5 +90,5 @@ def test_config_builds_the_voltage_model():
     assert isinstance(act, VoltageModeActuator) and act.feedforward
     ec = cfg.build_eval_config()
     assert ec.voltage_estimate == cfg.actuator.build_motor_params() and ec.voltage_feedforward
-    if CONFIG.actuator.model != "voltage":
+    if CONFIG.actuator.model not in ("voltage", "slow_pwm"):    # slow PWM has the driver estimate too
         assert CONFIG.build_eval_config().voltage_estimate is None

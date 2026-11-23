@@ -87,7 +87,8 @@ def test_end_to_end_on_smoke(tmp_path):
     # Weight sensitivity: the configured variant reproduces the headline; every variant scores the
     # reference at exactly 1; the variants include halved/doubled limits, effort off and thermal.
     sens = report["weight_sensitivity"]
-    assert sens["configured"]["headline_median_ratio"]["L-PID"] == l_pid["headline_median_ratio"]
+    assert sens["configured"]["headline_median_ratio"]["L-PID"] == pytest.approx(l_pid["headline_median_ratio"],
+                                                                                 rel=1e-12)   # summed in another order
     assert all(v["headline_median_ratio"]["PID, ML-tuned"] == 1.0 for v in sens.values())
     assert len(sens) == 1 + 6 + 2 and any("thermal" in k for k in sens)
     side = ref["side_metrics"]

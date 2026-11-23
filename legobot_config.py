@@ -18,9 +18,8 @@ controller section differs only in its lean cap (A3).
 
 Select it with ROBOT=legobot or --robot legobot (config.py: load_config).
 
-Values tagged Est. or Pyb in DATASHEET 2 are placeholders until the bench
-measurements (SOFTWARE_PLAN C3) replace them; the robustness spreads cover
-them until then.
+The motor, body and sensor values are measured (SOFTWARE_PLAN C3, C4; DATASHEET 2 and 8.7), and the
+robustness spreads are shrunk to their measurement uncertainty.
 """
 
 from dataclasses import replace
@@ -29,6 +28,7 @@ from config import (
     ActuatorConfig,
     ControllerConfig,
     CostConfig,
+    SearchConfig,
     ProjectConfig,
     RobotConfig,
     RobustnessSettings,
@@ -78,6 +78,9 @@ ROBOT = RobotConfig(
 ACTUATOR = ActuatorConfig(
     model="slow_pwm",
     pwm_tick_s=0.010,              # s: the HAT's pulse-density tick (DATASHEET 8.7); a whole number of dt steps
+    pwm_tick_locked=True,          # the robot paces its loop on the HAT's line grid and won't arm or run without
+                                   # the lock (robot/balance.py), so each tick falls where a command arrives
+                                   # and the latency below is the whole sample-to-pulse delay (review G6)
     voltage_feedforward=True,
     gear_ratio=1.0,                # lumped: constants below are output-referred
     torque_constant=0.348,         # V s/rad, output k_e, measured: 0.352 / 0.344 left / right (LEGO's sheet 0.355;
@@ -125,7 +128,10 @@ SENSOR = SensorConfig(
 )
 
 # ---------------------------------------------------------------- TIMING ---
-# DATASHEET 2.4 and 6: budget about 6-15 ms; the 3 ms L/R is folded into it.
+# DATASHEET 6 and the locked loop (SOFTWARE_PLAN D2): from the IMU sample to the motor's pulse, the IMU
+# filter (~3 ms, DLPF cfg 3, est.), read + compute until the write starts (1.3 ms mean, 3.6 ms worst,
+# measured), the write to the HAT's tick (1.8 ms left, 3.8 ms right, measured by lock_sweep) and the
+# current rise (L/R ~3 ms, est.): about 9 ms (left) to 11 ms (right), 15 ms at worst. 10 ms nominal.
 TIMING = TimingConfig(
     latency_s=0.010,
     dt_s=0.0025,
@@ -163,12 +169,14 @@ ROBUSTNESS = replace(
         # COM offset e: a pitch offset of atan(e / l), 0.011 rad per mm at l = 90 mm. Last in the
         # list, so the draws above are unchanged. Plain (non-robust) runs keep +b.
         ("pitch_bias", -0.015, 0.015),        # rad
-        # B1b: the HAT's pulse-density ticks are locked to its own clock, not the robot's loop
-        # (DATASHEET 8.7), and the scores swing widely with where they fall, so each scenario draws the
-        # phase (fraction of a 10 ms tick). Plain runs keep ActuatorConfig.pwm_tick_phase (0.25).
-        ("pwm_tick_phase", 0.0, 1.0),
+        # The pulse ticks' phase is no longer drawn (it was uniform in a tick, B1b): the robot loop is
+        # locked to the ticks (ACTUATOR.pwm_tick_locked), so each scenario's phase follows its latency.
     ),
-    latency_range_s=(0.005, 0.025),           # 2.5 ms is not reachable on this hardware
+    # The locked sample-to-pulse budget (TIMING): 9-11 ms typical, 15 ms worst; drawn in whole 2.5 ms steps,
+    # so 7.5, 10, 12.5 or 15 ms. Was 5-25 ms with the tick phase drawn on top, up to 35 ms in all, against
+    # 2-4 ms of tick wait on the locked robot (review G6). Final gains still get a wider latency sweep as
+    # an evaluation, not as a training target.
+    latency_range_s=(0.0075, 0.015),
 )
 
 # ------------------------------------------- CONTROLLER, SCENARIO, COST ---
@@ -176,9 +184,10 @@ ROBUSTNESS = replace(
 # below is printed, with its derivation, by
 #     python hardware/legobot/legobot_scenario.py          (--check re-derives config.py's)
 # which repeats config.py's ScenarioConfig/CostConfig method on this robot. "Corner" means
-# every corner of ROBUSTNESS above (the tick phase held: it only matters in closed loop);
-# latency 25 ms, the top of its range. Catch tests use the averaged slow-PWM actuator at full
-# torque.
+# every corner of ROBUSTNESS above. The response starts after the top of the latency range (15 ms)
+# for a start tilt, and a tick later (25 ms) for a push, which can come just after a sample whose
+# command meets a tick (legobot_scenario.catch_latencies; review G4). Catch tests use the averaged
+# slow-PWM actuator at full torque, which is what full-duty pulses deliver.
 #
 # Lean cap and top speed. config.py fixed the lean cap at 25 deg and took the top speed as the
 # highest at which every randomized motor still has the torque that leaning at the cap needs.
@@ -252,6 +261,14 @@ COST = replace(
     fall_penalty=1000.0,
 )
 
+# ----------------------------------------------------------- SEARCH SPACE -
+# config.py's bounds, except kv_p. Its 0.9 was set from Pololu runs (a 2.0 bound settled at 0.82, 2.6x that
+# robot's model-based kv_p). kv_p is lean per unit speed error, so a robot whose speeds are a third of
+# Pololu's needs proportionally more; here the model-based design already gives 0.52 and the hand-tuned
+# 0.5. 2.0 leaves the tuner room above both (review finding G1, 2026-11-23). The kp bound is searched on a
+# log scale, so its Pololu-sized top costs little.
+SEARCH = replace(SearchConfig(), kv_p_max=2.0)
+
 # --------------------------------------------------------- PUT IT TOGETHER -
 LEGOBOT_CONFIG = ProjectConfig(
     name="legobot",
@@ -263,4 +280,5 @@ LEGOBOT_CONFIG = ProjectConfig(
     cost=COST,
     scenario=SCENARIO,
     robustness=ROBUSTNESS,
+    search=SEARCH,
 )

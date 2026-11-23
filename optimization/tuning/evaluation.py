@@ -27,12 +27,20 @@ from balance_sim import (
     SensorNoise,
     SimResult,
     cost,
+    locked_pwm_tick_phase_for,
     push_profile,
     simulate,
     step_profile,
 )
 
 from .search_space import SearchSpace
+
+
+def tick_phase(c: "EvalConfig") -> float:
+    """The PDM tick phase this config's runs use: pwm_tick_phase, or, locked, the one its latency gives."""
+    if c.pwm_tick_locked and c.slow_pwm and c.pwm_tick > 0:
+        return locked_pwm_tick_phase_for(c.latency, c.dt, c.pwm_tick, c.control_dt)
+    return c.pwm_tick_phase
 
 
 @dataclass(frozen=True)
@@ -73,6 +81,7 @@ class EvalConfig:
     slow_pwm: bool = False
     pwm_tick: float = 0.0                      # slow PWM's pulse-density tick, s; 0 = averaged
     pwm_tick_phase: float = 0.25               # where the ticks fall against the control loop, fraction of a tick
+    pwm_tick_locked: bool = False              # ticks locked to the loop: phase from the latency (ActuatorConfig)
 
 
 @dataclass
@@ -102,7 +111,7 @@ class Evaluator:
                           feedforward_gain=c.voltage_feedforward_gain)
             if c.slow_pwm:
                 actuator = SlowPwmActuator(c.motor, c.voltage_estimate, pwm_tick=c.pwm_tick,
-                                           pwm_tick_phase=c.pwm_tick_phase, **kwargs)
+                                           pwm_tick_phase=tick_phase(c), **kwargs)
             else:
                 actuator = VoltageModeActuator(c.motor, c.voltage_estimate, **kwargs)
         else:

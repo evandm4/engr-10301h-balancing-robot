@@ -6,7 +6,7 @@
 
 Stop anything else using the HAT first (balance loop, measure scripts): only one process can own /dev/serial0.
 Under load the reading sags; read it with the motors idle for the resting voltage. 2S LiPo: 8.4 V full, 7.4-7.6 V
-nominal, the robot's cutoff is 6.6 V (SOFTWARE_PLAN D3). Also prints the Pi's under-voltage flag if `vcgencmd` exists.
+nominal, the robot's cutoff is 6.8 V (loop_config.VIN_CUTOFF). Also prints the Pi's under-voltage flag if `vcgencmd` exists.
 """
 import argparse
 import subprocess

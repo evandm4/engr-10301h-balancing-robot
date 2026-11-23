@@ -10,14 +10,15 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from balance_sim import DCMotorActuator, IdealActuator, Planar2D, VoltageModeActuator
+from balance_sim import DCMotorActuator, IdealActuator, Planar2D, SlowPwmActuator, VoltageModeActuator
 from config import CONFIG, ActuatorConfig, ProjectConfig
 
 
 def test_default_config_builds_a_working_dynamics_model():
     dyn = CONFIG.build_dynamics()
     assert isinstance(dyn, Planar2D)
-    expected = {"dc_motor": DCMotorActuator, "voltage": VoltageModeActuator}[CONFIG.actuator.model]
+    expected = {"dc_motor": DCMotorActuator, "voltage": VoltageModeActuator,
+                "slow_pwm": SlowPwmActuator}[CONFIG.actuator.model]
     assert isinstance(dyn.actuator, expected)
     assert dyn.fall_angle == pytest.approx(CONFIG.timing.fall_angle_rad)
 

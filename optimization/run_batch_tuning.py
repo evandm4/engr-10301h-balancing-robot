@@ -135,6 +135,10 @@ def main():
 
     space = CONFIG.build_search_space()
     eval_config = CONFIG.build_eval_config()
+    if args.float32 and eval_config.slow_pwm and eval_config.pwm_tick > 0:
+        print("warning: --float32 with pulse-density PWM (the LEGO robot): last-bit differences move whole 10 ms "
+              "pulses, and costs differ from float64 by a median of ~2.6% (test_float32_stays_close_to_float64), "
+              "too much to rank close candidates. float64 is ~2.7x slower on the GPU; prefer it.", flush=True)
     evaluator = BatchEvaluator(eval_config, space, backend=args.backend, robustness=robustness,
                                dtype=np.float32 if args.float32 else np.float64)
     sims_per_eval = evaluator.simulations_per_evaluation()

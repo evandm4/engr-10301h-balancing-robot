@@ -46,7 +46,10 @@ def test_feedforward_is_the_simulators_drive(cfg):
 def test_feedforward_uses_measured_battery(cfg):
     ff = control.Feedforward(cfg)
     ff.set_supply(8.2)
-    assert abs(ff.duties(0.5, 30.0, 30.0)[0]) == pytest.approx(1.0)       # clipped at the real supply
+    assert abs(ff.duties(0.5, 20.0, 20.0)[0]) == pytest.approx(1.0)       # clipped at the real supply
+    # 22 rad/s is under the no-load speed at 8.2 V but over it at 7.6 V: full duty here, coast at 7.6 V
+    assert ff.duties(0.5, 22.0, 22.0)[0] == pytest.approx(1.0)
+    assert control.Feedforward(cfg).duties(0.5, 22.0, 22.0)[0] == 0.0
     d76 = control.Feedforward(cfg).duties(0.05, 0.0, 0.0)[0]
     assert ff.duties(0.05, 0.0, 0.0)[0] == pytest.approx(d76 * 7.6 / 8.2)
 
@@ -90,6 +93,40 @@ def test_safety_trips(cfg):
     s = control.Safety(dt)                        # wrong way: duty forward, wheel fast backward
     out = [s.check(k * dt, 0.0, (0.8, 0.0), (-10.0, 0.0), **ok) for k in range(60)]
     assert any(o and "against its duty" in o for o in out)
+
+
+def test_runaway_trip_catches_free_spinning_wheels(cfg):
+    """Lifted while armed and held upright: no tilt, both wheels near the no-load speed. Review G11."""
+    dt = cfg.timing.control_dt_s
+    ok = dict(motor_ages=(0.005, 0.005), vin_reading=(0.0, 7.6), fault=None, reader_alive=True, running=True)
+    n = int(round(lc.RUNAWAY_S / dt))
+    s = control.Safety(dt)
+    out = [s.check(k * dt, 0.0, (0.6, 0.6), (19.0, 18.5), **ok) for k in range(n)]
+    assert all(o is None for o in out[:-1]) and "running away" in out[-1]
+    s = control.Safety(dt)                        # a transient overshoot shorter than RUNAWAY_S doesn't trip
+    out = [s.check(k * dt, 0.0, (0.6, 0.6), (19.0, 19.0) if k < n - 5 else (12.0, 12.0), **ok) for k in range(n + 50)]
+    assert all(o is None for o in out)
+    s = control.Safety(dt)                        # turning on the spot (wheels opposite) is not a runaway
+    assert all(s.check(k * dt, 0.0, (0.6, -0.6), (19.0, -19.0), **ok) is None for k in range(n + 50))
+
+
+def test_a_crash_in_the_loop_still_writes_the_logs(tmp_path, monkeypatch):
+    """Review G2: an exception escaping the loop used to skip write_logs, losing the run's only record."""
+    act = control.Brain.act
+    calls = []
+
+    def flaky(self, *args):
+        calls.append(1)
+        if len(calls) > 100:
+            raise RuntimeError("boom")
+        return act(self, *args)
+
+    monkeypatch.setattr(control.Brain, "act", flaky)
+    with pytest.raises(RuntimeError, match="boom"):
+        balance.main(["--sim", "--seconds", "3", "--outdir", str(tmp_path)])
+    runs = list(tmp_path.glob("*_run.csv"))
+    assert runs and sum(1 for _ in open(runs[0])) > 100
+    assert any("crashed: RuntimeError: boom" in f.read_text() for f in tmp_path.glob("*"))
 
 
 def test_stall_trip_sees_a_held_wheel_through_encoder_counts(cfg):
@@ -190,7 +227,8 @@ def test_closed_loop_tracks_the_scenario(tmp_path, controller):
 
 
 @pytest.mark.parametrize("inject, expect", [("loop", "loop stalled"), ("stale", "stale"), ("vin", "battery"),
-                                            ("fault", "fault")])
+                                            ("fault", "fault"), ("imu", "IMU read failed 2 times"),
+                                            ("unlock", "lost the lock")])
 def test_injected_trips(tmp_path, inject, expect):
     reason = balance.main(["--sim", "--seconds", "3", "--inject", inject, "--outdir", str(tmp_path)])
     assert expect in reason

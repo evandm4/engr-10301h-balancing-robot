@@ -21,14 +21,14 @@ bounded PID gains and wrong for signed, unbounded weights).
 """
 
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from balance_sim import push_profile, step_profile
+from balance_sim import locked_pwm_tick_phase, pwm_steps_per_tick, push_profile, step_profile
 from batch_sim import BatchRobot, SimSpec, build_schedule, noise_table, simulate_batch
-from tuning import EvalConfig, EvalResult, SearchSpace
+from tuning import EvalConfig, EvalResult, SearchSpace, tick_phase
 
 from .robust import RobustnessConfig, sample_delay_steps, sample_robots
 
@@ -86,7 +86,7 @@ def robot_from_eval_config(config: EvalConfig, **overrides) -> BatchRobot:
         slow_pwm=config.slow_pwm and config.motor is not None and config.voltage_estimate is not None,
         pwm_tick=(config.pwm_tick if config.slow_pwm and config.motor is not None
                   and config.voltage_estimate is not None else 0.0),
-        pwm_tick_phase=config.pwm_tick_phase,
+        pwm_tick_phase=tick_phase(config),
         **{"pitch_bias": config.sensor.pitch_bias, **overrides})
 
 
@@ -229,6 +229,11 @@ class BatchEvaluator:
                 n_pitches = len(self.config.start_pitches)
                 robot = sample_robots(self.robot, r, seeds, n_pitches)
                 delay = sample_delay_steps(r, seeds, n_pitches, self.spec.dt)
+                if delay is not None and self._tick_locked():
+                    # Locked to the loop: each scenario's ticks fall where its own latency delivers a command.
+                    robot = replace(robot, pwm_tick_phase=locked_pwm_tick_phase(
+                        delay, robot.pwm_tick and pwm_steps_per_tick(robot.pwm_tick, self.spec.dt),
+                        max(1, int(round(self.config.control_dt / self.spec.dt)))))
                 if r.twin_runs:
                     # Twins: same noise, robot and latency, start tilt nudged.
                     pitch = np.concatenate([pitch, pitch + r.sensitivity_nudge])
@@ -237,6 +242,15 @@ class BatchEvaluator:
                     delay = None if delay is None else np.tile(delay, 2)
             self._scenario_sets[seeds] = _ScenarioSet(pitch, seed_col, robot, n_base, delay)
         return self._scenario_sets[seeds]
+
+    def _tick_locked(self) -> bool:
+        c = self.config
+        locked = c.pwm_tick_locked and c.slow_pwm and c.pwm_tick > 0 and c.motor is not None
+        if locked and self.robustness is not None and any(
+                name == "pwm_tick_phase" for name, _, _ in self.robustness.randomize_range):
+            raise ValueError("pwm_tick_locked sets the tick phase from the latency; drop pwm_tick_phase from "
+                             "randomize_range")
+        return locked
 
     def delay_steps(self, seeds: Optional[Sequence[int]] = None) -> Optional[np.ndarray]:
         """Each scenario's latency in physics steps (order of scenarios(seeds)); None if all use the configured one."""

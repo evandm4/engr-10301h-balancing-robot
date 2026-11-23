@@ -4,7 +4,7 @@ SOFTWARE_PLAN A4, 2026-11-22. The LEGO robot (`legobot_config.py`) on its derive
 `legobot_scenario.py`), with the voltage-mode driver since B1, the simulated IMU since B2 and the encoder model since B3. These are the reference points the
 LEGO tuning runs (E1, E2) are compared against. Re-score with `python hardware/legobot/legobot_baselines.py`.
 
-## Scores with the measured body (current)
+## Scores with the measured body (superseded by the re-derived scenario at the end of this file)
 
 Body measured (DATASHEET 1, as built): mass 0.362 kg (440 g total minus the wheels), COM 0.060 m above
 the axle, pitch inertia 8.8e-4 kg m^2; spreads ±1%, ±8%, ±15%. The sections below used 0.44 kg (the
@@ -336,7 +336,8 @@ weaker baseline on this robot.
 
 ### Baselines on the re-derived scenario
 
-`python hardware/legobot/legobot_baselines.py` (pulse-density PWM, tick phase drawn per scenario):
+*Superseded by the locked ticks below.* `python hardware/legobot/legobot_baselines.py` (pulse-density PWM, tick
+phase drawn per scenario):
 
 | Baseline | Plain (seeds 1–3, 9 runs) | Robust train (1–50, 150) | Robust dev (5000–5049, 150) | Dev worst | Dev chaos |
 |---|---|---|---|---|---|
@@ -346,3 +347,33 @@ weaker baseline on this robot.
 The few robust falls come from the 1.02 N pushes on the weakest corners: the profile with the old 0.57 N
 pushes had none for the model-based PID. The pushes are sized at 98% of what an ideal full-torque response
 catches on every corner, so some falls are expected from linear controllers. Tuning (E1/E2) starts here.
+
+### After the external review's fixes (2026-11-23)
+
+`SlowPwmActuator.drive()` now coasts where the wheel is at or past the no-load speed in the commanded
+direction; it used to send full duty of the command's sign, which there brakes (review G3; both engines).
+Re-scored: no change past the third decimal, the same falls (hand-tuned robust train 32.218, model-based
+dev 28.588). The tables above stand. The catch bound behind the 98% pushes leaves out the pulse tick's wait
+(review G4), so some of these falls may be unrecoverable for any controller; open, see
+`docs/legobot-review/triage.md`.
+
+### Ticks locked to the loop, latency 7.5–15 ms (review G4, G6; 2026-11-23)
+
+The robot loop is locked to the HAT's pulse ticks and won't arm or run without the lock, so the simulation
+no longer draws the tick phase: each scenario's ticks fall where its commands arrive
+(`ActuatorConfig.pwm_tick_locked`), and its latency, now 7.5–15 ms, is the whole delay from the sample to the
+pulse (DATASHEET 6). Before, 5–25 ms with up to a tick of wait on top gave up to 35 ms. The scenario
+re-derived with the tick in the push bound (reaction 25 ms to a push, 15 ms to a start tilt) comes out
+unchanged: pushes 1.02 N (98% of 0.0523 N s), tilts 0.05 / −0.15 / 0.30 rad. The old bound used 25 ms too,
+but the old sim could exceed it.
+
+| Baseline | Plain (seeds 1–3, 9 runs) | Robust train (1–50, 150) | Robust dev (5000–5049, 150) | Dev worst | Dev chaos |
+|---|---|---|---|---|---|
+| Hand-tuned PID (2.5, 1.5, 0.2, 0.5) | 10.26 (0) | 10.69 (0) | 22.52 (1) | 1801 | 24 |
+| Model-based PID (1.55, 1.75, 0.14, 0.52) | 6.550 (0) | 29.79 (2) | 6.506 (0) | 9.06 | 0.26 |
+
+Robust costs fell and most falls went away: the delays the tuner trained against up to now (to 35 ms) were
+ones the locked robot can't have. Plain costs rose 3–6%. The nominal 10 ms now reaches the pulse 2.5 ms
+earlier than with the old fixed phase (0.25), and these gains weren't tuned for either. The remaining falls
+(1 and 2 of 150) come from linear controllers on pushes a full-torque response still catches. These are
+the reference points for E1.

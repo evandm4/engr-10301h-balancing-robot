@@ -207,8 +207,10 @@ class SlowPwmActuator(VoltageModeActuator):
         d = (tau_c / n) / (a^ (V + k^ N w^))   for tau_c < 0,     clipped to +-1,
 
     with tau_c the command clipped to max_torque and a^ = N eta^ k^ / R^. Where the
-    denominator is not positive (wheel faster than the no-load speed in the commanded
-    direction) the duty saturates at copysign(1, tau_c). feedforward=False drops the
+    denominator is not positive (by the robot code's estimate, the wheel is at or past the
+    no-load speed in the commanded direction) no duty gives torque in that direction: a
+    duty of that sign brakes, and the other sign brakes harder. The duty is then 0
+    (coast), the closest the motor gets to the command. feedforward=False drops the
     k^ N w^ terms; feedforward_gain scales them, as in VoltageModeActuator. With exact
     constants and w^ = w the command is delivered exactly below saturation. Unlike the
     linear voltage mode, a mismatch in the constants gives a torque error proportional
@@ -255,7 +257,7 @@ class SlowPwmActuator(VoltageModeActuator):
                 back_emf = self.feedforward_gain * back_emf
         v = self.m.supply_voltage
         den = a_hat * (v - back_emf) if command >= 0 else a_hat * (v + back_emf)
-        duty = per_motor / den if den > 0 else math.copysign(1.0, per_motor)
+        duty = per_motor / den if den > 0 else 0.0
         return float(_clip(duty, -1.0, 1.0))
 
     def torque(self, command: float, relative_wheel_speed: float) -> float:
@@ -285,6 +287,31 @@ def pwm_steps_per_tick(pwm_tick: float, dt: float) -> int:
     if n < 1 or abs(n * dt - pwm_tick) > 1e-9:
         raise ValueError(f"pwm_tick {pwm_tick} s is not a whole number of physics steps of {dt} s")
     return n
+
+
+def locked_pwm_tick_phase(delay_steps, steps_per_tick: int, steps_per_control: int = 1):
+    """pwm_tick_phase for a robot loop locked to the HAT's pulse ticks (ActuatorConfig.pwm_tick_locked).
+
+    The robot paces its loop on the HAT's data-line grid, which the pulse ticks are locked to, and writes
+    each command a fixed time before a tick (hardware/legobot/robot: LineClock, Pacer, LINE_WRITE_PHASE_S).
+    The sim's latency then covers everything from the sample to the pulse (IMU filter, compute, serial,
+    the wait for the tick, L/R), so the tick falls on the physics step where a command takes effect: the
+    first tick `delay_steps mod steps_per_tick` steps after the first sample. delay_steps: an int or a (B,)
+    array (per-scenario latency in robust scoring). The tick must be a whole number of control periods,
+    so that the samples whose commands meet a tick are a fixed subset (every second one at 10 ms ticks
+    and 200 Hz control). Returns the phase in the middle of its step, clear of pwm_tick_offset's floor."""
+    if not steps_per_tick:
+        return 0.25                     # no ticks: the phase is unused
+    if steps_per_tick % steps_per_control:
+        raise ValueError(f"a locked tick of {steps_per_tick} steps is not a whole number of control periods "
+                         f"({steps_per_control} steps)")
+    return ((delay_steps % steps_per_tick) + 0.5) / steps_per_tick
+
+
+def locked_pwm_tick_phase_for(latency: float, dt: float, pwm_tick: float, control_dt: float) -> float:
+    """locked_pwm_tick_phase for a latency in seconds, rounded up to whole steps as the simulators apply it."""
+    n = pwm_steps_per_tick(pwm_tick, dt)
+    return locked_pwm_tick_phase(math.ceil(latency / dt - 1e-9), n, max(1, int(round(control_dt / dt))))
 
 
 def pwm_tick_offset(phase: float, steps_per_tick: int) -> int:

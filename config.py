@@ -26,7 +26,7 @@ in radians throughout.
 import math
 import os
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -50,6 +50,7 @@ from balance_sim import (
     Planar2D,
     RobotParams,
     IMUSensor,
+    locked_pwm_tick_phase_for,
     SensorNoise,
     SlowPwmActuator,
     VoltageModeActuator,
@@ -143,6 +144,11 @@ class ActuatorConfig:
     # "slow_pwm" with pwm_tick_s only: where the ticks fall against the control loop, as a fraction of a
     # tick (SlowPwmActuator.pwm_tick_phase). Robust scoring can draw it per scenario (randomize_range).
     pwm_tick_phase: float = 0.25
+    # "slow_pwm" with pwm_tick_s only: the robot loop is locked to the HAT's ticks (the LEGO robot's
+    # LineClock/Pacer), so each tick falls where a command takes effect and the latency is the whole delay
+    # from the sample to the pulse. Replaces pwm_tick_phase with balance_sim.locked_pwm_tick_phase of the
+    # latency, per scenario in robust scoring (so it can't also be in randomize_range).
+    pwm_tick_locked: bool = False
 
     # Pololu 20.4:1 Metal Gearmotor 25Dx65L mm HP 6V with 48 CPR encoder (item 4803), run
     # from a 2S LiPo. Constants derived from Pololu's catalogue numbers (DATASHEET.md 3.1, 5.1).
@@ -735,7 +741,16 @@ class ProjectConfig:
                                      c.design_integral_ratio, c.design_outer_fraction)
 
     def build_actuator(self, robot: Optional[RobotParams] = None):
-        return self.actuator.build(robot if robot is not None else self.build_robot_params())
+        actuator = replace(self.actuator, pwm_tick_phase=self.pwm_tick_phase())
+        return actuator.build(robot if robot is not None else self.build_robot_params())
+
+    def pwm_tick_phase(self) -> float:
+        """The tick phase at the nominal latency: ActuatorConfig.pwm_tick_phase, or the locked one."""
+        a = self.actuator
+        if a.model == "slow_pwm" and a.pwm_tick_s > 0 and a.pwm_tick_locked:
+            return locked_pwm_tick_phase_for(self.timing.latency_s, self.timing.dt_s, a.pwm_tick_s,
+                                             self.timing.control_dt_s)
+        return a.pwm_tick_phase
 
     def build_dynamics(self, ideal_actuator: bool = False) -> Planar2D:
         """The robot model. ideal_actuator=True ignores actuator.model and
@@ -838,7 +853,8 @@ class ProjectConfig:
             voltage_feedforward_gain=self.actuator.voltage_feedforward_gain,
             slow_pwm=self.actuator.model == "slow_pwm",
             pwm_tick=self.actuator.pwm_tick_s if self.actuator.model == "slow_pwm" else 0.0,
-            pwm_tick_phase=self.actuator.pwm_tick_phase,
+            pwm_tick_phase=self.pwm_tick_phase(),
+            pwm_tick_locked=self.actuator.model == "slow_pwm" and self.actuator.pwm_tick_locked,
         )
 
     def snapshot(self) -> dict:

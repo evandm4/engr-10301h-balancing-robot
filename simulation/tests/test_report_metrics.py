@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from batch_sim import BatchRobot, build_schedule, noise_table, simulate_batch
-from batch_tuning import BatchEvaluator, spec_from_eval_config
+from batch_tuning import BatchEvaluator, robot_from_eval_config, spec_from_eval_config
 from config import CONFIG
 from tuning import Evaluator
 
@@ -43,7 +43,9 @@ def test_counters_match_the_reference_commands():
     sim = spec_from_eval_config(CONFIG_SHORT)
     schedule = build_schedule(sim)
     seeds = tuple(CONFIG_SHORT.train_seeds)
-    result = simulate_batch(sim, BatchRobot.from_params(CONFIG_SHORT.params, CONFIG_SHORT.motor),
+    # robot_from_eval_config, not BatchRobot.from_params(params, motor): that dropped the voltage-mode / slow-PWM
+    # driver and pitch bias the reference uses (ROBOT=legobot)
+    result = simulate_batch(sim, robot_from_eval_config(CONFIG_SHORT),
                             np.tile(GAINS, (len(scen), 1)), [p for p, _ in scen],
                             noise=noise_table(seeds, schedule.n_ticks),
                             seed_index=[seeds.index(s) for _, s in scen], schedule=schedule)
@@ -59,7 +61,8 @@ def test_counters_match_the_reference_commands():
         assert result.saturated_ticks[i] == np.sum(np.abs(u) >= limit)
         assert result.alive_ticks[i] == len(u)
         assert result.peak_pitch[i] == np.max(np.abs(run.states[:-1, 2]))
-    assert result.saturated_ticks.max() > 0          # the 0.30 rad start saturates
+    if CONFIG.name == "pololu":
+        assert result.saturated_ticks.max() > 0      # the 0.30 rad start saturates (not on the LEGO robot)
 
 
 def test_evaluator_carries_the_counters_and_torch_agrees():

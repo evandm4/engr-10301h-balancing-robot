@@ -41,20 +41,27 @@ ARM_HOLD_S = 0.5           # ...for this long (the robot held upright and still)
 ARM_TIMEOUT_S = 30.0       # give up if not armed by then
 
 # ---- safety trips (D3); each one coasts both motors and ends the run ----
-TILT_LIMIT = 0.70          # rad (40 deg): past the lean cap (15 deg) and the scenario's largest start tilt
-                           # (0.18 rad) with margin; well short of the simulator's 60 deg fall angle
+TILT_LIMIT = 0.70          # rad (40 deg): past the lean cap (25 deg) and the scenario's largest start tilt
+                           # (0.30 rad) with margin; well short of the simulator's 60 deg fall angle
 DUTY_CAP = 1.0             # |duty| clamp in the balancing run (the Build HAT's full scale)
 BENCH_DUTY_CAP = 0.3       # --bench: wheels off the ground, as hw_config.BENCH_DUTY_CAP
 STALL_DUTY = 0.5           # a wheel commanded at least this duty...
 STALL_SPEED = 3.0          # ...averaging less than this (rad/s, in the duty's direction, relative to the body)...
                            # A free wheel at duty 0.24 does about 12 rad/s; a held one creeps at -2 to +2
 STALL_S = 1.0              # ...for this long is stalled (the HAT has no current limit to protect it)
-VIN_CUTOFF = 6.6           # V under load: 2S LiPo, 3.3 V per cell (DATASHEET 3.6)
+VIN_CUTOFF = 6.8           # V under load, 3.4 V per cell: the lowest supply robust scoring draws (legobot_config
+                           # supply_voltage 7.6 V -10.5%), so the robot never runs on a battery no tuned gain saw.
+                           # Was 6.6 V (3.3 V per cell, DATASHEET 3.6); review finding G7, 2026-11-23
 VIN_LOW_COUNT = 3          # consecutive readings below the cutoff before tripping (load transients)
 VIN_PERIOD_S = 0.5         # how often the loop asks the HAT for vin (a 4-byte command; reply read in the background)
 VIN_STALE_S = 2.0          # trip if no vin reply for this long
 MOTOR_STALE_S = 0.05       # trip if either motor's newest data line is older than this (5 lines missed)
 WATCHDOG_S = 0.10          # a separate thread coasts the motors if the loop has not ticked for this long
+WATCHDOG_REPEAT_S = 0.05   # ...and keeps re-sending the coast at this interval until the run ends, so a command
+                           # the stuck loop finishes writing after the first coast can't leave a motor driven
+IMU_ERROR_LIMIT = 2        # consecutive failed IMU reads (I2C errors) before tripping; one is bridged with the last sample
+RUNAWAY_SPEED = 17.0       # rad/s: both wheels at least this fast the same way (no-load is ~19.6 at 7.4 V; the
+RUNAWAY_S = 1.5            # scenario cruises at 11.6) for this long: lifted while armed, or running away
 
 # ---- logging (D5) ----
 LOG_DIR = "logs"

@@ -77,9 +77,10 @@ def corner_robots(cfg: ProjectConfig, driver: str = None) -> BatchRobot:
     return replace(base, **changes)
 
 
-# Robustness ranges the catch tests here don't see: the pulse-density tick phase only matters to a closed
-# loop at the control rate, and these tests apply full torque. Held at the base value (both corner signs
-# then give the same robot, so the batch has duplicates rather than fewer corners: harmless).
+# Robustness ranges the catch tests here don't see: the pulse-density tick phase (no longer drawn for the LEGO
+# robot, whose ticks are locked; catch_latencies covers their wait), and the pitch offset, which full torque
+# ignores. Held at the base value (both corner signs then give the same robot, so the batch has duplicates
+# rather than fewer corners: harmless).
 NOT_IN_CORNERS = ("pwm_tick_phase",)
 
 
@@ -196,6 +197,26 @@ def _step_with_force(R, state, torque, dt, force):
     return tuple(s + dt / 6 * (p + 2 * q + 2 * r + u) for s, p, q, r, u in zip(state, k1, k2, k3, k4))
 
 
+def catch_latencies(cfg: ProjectConfig, latency: float):
+    """(start-tilt reaction, push reaction) in seconds, for a sim latency (sample to torque).
+
+    Without pulse ticks both are the latency (config.py's convention). With the HAT's 10 ms pulse ticks
+    locked to the loop (ActuatorConfig.pwm_tick_locked), only the samples whose commands meet a tick act:
+    one per tick. A start tilt is seen by the first sample, which is one of them, so it gets the latency.
+    A push can start just after one of them, and the next that acts is a tick later, so it gets the
+    latency plus a tick (review G4: the bound used to leave the tick out, so pushes at 98% of it could be
+    uncatchable). Unlocked ticks aren't supported here: their wait depends on a phase the catch test
+    doesn't model."""
+    a = cfg.actuator
+    tick = a.pwm_tick_s if a.model == "slow_pwm" else 0.0
+    if not tick:
+        return latency, latency
+    if not a.pwm_tick_locked:
+        raise ValueError("catch_latencies models locked pulse ticks only (ActuatorConfig.pwm_tick_locked)")
+    steps = math.ceil(latency / cfg.timing.dt_s - 1e-9) * cfg.timing.dt_s     # as the simulators round it
+    return steps, steps + tick
+
+
 def largest_catchable_impulse(R, speed, latency, push_duration=0.05, j_max=2.0, steps=18, sign=1.0):
     """Per robot, the largest push (N s) a full-torque response still catches."""
     n = size(R)
@@ -291,9 +312,10 @@ POLOLU_PITCH_LIMIT_OF_CAP = 0.30 / math.radians(25.0)   # pitch_limit = 69% of t
 TOP_SPEED_CHOICE = 0.40
 LEAN_SOFTENING = 0.5
 POLOLU_PUSH_SHARE = 0.145 / 0.149             # push / largest catchable on every corner
-# What a full run of the catch simulations gives for legobot_config.py as of 2026-11-22
-# (DATASHEET 2 values with the measured body, voltage-mode driver), for --quick. Re-run without --quick after changing the config.
-RECORDED_CATCH = dict(forward=0.0325, backward=0.1352, tilt=0.233, nominal_forward=0.105, nominal_tilt=0.450)
+# What a full run of the catch simulations gives for legobot_config.py as of 2026-11-23 (measured robot, slow
+# PWM with ticks locked to the loop, latency to 15 ms: push reaction 25 ms, tilt 15 ms), for --quick. Re-run
+# without --quick after changing the config. nominal_* are at the nominal 10 ms (push 20 ms).
+RECORDED_CATCH = dict(forward=0.0523, backward=0.3250, tilt=0.486, nominal_forward=0.099, nominal_tilt=0.628)
 
 
 def lean_cap_table(N, R, caps_deg):
@@ -315,7 +337,8 @@ def derive_legobot(full=True):
     from legobot_config import LEGOBOT_CONFIG as cfg
 
     N, R = nominal_robot(cfg), corner_robots(cfg)
-    lat = cfg.robustness.latency_range_s[1]
+    lat_tilt, lat_push = catch_latencies(cfg, cfg.robustness.latency_range_s[1])
+    nom_tilt, nom_push = catch_latencies(cfg, cfg.timing.latency_s)
     p = float(unstable_pole(N))
     print("LEGO robot")
     print(f"  G = {float(lean_gain(N)):.2f} m/s^2/rad nominal ({np.min(lean_gain(R)):.2f}-{np.max(lean_gain(R)):.2f} over corners); "
@@ -353,22 +376,24 @@ def derive_legobot(full=True):
 
     # 2. Catch tests at the top speed and the top of the robustness latency range.
     if full:
-        jf_all = largest_catchable_impulse(R, top, lat)
-        jb = largest_catchable_impulse(R, top, lat, sign=-1.0).min()
-        tilt_all = largest_catchable_tilt(R, lat)
+        jf_all = largest_catchable_impulse(R, top, lat_push)
+        jb = largest_catchable_impulse(R, top, lat_push, sign=-1.0).min()
+        tilt_all = largest_catchable_tilt(R, lat_tilt)
         jf, tilt = jf_all.min(), tilt_all.min()
-        jn = float(largest_catchable_impulse(N, top, 0.010)[0])
-        tn = float(largest_catchable_tilt(N, 0.010)[0])
+        jn = float(largest_catchable_impulse(N, top, nom_push)[0])
+        tn = float(largest_catchable_tilt(N, nom_tilt)[0])
         worst_push = describe_worst(cfg, R, int(np.argmin(jf_all)))
         worst_tilt = describe_worst(cfg, R, int(np.argmin(tilt_all)))
     else:
         c = RECORDED_CATCH
         jf, jb, tilt, jn, tn = c["forward"], c["backward"], c["tilt"], c["nominal_forward"], c["nominal_tilt"]
         worst_push = worst_tilt = "recorded; run without --quick"
-    print(f"\n  2. Catch tests at {top} m/s, {lat * 1000:.0f} ms latency (top of the robustness range), 50 ms push:")
-    print(f"     forward push: {jf:.4f} N s on every corner (worst: {worst_push}); nominal at 10 ms {jn:.3f}")
+    print(f"\n  2. Catch tests at {top} m/s, 50 ms push; reaction {lat_push * 1000:.1f} ms to a push and "
+          f"{lat_tilt * 1000:.1f} ms to a start tilt (top of the robustness latency range; see catch_latencies):")
+    print(f"     forward push: {jf:.4f} N s on every corner (worst: {worst_push}); nominal "
+          f"({nom_push * 1000:.1f} ms) {jn:.3f}")
     print(f"     backward push: {jb:.4f} N s on every corner")
-    print(f"     start tilt: {tilt:.3f} rad on every corner (worst: {worst_tilt}); nominal at 10 ms {tn:.3f}")
+    print(f"     start tilt: {tilt:.3f} rad on every corner (worst: {worst_tilt}); nominal ({nom_tilt * 1000:.1f} ms) {tn:.3f}")
 
     # 3. Cost limits, start tilts and pushes, in Pololu's proportions.
     # Pololu's pitch_limit is both 77% of its catchable tilt and 69% of its lean cap. When the two disagree,

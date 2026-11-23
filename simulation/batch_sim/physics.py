@@ -68,7 +68,7 @@ def voltage_drive(robot: BatchRobot, command, x_dot, theta_dot, xp=np):
         v = robot.supply_voltage
         den = xp.where(c >= 0, a_hat * (v - back_emf), a_hat * (v + back_emf))
         ok = den > 0
-        duty = xp.where(ok, xp.divide(per_motor, xp.where(ok, den, 1.0)), xp.copysign(1.0, per_motor))
+        duty = xp.where(ok, xp.divide(per_motor, xp.where(ok, den, 1.0)), 0.0 * per_motor)   # coast: see SlowPwmActuator
         return xp.clip(duty, -1.0, 1.0)
     volts = robot.est_resistance * xp.divide(
         c, robot.n_motors * robot.gear_ratio * robot.est_gear_efficiency * robot.est_torque_constant)
