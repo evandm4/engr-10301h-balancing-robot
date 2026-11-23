@@ -78,6 +78,7 @@ def robot_from_eval_config(config: EvalConfig, **overrides) -> BatchRobot:
         voltage_estimate=config.voltage_estimate if config.motor is not None else None,
         voltage_feedforward=config.voltage_feedforward,
         voltage_feedforward_gain=config.voltage_feedforward_gain,
+        slow_pwm=config.slow_pwm and config.motor is not None and config.voltage_estimate is not None,
         **{"pitch_bias": config.sensor.pitch_bias, **overrides})
 
 

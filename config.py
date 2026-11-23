@@ -51,6 +51,7 @@ from balance_sim import (
     RobotParams,
     IMUSensor,
     SensorNoise,
+    SlowPwmActuator,
     VoltageModeActuator,
     cost,
     critical_pitch_gain,
@@ -122,10 +123,14 @@ class ActuatorConfig:
     back-EMF feedforward from the measured wheel speed if voltage_feedforward
     (balance_sim.VoltageModeActuator; SOFTWARE_PLAN B1). Robust scoring
     randomizes the true constants only, so the robot code's are off by the
-    randomization spreads.
+    randomization spreads. "slow_pwm" is the Build HAT's slow-PWM mode, measured on the
+    LEGO motors (balance_sim.SlowPwmActuator; SOFTWARE_PLAN B1b): the drive coasts in the
+    off-time, so torque = |d| N eta k (copysign(V, d) - k N w) / R per motor, and the robot
+    code sends the duty d from the inverse of that model. The voltage_feedforward settings
+    apply to it as well.
     """
 
-    model: str = "dc_motor"            # "ideal", "dc_motor" or "voltage"
+    model: str = "dc_motor"            # "ideal", "dc_motor", "voltage" or "slow_pwm"
     voltage_feedforward: bool = True   # "voltage" only: add k N w^ to the drive voltage
     # "voltage" only: the share of the estimated back-EMF the robot code adds. 1 cancels it as
     # estimated. The wheel speed it uses is 5-15 ms old on the LEGO robot, and slightly more
@@ -173,12 +178,16 @@ class ActuatorConfig:
             motor = self.build_motor_params()
             return VoltageModeActuator(motor, motor, max_torque=robot.max_torque, feedforward=self.voltage_feedforward,
                                        feedforward_gain=self.voltage_feedforward_gain)
-        raise ValueError(f"Unknown actuator model {self.model!r}; use 'ideal', 'dc_motor' or 'voltage'")
+        if self.model == "slow_pwm":
+            motor = self.build_motor_params()
+            return SlowPwmActuator(motor, motor, max_torque=robot.max_torque, feedforward=self.voltage_feedforward,
+                                   feedforward_gain=self.voltage_feedforward_gain)
+        raise ValueError(f"Unknown actuator model {self.model!r}; use 'ideal', 'dc_motor', 'voltage' or 'slow_pwm'")
 
     @property
     def has_motor(self) -> bool:
         """True for the models with motor physics (a supply voltage and back-EMF)."""
-        return self.model in ("dc_motor", "voltage")
+        return self.model in ("dc_motor", "voltage", "slow_pwm")
 
 
 # ---------------------------------------------------------------- SENSOR ---
@@ -695,9 +704,11 @@ class ProjectConfig:
             max_pitch_command=self.controller.max_lean_rad,
             pitch_integral_limit=self.controller.pitch_integral_limit,
             velocity_integral_limit=self.controller.velocity_integral_limit,
-            voltage_estimate=self.actuator.build_motor_params() if self.actuator.model == "voltage" else None,
+            voltage_estimate=(self.actuator.build_motor_params()
+                              if self.actuator.model in ("voltage", "slow_pwm") else None),
             voltage_feedforward=self.actuator.voltage_feedforward,
             voltage_feedforward_gain=self.actuator.voltage_feedforward_gain,
+            slow_pwm=self.actuator.model == "slow_pwm",
         )
 
     def snapshot(self) -> dict:

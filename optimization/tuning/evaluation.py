@@ -19,6 +19,7 @@ import numpy as np
 from balance_sim import (
     CascadedPIDController,
     DCMotorActuator,
+    SlowPwmActuator,
     VoltageModeActuator,
     MotorParams,
     Planar2D,
@@ -67,6 +68,9 @@ class EvalConfig:
     voltage_estimate: Optional[MotorParams] = None
     voltage_feedforward: bool = True           # back-EMF feedforward on (voltage mode only)
     voltage_feedforward_gain: float = 1.0      # share of the estimated back-EMF added (voltage mode only)
+    # With voltage_estimate: the Build HAT's slow-PWM mode (balance_sim.SlowPwmActuator; the robot code
+    # sends a duty) instead of the linear voltage mode.
+    slow_pwm: bool = False
 
 
 @dataclass
@@ -92,9 +96,9 @@ class Evaluator:
         if c.motor is None:
             actuator = None
         elif c.voltage_estimate is not None:
-            actuator = VoltageModeActuator(c.motor, c.voltage_estimate, max_torque=c.params.max_torque,
-                                           feedforward=c.voltage_feedforward,
-                                           feedforward_gain=c.voltage_feedforward_gain)
+            cls = SlowPwmActuator if c.slow_pwm else VoltageModeActuator
+            actuator = cls(c.motor, c.voltage_estimate, max_torque=c.params.max_torque,
+                           feedforward=c.voltage_feedforward, feedforward_gain=c.voltage_feedforward_gain)
         else:
             actuator = DCMotorActuator(c.motor, max_torque=c.params.max_torque)
         return Planar2D(c.params, fall_angle=c.fall_angle, actuator=actuator)

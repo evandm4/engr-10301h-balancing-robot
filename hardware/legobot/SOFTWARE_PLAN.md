@@ -57,7 +57,9 @@ Order is by expected effect. Each starts in the reference engine with a short ex
 | B2 | **Simulated IMU and filter.** Sensor model outputs gyro rate (noise, bias, DLPF modeled as a first-order lag at the chosen bandwidth) and accelerometer tilt from ẍ, θ̈ and the mount height d (plus noise and offset). A complementary filter, the same code the robot will run (section 4), turns them into the pitch estimate the controller sees. ẍ and θ̈ come from the dynamics at the sample time | M (reference) + M–L (port: the filter adds state to every simulation) | With noise off and the robot still, the estimate converges to the truth; during the scenario's accelerations the error has the size DATASHEET 3.4 predicts |
 | B3 | **Encoder model.** Wheel angle quantized to 1°, updated every 10 ms and held between updates, read with a configurable delay; velocity from counts 10 ms apart. Gearbox slack as a ±3° position error, then (B5) as a real dead zone if needed | S–M | Velocity noise matches DATASHEET 5.4 (0.025 m/s at 69 mm) |
 | B4 | **Timing.** Latency range 5–25 ms; the motor's L/R (3 ms) either folded into latency or as a first-order current lag in the actuator. Decide by experiment in the reference engine | S | Decision recorded in PHYSICS.md |
+| B1b | *Done 2026-11-23:* `SlowPwmActuator` in the reference engine, `slow_pwm` in `batch_sim.physics` (NumPy and torch share it), config model `"slow_pwm"`; equivalence, torch and unit tests (`test_slow_pwm.py`) pass; matches the bench (DATASHEET 8.7). Open: the 10 ms pulse-density ripple at low duty (`pwm_probe`, repeat with the robot secured). **Model the HAT's slow-PWM mode** (chosen in C3, DATASHEET 8.7): τ = \|d\| a (sgn(d) V − kω), with damping proportional to duty, so the error from feedforward constants scales with the command instead of adding drag. Put it in the three engines as an actuator model; the robot's feedforward inverts it as d = τ / (a (V ∓ kω̂)). Interface agreed with the phase D session: the new actuator class's `drive(command, measured_wheel_speed)` returns the duty (the inverse above, clipped to ±1), and `torque()` applies the model, so the robot and the simulator share one formula. `robot/control.py`'s `Feedforward` builds its own actuator from `cfg.actuator.build_motor_params()` with V = the measured vin, and will construct the new class | M | The reference engine reproduces the C3 slow-PWM spin-ups and the lever readings (`bench_data/`); equivalence and torch tests pass |
 | B5 | Optional, only if B1–B4 tuning shows sensitivity: gearbox backlash as a dead zone, and different sensor delays for IMU and encoder | M | — |
+|  | *Measured 2026-11-23 (DATASHEET 8.7):* gearbox ±2.6–3° at the encoder, plus up to ±3° of LEGO coupling play the encoder can't see. That is above the ±1.5° that raised the baselines' cost 19–129% in the B5 test (PHYSICS.md 10.3), so **port the backlash model**, with the play between motor and wheel drawn in about ±3–6° total | | |
 | B6 | Low priority, before the final validation runs. **Pitch offset drawn per robot.** `pitch_bias` is one positive constant in every run (0.015 rad in `legobot_config.py`), so the tuner sees one offset size and one sign. Draw it per scenario, uniform in ±b (b = 0.015 rad, the residual after balance-point calibration, DATASHEET 8.4). This also covers a fore-aft COM offset e: that is exactly a pitch offset of atan(e/l), about 0.017 rad per mm at the measured l = 60 mm, with a negligible second-order change in COM distance. The batched engines need the bias as a per-scenario array instead of a scalar in the spec | S (reference) + S (port) | Equivalence and torch tests pass with a nonzero per-scenario bias; PHYSICS.md 10's "pitch offset per robot" gap is closed |
 | B7 | Update PHYSICS.md (9.3, 9.5, 10) and ARCHITECTURE.md for what was built | S | — |
 
@@ -71,6 +73,23 @@ All of this runs on the Pi. The first two are also the robot code's drivers (pha
 | C2 | **IMU driver** for the ICM-20948 over I²C at 400 kHz (raise the Pi's default 100 kHz): gyro and accelerometer at a fixed rate, DLPF set, axis mapping applied | S–M | 200 Hz reads with timing logged |
 | C3 | **Measurement scripts for DATASHEET section 8**: motor rail vs `vin`; stall current (R); no-load speed and current vs duty (k_e, friction); string-and-mass torque (efficiency, stall); spin-up fit (output inertia, with and without wheel); backlash; gyro noise and bias with motors off and on; accelerometer offset; balance point; battery discharge log; loop timing (latency). Each writes a CSV and prints the fitted constant with its uncertainty | M–L | Every Est./Pyb value in DATASHEET section 2 replaced by a measurement or confirmed |
 | C4 | Fill in `legobot_config.py` from C3 and shrink the robustness spreads to the measurement uncertainty; update DATASHEET | S | — |
+
+**C3/C4 status, 2026-11-23.** The scripts are in `robot/measure/` (DATASHEET 8.7).
+- **Done:** the hands-free runs (duty map, spin-up and coast-down in three PWM modes, latency, IMU noise)
+  and the lever-on-scale torque test in two modes.
+- **Chosen:** slow PWM (`pwmparams 1 0.01`), which behaves as τ = |d| a (sgn(d) V − kω). The library
+  mode's gain doubles at 0.65 duty, and fast PWM has a 0.4 dead band.
+- **C4, done:** every motor constant (k, a, rotor inertia, both friction terms, max_torque) and the sensor
+  noise in `legobot_config.py` are measured, and their spreads are shrunk (DATASHEET 2).
+- **Still open:**
+  - the balance point (`robot.calibrate balance`) and `discharge` (backlash measured: port B5);
+  - B1b is done; still open is the slow-PWM pulse ripple at low duty (re-run `pwm_probe` with the robot secured);
+  - **re-deriving the scenario (A3) for the measured robot.** `legobot_scenario.py` now gives a
+    0.51 m/s cruise (was 0.27), a 0.35 rad catchable start tilt (was 0.18) and smaller forward pushes
+    (0.014 N s at the higher speed). It also flags two inconsistencies to resolve first: the goal profile's
+    0.292 rad lean exceeds the 0.262 rad lean cap, and the worst run without a fall costs 1532, above the
+    1000 fall penalty;
+  - new hand-tuned gains (A4_BASELINES.md, "Measured motor").
 
 ### Phase D: Robot code (needs C1, C2; uses B's filter)
 

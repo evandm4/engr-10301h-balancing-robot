@@ -22,10 +22,12 @@ PORT_SIGN = {LEFT_PORT: +1, RIGHT_PORT: -1}
 BENCH_PLIMIT = 1.0
 RUN_PLIMIT = 1.0
 BENCH_DUTY_CAP = 0.3    # |duty| refused above this in the bench scripts (wheels off the ground)
+MEASURE_DUTY_CAP = 1.0   # |duty| allowed in robot/measure scripts, which require --wheels-off (no-load runs)
 # pwmparams <pwmthresh> <minpwm> (firmware defaults 0 0; the buildhat library sends 0.65 0.01):
 # below pwmthresh the firmware uses its "slow" PWM, which changes the duty-to-speed map a lot
-# (DATASHEET 3.3 sweep). Kept at the library's values until C3/B1 choose.
-PWMPARAMS = (0.65, 0.01)
+# (DATASHEET 3.3 sweep); C3 chose slow PWM throughout (DATASHEET 8.7).
+PWMPARAMS = (1.0, 0.01)   # slow PWM throughout: chosen in C3 (DATASHEET 8.7), modelled by B1b's
+                          # SlowPwmActuator. The library's 0.65 doubles its gain at 0.65 duty; 0 0 has a 0.4 dead band
 SELRATE_MS = 10         # data line period per port (100 Hz)
 DUTY_CAP = 1.0          # clamp on |duty| in set_pwm, before the sign
 

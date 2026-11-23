@@ -14,7 +14,7 @@ coast() {
 }
 trap coast EXIT
 
-"$PY" -m "$@" &
+"$PY" -m "$@" 0<&0 &   # explicit: a background job would otherwise get /dev/null as stdin (prompts)
 child=$!
 trap 'kill -TERM $child 2>/dev/null' TERM HUP
 trap 'kill -INT $child 2>/dev/null' INT

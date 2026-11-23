@@ -490,3 +490,68 @@ def test_equal_per_simulation_pitch_bias_is_the_same_as_the_spec_scalar():
                             gains, pitch, **kwargs)
     np.testing.assert_array_equal(plain.cost, arrays.cost)
     np.testing.assert_array_equal(plain.final_state, arrays.final_state)
+
+
+# ---- Slow PWM (SlowPwmActuator, SOFTWARE_PLAN B1b): the same checks as the voltage mode ----
+SLOW_PWM_CONFIGS = {name: replace(VOLTAGE_CONFIGS[name], slow_pwm=True)
+                    for name in ("feedforward", "no_feedforward", "exact_constants", "latency_between_steps",
+                                 "gain_1p2", "current_limited")}
+
+
+@pytest.mark.parametrize("name", list(SLOW_PWM_CONFIGS))
+def test_slow_pwm_costs_and_falls_match_reference(name):
+    config = SLOW_PWM_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    assert batched.robot.voltage_mode and batched.robot.slow_pwm
+    gains = _candidates()
+    result = batched.evaluate_population(gains)
+    for i, g in enumerate(gains):
+        expected = ref.evaluate_gains(g)
+        np.testing.assert_allclose(result.costs[i], expected.costs, rtol=COST_RTOL)
+        assert result.n_fell[i] == expected.n_fell
+
+
+@pytest.mark.parametrize("name", ["feedforward", "no_feedforward", "latency_between_steps", "gain_1p2"])
+def test_slow_pwm_trajectories_match_reference_exactly(name):
+    config = SLOW_PWM_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    gains = _candidates(n=12, seed=1)
+    pitch, seed = ref.scenarios()[1]
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), schedule=batched.schedule, record=True)
+    for i, g in enumerate(gains):
+        expected = ref.run(g, pitch, seed)
+        n = len(expected.t)
+        np.testing.assert_array_equal(run.states[:n, i], expected.states)
+        assert run.fell[i] == expected.fell
+
+
+def test_slow_pwm_differs_from_linear_voltage_mode():
+    gains = _candidates(n=6, seed=5)
+    linear = BatchEvaluator(VOLTAGE_CONFIGS["feedforward"], SPACE).evaluate_population(gains).costs
+    slow = BatchEvaluator(SLOW_PWM_CONFIGS["feedforward"], SPACE).evaluate_population(gains).costs
+    assert not np.allclose(linear, slow, rtol=1e-6)
+
+
+def test_slow_pwm_per_robot_parameters_match_separate_reference_runs():
+    config = SLOW_PWM_CONFIGS["feedforward"]
+    rng = np.random.default_rng(7)
+    n = 10
+    resistance = config.motor.resistance * rng.uniform(0.85, 1.15, n)
+    constant = config.motor.torque_constant * rng.uniform(0.9, 1.1, n)
+    supply = config.motor.supply_voltage * rng.uniform(0.8, 1.0, n)
+    batched = BatchEvaluator(config, SPACE)
+    robot = BatchRobot.from_params(config.params, config.motor, voltage_estimate=config.voltage_estimate,
+                                   slow_pwm=True, resistance=resistance, torque_constant=constant,
+                                   supply_voltage=supply)
+    pitch, seed = batched.scenarios()[0]
+    run = simulate_batch(batched.spec, robot, np.tile(HAND_TUNED, (n, 1)), pitch,
+                         noise=batched.noise_for((seed,)), seed_index=np.zeros(n, dtype=int),
+                         schedule=batched.schedule)
+    for i in range(n):
+        motor = replace(config.motor, resistance=resistance[i], torque_constant=constant[i],
+                        supply_voltage=supply[i])
+        ref = Evaluator(replace(config, motor=motor), SPACE)
+        expected = ref.run(HAND_TUNED, pitch, seed)
+        np.testing.assert_allclose(run.cost[i], ref.score(expected), rtol=COST_RTOL)
+        np.testing.assert_array_equal(run.final_state[i], expected.states[-1])

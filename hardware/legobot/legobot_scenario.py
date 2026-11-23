@@ -51,10 +51,12 @@ def nominal_robot(cfg: ProjectConfig, driver: str = None) -> BatchRobot:
     """driver: "voltage" or "current" (default: the config's actuator model). In voltage mode
     the robot code's constants stay nominal while corner_robots varies the true ones."""
     motor = cfg.actuator.build_motor_params()
-    voltage = (cfg.actuator.model == "voltage") if driver is None else driver == "voltage"
+    voltage = (cfg.actuator.model in ("voltage", "slow_pwm")) if driver is None else driver in ("voltage", "slow_pwm")
+    slow = (cfg.actuator.model == "slow_pwm") if driver is None else driver == "slow_pwm"
     return BatchRobot.from_params(cfg.build_robot_params(), motor, voltage_estimate=motor if voltage else None,
                                   voltage_feedforward=cfg.actuator.voltage_feedforward,
-                                  voltage_feedforward_gain=cfg.actuator.voltage_feedforward_gain)
+                                  voltage_feedforward_gain=cfg.actuator.voltage_feedforward_gain,
+                                  slow_pwm=slow and voltage)
 
 
 def drive(R: BatchRobot, command, x_dot, theta_dot):

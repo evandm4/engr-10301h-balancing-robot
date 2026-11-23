@@ -213,3 +213,35 @@ seeds at all.
 (including the module-level pitch-only gains in test_conditions and the 0.3 m/s steps in
 test_velocity, which still fail with LEGO values, so they stay skipped). Five tests that had assumed
 zero Coulomb friction now zero it themselves and run on both robots.
+
+## Measured motor (C4, 2026-11-23)
+
+After `legobot_config` took the bench-measured motor (DATASHEET 8.7: k 0.348, a = ηk/R 0.0597 N m/V,
+rotor inertia 5.45e-4, friction 0.042 N m + 0.0017 N m s/rad, max_torque 0.90; tighter spreads), with the
+scenario and cost **unchanged** (still the 0.27 m/s scenario), `python hardware/legobot/legobot_baselines.py`:
+
+| Baseline | Plain (seeds 1–3, 9 runs) | Robust, train seeds 1–50 (150) | Robust, dev seeds 5000–5049 (150) | Dev worst | Dev chaos |
+|---|---|---|---|---|---|
+| Hand-tuned PID (6, 2, 0.5, 0.3) | 24.23 (0) | 24.88 (0) | 24.90 (0) | 50.1 | 0.38 |
+| Model-based PID (1.55, 1.75, 0.14, 0.52), re-designed | 2.624 (0) | 3.128 (0) | 3.036 (0) | 8.16 | 0.028 |
+| Cost-matched LQR | 29.77 (0) | 76.38 (4) | 63.56 (3) | 1845 | 49 |
+
+The robot is much lighter on the wheel side (2J/r² 0.92 kg, was 2.05) and stronger, so the old hand-picked
+gains no longer suit it. The hand-tuned PID still never falls, but it costs 10× more. The model-based design
+now has no falls. Not yet redone: the scenario (A3 re-derivation with these constants gives a 0.51 m/s
+cruise and flags two inconsistencies: SOFTWARE_PLAN C4 status) and new hand-tuned gains.
+
+## Slow-PWM actuator (B1b, 2026-11-23)
+
+The same measured robot and unchanged scenario, with the actuator model switched from "voltage" to
+"slow_pwm" (`SlowPwmActuator`: torque = |d| a (sgn(d) V − kω), the robot code sending the inverse's duty):
+
+| Baseline | Plain (seeds 1–3, 9 runs) | Robust, train seeds 1–50 (150) | Robust, dev seeds 5000–5049 (150) | Dev worst | Dev chaos |
+|---|---|---|---|---|---|
+| Hand-tuned PID (6, 2, 0.5, 0.3) | 27.64 (0) | 28.17 (0) | 28.16 (0) | 53.0 | 0.26 |
+| Model-based PID (1.55, 1.75, 0.14, 0.52) | 2.246 (0) | 2.072 (0) | 2.054 (0) | 3.49 | 2.4e-3 |
+| Cost-matched LQR | 28.05 (0) | 25.10 (0) | 24.83 (0) | 42.5 | 0.63 |
+
+No baseline falls. With constant errors the slow-PWM driver's torque error scales with the command and adds no
+drag at zero command, so the robust scores are steadier: the model-based PID's worst dev run falls from 8.2
+to 3.5, and the LQR goes from 3 falls to none. The hand-tuned gains still need redoing for the measured robot.

@@ -43,13 +43,16 @@ class BatchRobot:
     est_torque_constant: object = None
     est_resistance: object = None
     est_gear_efficiency: object = None
+    # Slow PWM (SlowPwmActuator; needs voltage_mode): the command is a duty in [-1, 1] from
+    # physics.voltage_drive, and the motor drives only in the on-time. A plain bool.
+    slow_pwm: bool = False
     # Constant pitch-estimate offset, rad. None: the SimSpec's scalar. A (B,) array gives each simulation
     # its own (drawn per scenario by robust.sample_robots through randomize_range).
     pitch_bias: object = None
 
     @classmethod
     def from_params(cls, params, motor=None, voltage_estimate=None, voltage_feedforward=True,
-                    voltage_feedforward_gain=1.0, **overrides) -> "BatchRobot":
+                    voltage_feedforward_gain=1.0, slow_pwm=False, **overrides) -> "BatchRobot":
         """Build from balance_sim's RobotParams and (optional) MotorParams.
 
         motor=None means the ideal actuator, as in the CPU code. Keyword
@@ -58,6 +61,7 @@ class BatchRobot:
 
         voltage_estimate (MotorParams, needs motor): the voltage-mode driver, with these as the
         robot code's motor constants; voltage_feedforward turns its back-EMF term on or off.
+        slow_pwm (needs voltage_estimate): the Build HAT's slow-PWM mode instead of the linear one.
         """
         values = {name: getattr(params, name) for name in (
             "body_mass", "body_com_height", "body_inertia", "wheel_mass", "wheel_radius",
@@ -75,7 +79,9 @@ class BatchRobot:
                           voltage_feedforward_gain=voltage_feedforward_gain,
                           est_torque_constant=voltage_estimate.torque_constant,
                           est_resistance=voltage_estimate.resistance,
-                          est_gear_efficiency=voltage_estimate.gear_efficiency)
+                          est_gear_efficiency=voltage_estimate.gear_efficiency, slow_pwm=bool(slow_pwm))
+        elif slow_pwm:
+            raise ValueError("slow_pwm needs a voltage_estimate")
         values.update(overrides)
         return cls(**values)
 

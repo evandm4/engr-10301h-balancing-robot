@@ -8,6 +8,7 @@ Both classes report TOTAL torque across both wheels (the same convention as the
 rest of the model).
 """
 
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
@@ -182,3 +183,62 @@ class VoltageModeActuator(Actuator):
         i = (command - m.torque_constant * rotor_speed) / m.resistance
         i = float(_clip(i, -m.current_limit, m.current_limit))
         return m.n_motors * m.gear_ratio * m.gear_efficiency * m.torque_constant * i
+
+
+class SlowPwmActuator(VoltageModeActuator):
+    """The Raspberry Pi Build HAT in slow PWM (pwmparams 1 0.01), with the robot code's
+    inverse of it (SOFTWARE_PLAN B1b; hardware/legobot/DATASHEET.md 8.7).
+
+    Measured on the LEGO motors: in slow PWM the driver lets the motor coast in the
+    PWM off-time and the current falls to zero within the period, so the drive acts
+    only during the on-time. Per motor, with duty d in [-1, 1]:
+
+        i_on = (copysign(V, d) - k N w) / R,  clipped to the current limit,
+        torque = N eta k |d| i_on       (total: n_motors times that).
+
+    So the zero-speed torque is linear in duty (no dead band; lever on a scale, within
+    4%) and the back-EMF damping scales with |d|: spin-up time constants follow
+    J / (|d| a k + b) at every duty, a = N eta k / R. At d = 0 the motor coasts.
+
+    drive() is the robot code: it inverts the same model with ITS constants
+    (`estimate`) and the speed it measures, w^, and the true supply V (the HAT's vin):
+
+        d = (tau_c / n) / (a^ (V - k^ N w^))   for tau_c >= 0,
+        d = (tau_c / n) / (a^ (V + k^ N w^))   for tau_c < 0,     clipped to +-1,
+
+    with tau_c the command clipped to max_torque and a^ = N eta^ k^ / R^. Where the
+    denominator is not positive (wheel faster than the no-load speed in the commanded
+    direction) the duty saturates at copysign(1, tau_c). feedforward=False drops the
+    k^ N w^ terms; feedforward_gain scales them, as in VoltageModeActuator. With exact
+    constants and w^ = w the command is delivered exactly below saturation. Unlike the
+    linear voltage mode, a mismatch in the constants gives a torque error proportional
+    to the command, not a drag at zero command.
+
+    Not modeled: the PWM ripple itself (the period is short against the robot's
+    dynamics), regeneration through the diodes above the no-load speed, and the
+    `minpwm` 0.01 cut-off.
+    """
+
+    def drive(self, command: float, measured_wheel_speed: float) -> float:
+        e = self.estimate
+        if self.max_torque is not None:
+            command = _clip(command, -self.max_torque, self.max_torque)
+        per_motor = command / e.n_motors
+        a_hat = e.gear_ratio * e.gear_efficiency * e.torque_constant / e.resistance
+        back_emf = 0.0
+        if self.feedforward:
+            back_emf = e.torque_constant * (e.gear_ratio * measured_wheel_speed)
+            if self.feedforward_gain != 1.0:
+                back_emf = self.feedforward_gain * back_emf
+        v = self.m.supply_voltage
+        den = a_hat * (v - back_emf) if command >= 0 else a_hat * (v + back_emf)
+        duty = per_motor / den if den > 0 else math.copysign(1.0, per_motor)
+        return float(_clip(duty, -1.0, 1.0))
+
+    def torque(self, command: float, relative_wheel_speed: float) -> float:
+        """command: the duty from drive(), in [-1, 1], not a torque."""
+        m = self.m
+        rotor_speed = m.gear_ratio * relative_wheel_speed
+        i = (math.copysign(m.supply_voltage, command) - m.torque_constant * rotor_speed) / m.resistance
+        i = float(_clip(i, -m.current_limit, m.current_limit))
+        return m.n_motors * m.gear_ratio * m.gear_efficiency * m.torque_constant * abs(command) * i

@@ -105,9 +105,9 @@ measurement brings it down to. Values marked Est. are placeholders to replace wi
 | `wheel_mass` | 0.078 kg | — | Measured | Pair: 39 g per wheel including its axle |
 | `wheel_radius` | 0.0345 m | — | From diameter | Half the 69 mm diameter (0.044 m for the 88 mm wheel). Approximation for now; the loaded rolling radius (roll ten turns, divide the distance by 20π) can replace it later |
 | `wheel_inertia` | 6.0e-5 kg m² | ±0.20 | Measured mass / Est. | Pair, 0.65 m r² each (tire at the rim), as in the main datasheet. Slightly high, since the axle's few grams sit at the centre. The motor's output-side inertia is separate (`rotor_inertia` below) |
-| `max_torque` | 0.50 N m | — | DS | 2 × the 0.25 N m stall torque on LEGO's fact sheet. Pybricks' data implies 0.85 N m (section 5.1), so 0.50 is the conservative published figure |
-| `wheel_friction` | 0 | range 0–0.001 N m s/rad | Est. | No source separates viscous from Coulomb drag for these motors |
-| `coulomb_friction` | 0.046 N m | range 0.03–0.08 N m | Pyb/Derived | Pybricks' friction torque, 0.023 N m per motor. LEGO's no-load current implies 0.024–0.031 per motor (5.2) |
+| `max_torque` | **0.90 N m** (was 0.50) | — | Measured | 2 × 0.45 N m: zero-speed torque per volt a = 0.0597 N m/V (lever on a scale, slow PWM) × 7.6 V. LEGO's 0.25 N m per motor is a rating; Pybricks' 0.43 at 7.2 V agrees (8.7) |
+| `wheel_friction` | **0.0017 N m s/rad** (was 0) | range 0.0012–0.0022 | Measured | Both motors: 7e-4 per motor from the slow-PWM steady speeds, 9.5e-4 from coast-downs (8.7) |
+| `coulomb_friction` | **0.042 N m** (was 0.046) | range 0.030–0.055 | Measured | Both motors: 0.022 / 0.027 (left / right) from the speeds, 0.016 / 0.019 from coast-downs (8.7) |
 | `gravity` | 9.81 m/s² | — | — | Unchanged |
 
 ### 2.2 `ActuatorConfig` (model `"dc_motor"`)
@@ -119,21 +119,21 @@ measured number is at the **output shaft**, so the motor is described as a lumpe
 | Field | Value | Spread until measured | Tag | Notes |
 |---|---|---|---|---|
 | `gear_ratio` | 1.0 | — | — | Lumped: constants below are output-referred |
-| `torque_constant` | 0.411 V s/rad | ±0.15 | Pyb | Output back-EMF constant k_e. LEGO's sheet gives 0.355 (−14%) |
-| `gear_efficiency` | 0.565 | ±0.10 | Pyb/Derived | Net torque per amp over k_e: 0.232 / 0.411. LEGO's sheet gives 0.50 |
-| `resistance` | 4.4 Ω | ±0.17 | Pyb/DS | Midpoint of Pybricks' 3.73 Ω and the 5.14 Ω implied by LEGO's stall current, so the spread covers both. Includes driver and wiring. One stall-current measurement settles it (8.2) |
+| `torque_constant` | **0.348 V s/rad** (was 0.411) | ±0.03 | Measured | Output k_e from the slow-PWM speed fit: 0.352 left, 0.344 right. LEGO's sheet gives 0.355; Pybricks' 0.411 is 18% high (8.7) |
+| `gear_efficiency` | **0.755** (was 0.565) | ±0.02 | Measured | Carries the measured a = η k/R = 0.0597 ± 0.0019 N m/V with R fixed at 4.4 Ω: without current sensing only the ratio is identifiable, and the simulation needs only the ratio while the current limit doesn't bind |
+| `resistance` | 4.4 Ω (kept) | ±0.05 | — | Not separable from η without a current measurement (`stall.py` with a multimeter would separate it); its spread, with η's, covers a on the unmeasured right motor |
 | `supply_voltage` | 7.6 V × `plimit` | ±0.105 | DS | 2S LiPo, 6.8–8.4 V, **times the HAT's power limit** (7.2). With `plimit 1`: 7.6 V |
 | `current_limit` | 2.5 A | — | — | The Build HAT has no current control, so this is set high enough never to bind (stall at 8.4 V and 3.73 Ω is 2.25 A) |
 | `n_motors` | 2 | — | — | |
-| `rotor_inertia` | 1.22e-3 kg m² | ±0.50 | Pyb (estimate) | Per motor, **output side** (with `gear_ratio = 1`, reflected = 2 × 1.22e-3 = 2.44e-3). Pybricks derived it from an *estimated* acceleration; a spin-up test measures it (8.2). It is by far the largest inertia on the wheel side |
+| `rotor_inertia` | **5.45e-4 kg m²** (was 1.22e-3) | ±0.08 | Measured | Per motor, output side: spin-up J (motor + wheel) 5.8e-4 left, 5.7e-4 right, from τ = J/(d a k + b) fitted over duties 0.2–1.0, less one wheel's 3e-5. Less than half Pybricks' estimate; 2J/r² is now 0.92 kg of equivalent mass at the wheel, not 2.05 (8.7) |
 
 ### 2.3 `SensorConfig` (control rate 200 Hz; see 7.3 for the encoder's 100 Hz)
 
 | Field | Value | Tag | Notes |
 |---|---|---|---|
-| `pitch_rate_std` | 0.02 rad/s (keep) | Derived/Est. | ICM-20948 at a 51 Hz filter: 2.2e-3 rad/s (5.4). Keep the conservative 0.02 until the chassis measurement (8.4); LEGO frames rattle |
-| `pitch_rate_bias` | 0.01 rad/s (keep) | DS/Est. | Uncalibrated offset is up to ±5 °/s (0.087 rad/s): **calibrate at every boot**. What remains is thermal drift (±0.05 °/s/°C) |
-| `pitch_std` | 0.005 rad (keep) | Derived | Datasheet-level is 1.2–1.6e-4 rad after a complementary filter (5.4) |
+| `pitch_rate_std` | **0.017 rad/s** | Measured | On the chassis with the motors running: 0.014–0.017 rad/s; 1.5e-3 with them off (datasheet 2.2e-3). Motor vibration sets it (8.7) |
+| `pitch_rate_bias` | **0.003 rad/s** | Measured/DS | Offset measured 0.043 rad/s: **calibrate at every boot**. Drift afterwards measured under 2e-4 rad/s (Allan 1e-4 at 5 s, no shift with the motors on); 0.003 covers the datasheet's 0.05 °/s/°C over a 3 °C warm-up (8.7) |
+| `pitch_std` | **0.016 rad** | Measured | Raw accelerometer tilt per sample (the IMU model filters it): 1.45e-3 with the motors off, 0.016 / 0.023 / 0.029 at duty 0.3 / 0.6 / 1.0 (8.7). Duty 0.3 covers the speeds balancing uses |
 | `pitch_bias` | 0.015 rad | Est. | Raised from 0.01: the accelerometer's board-level offset is up to ±50 mg (0.05 rad) uncalibrated, and a LEGO mount adds play. Calibrate the balance point (8.4) |
 | `position_std` | 0.0010 m | DS/Derived | ±3° accuracy including gearbox slack, at r = 34.5 mm (5.4). One count is 0.60 mm |
 | `velocity_std` | 0.025 m/s | Derived | Counts differenced 10 ms apart (the sensor's 100 Hz update) |
@@ -583,7 +583,7 @@ describes. It replaces both `randomize_range` entries.
 |---|---|
 | Gyro noise and bias | Log 30 s with the robot still, motors off; then held still with the motors running at a few speeds. σ and mean of each |
 | Pitch offset (balance point) | Find the angle at which the robot balances on its wheels with the motors coasting (hold and release gently, or log the angle where it reverses direction); compare with the IMU's reading there |
-| Accelerometer offset | Read the tilt on a level surface, then rotate the robot 180° about the vertical and read again; half the difference is the offset |
+| Accelerometer offset | Lay the robot face up, then face down (forward axis along +g, then −g); the forward axis's offset is the mean of the two readings, and near upright the tilt error is −offset/g (`robot/measure/accel_tumble.py`). *Corrected 2026-11-23:* the earlier "rotate 180° about the vertical" method leaves pitch unchanged, so it measures the surface's tilt, not the sensor's offset. The balance point (above) already absorbs a constant offset; this measures it separately |
 
 ### 8.5 Power
 
@@ -598,6 +598,155 @@ cycling. Gives the real voltage range for `supply_voltage`, and shows whether th
 | Software latency | Timestamp each control step's IMU read, controller output and serial write in the loop; log the distribution. Add the DLPF and L/R terms of section 6 |
 | End-to-end check | Command a duty step and timestamp it; find when the position stream first moves. Includes the motor's mechanical response, so compare with the spin-up fit |
 | Traction μ | Robot on a board, motors off (the gearbox holds the wheels), tilt until it slides: μ = tan(angle) |
+
+### 8.7 Scripts and results so far (SOFTWARE_PLAN C3)
+
+The scripts are in `robot/measure/` and run on the Pi as `robot/run_safe.sh robot.measure.<name>`. Each one
+writes `logs/<stamp>_<name>.csv` and `_fit.json`, and prints every fitted constant with its standard error.
+`fit.py` (numpy only) re-fits a CSV on the laptop; `test_fit.py` checks each fit against synthetic data.
+Copies of the logs are in `bench_data/`.
+
+**Identification without current sensing.** The HAT can't measure current, so no-load and coast-down runs
+determine only ratios: a/c, τ_c/c, J/c and b/J, where a = η k/R is torque per volt and c = a k + b is the
+total speed damping. k = (1 − β τ)/slope also follows. One known torque fixes the absolute scale: the
+string-and-mass test (`load.py`) measures c from the speed drop at a fixed duty, and g(duty) cancels out
+of that comparison. A multimeter (`stall.py`) separates R from η, which the simulation doesn't need when
+the current limit never binds.
+
+| Script | Hands-free? | Measures |
+|---|---|---|
+| `motor_steps` | yes (wheels off the ground) | Duty map, spin-up τ and delay, coast-down τ_c/J and b/J, k_eff |
+| `latency` | yes | Delay from the start of the command write to motion onset, 30 trials at random stream phase |
+| `imu_still` | yes | Gyro and tilt noise, bias and Allan deviation, motors off and running |
+| `discharge` | yes (long run) | `vin` and the throttle flag over a discharge, and whether no-load speed follows `vin` (motor rail vs battery) |
+| `lever` | no: beam on a kitchen scale (below) | Torque per volt a and the dead band at zero speed: **the absolute torque scale** (used instead of `load`) |
+| `load` | no: string and mass | c = a k + b (absolute torque scale), lift-off duty per mass | (more elaborate; also covers lowering, the braking quadrant) |
+| `backlash` | no: rock the wheel | Encoder peak-to-peak and the free play seen at the tread |
+| `stall` | no: multimeter | R (optional) |
+| `accel_tumble` | no: lay it face up and face down | Accelerometer forward-axis offset |
+| `balance_point` | no: release near upright | Pitch zero in the IMU's frame, by fitting θ̈ = c θ + e θ̇ + h to free falls |
+
+**Lever-on-scale setup (`lever`).** Take the wheel off one motor and put a straight Technic beam on that
+axle through its end hole, so it sticks out sideways. Fit a pin or short axle through a hole near the far
+end as a foot, pointing down. The arm length is 8 mm × (holes from the axle hole to the foot hole), for
+example 12 holes = 96 mm (`--arm-mm 96`). Rest the foot on a kitchen scale raised on books so the beam sits
+about level (cos 10° = 0.985). Hold the robot so the body can't move, and tare the scale with the beam
+resting on it and the motor off. The script checks with a 0.08-duty pulse that the motor presses the beam
+down, holds each duty for 3 s ("READ NOW" after 1.5 s), and asks for the reading in grams.
+τ = grams × g × L; a linear fit against duty × vin gives a (N m/V) and the dead band. Run it once in the
+library mode and once with `--pwmparams 1 0.01`: at zero speed both should give the same a if B1's model
+holds.
+
+**Results, 2026-11-23** (vin 7.4–7.5 V, wheels on, robot on a stand, wheels off the ground):
+
+*The HAT's PWM modes are not a linear voltage source.* Steady no-load speed (rad/s, left wheel; the right
+is within 0.3 rad/s above duty 0.5) and spin-up time constant:
+
+| `pwmparams` | 0.1 | 0.2 | 0.3 | 0.5 | 0.7 | 1.0 | Spin-up | Character |
+|---|---|---|---|---|---|---|---|---|
+| `0.65 0.01` (library, current `hw_config`) | 2.4 | 6.2 | 8.9 | 12.6 | 15.6 | 19.6 | Fast rise to 60–75%, then a slow creep over about 0.4 s at duty ≤ 0.7; one 31 ms rise at 1.0 | No-load map linear within 7–12% of full scale above 0.15 duty |
+| `0 0` (fast PWM throughout, firmware default) | 0 | 0 | 0 | 9.1 | 15.3 | 19.6 | About 90 ms, smooth | **Dead band to about 0.4–0.45 duty** |
+| `1 0.01` (slow PWM throughout) | 8.3 | 13.9 | 16.0 | 18.0 | 18.9 | 19.6 | 47 ms (median) | Speed saturates, with large ripple at low duty |
+
+The slow-PWM curve fits ω_ss = A − B/d (A = 20.9, B = 1.26 rad/s) within about 5%. That is what a driver
+gives if it lets the motor coast during the PWM off-time with discontinuous current: torque ≈
+d·a(V − k ω), so with no load the motor runs close to V/k at any duty, and its back-EMF damping scales
+with duty. None of the three modes is the `a(d V − k ω)` that B1 and the robot's feedforward assume. The
+library mode is the closest in steady state, but its duty-dependent spin-up says its damping depends on
+duty as well. Settling this needs the loaded test (`load.py`, including lowering the mass, to cover
+braking), and B1 should then model whichever mode is chosen (SOFTWARE_PLAN B1b).
+
+Other no-load figures (library mode): k_eff = k + b/a = 0.43 ± 0.01 V s/rad (left) and 0.39 ± 0.01
+(right), against Pybricks' k_e of 0.411. Full-duty no-load speed is 19.4–19.6 rad/s at 7.45 V in every mode,
+which is 2.6 rad/s per volt, above Pybricks' 16.6 rad/s at 7.2 V. Coast-down gives τ_c/J = 20–31 rad/s²
+and b/J = 2–4.5 1/s; at the Pybricks J (1.22e-3 kg m²) that is τ_c = 0.025–0.038 N m per motor. The right
+wheel's extra friction shows only at low duty: 0.6 against 2.4 rad/s at 0.1 duty.
+
+*Latency* (`latency`, duty 0 → 1.0, 30 trials per wheel): command write to motion onset in the encoder
+stream is 15.0 ± 0.8 ms on the left wheel and 17.5 ± 0.8 ms on the right, with a trial sd of 4.4 ms and p5–p95 of
+8–25 ms. That includes the encoder sample's age and transit, which the simulation models separately
+(`encoder_delay_s` 5 ms), so command to torque is about 8–12 ms. This fits the 10 ms nominal and the
+5–25 ms range. The right wheel is about 2.5 ms later: its `set` comes second in the command string.
+
+*IMU on the chassis* (`imu_still`; 30 s motors off, then 10 s at each duty with both wheels running):
+
+| | Motors off | Duty 0.3 | 0.6 | 1.0 | Datasheet |
+|---|---|---|---|---|---|
+| Gyro pitch rate sd (rad/s) | 1.5e-3 | 0.014 | 0.015 | 0.017 | 2.2e-3 |
+| Accelerometer tilt sd (rad) | 1.45e-3 | 0.016 | 0.023 | 0.029 | 1.35e-3 |
+
+Gyro zero-rate offset was 0.043 rad/s (2.5 °/s), with no shift with the motors on. Allan deviation was 1.3e-3 /
+5.5e-4 / 1.9e-4 / 1.0e-4 rad/s at 0.005 / 0.05 / 0.5 / 5 s. So vibration from the motors, not the sensor,
+sets the noise, at about 10× the datasheet. `legobot_config` now uses the measured values (section 2.3).
+
+*Lever on a scale* (`lever`, left motor, 96 mm arm, vin 7.35 V). Zero-speed torque in N m:
+
+| duty | 0.05 | 0.1 | 0.15 | 0.2 | 0.3 | 0.4 | 0.5 | 0.7 |
+|---|---|---|---|---|---|---|---|---|
+| Library mode (`0.65 0.01`) | 0.030 | 0.033 | 0.049 | 0.064 | 0.085 | 0.118 | 0.125 | **0.235** |
+| Slow PWM (`1 0.01`) | 0.029 | 0.055 | 0.080 | 0.111 | 0.146 | 0.191 | 0.245 | 0.311 |
+
+The library mode's gain more than doubles where it switches to fast PWM at 0.65, so it is unusable for
+control. Slow PWM is linear within 3.8% with no dead band: **a = 0.0597 ± 0.0019 N m/V**, which extrapolates
+to 0.45 N m of stall torque per motor at full duty. During each hold the encoder moved 4–7°, as the gear
+free play and the beam flex took up; that is an upper bound on the backlash.
+
+**The slow-PWM model.** Slow PWM behaves as **τ = |d| a (sgn(d) V − k ω)**: the drive coasts in the off-time,
+so the back-EMF damping scales with duty. With a from the lever, a joint fit of the slow-PWM steady speeds
+(|d| a (V − kω) = τ_c + bω) and spin-up time constants (τ = J/(|d| a k + b)) gives, left / right:
+k = 0.352 / 0.344 V s/rad, τ_c = 0.022 / 0.027 N m, b = 7.0 / 6.6e-4 N m s/rad and J (motor + wheel) =
+5.84 / 5.67e-4 kg m². The model reproduces the speeds within 0.8 rad/s and the time constants
+(117 ms at 0.2 duty, 27 ms at 1.0) within about 5 ms. Coast-downs give τ_c = 0.016 / 0.019 and
+b = 9.9 / 9.2e-4, which is fair agreement. **Recommendation: run the robot in slow PWM**, with the feedforward
+d = τ / (a (V − k ω̂)) for τ ≥ 0 and d = τ / (a (V + k ω̂)) for τ < 0 (the inverse of the model). B1b then
+models this mode in the engines. `legobot_config` now carries these constants (section 2).
+
+*Model check (B1b, 2026-11-23).* `balance_sim.SlowPwmActuator`, with `legobot_config`'s constants and a
+10 ms command delay, driving the bare motor (J = rotor + one wheel, the config's friction) reproduces the
+bench's steady no-load speeds within 1% at duty ≥ 0.2 on both wheels. At 0.1–0.15 it is within 4% on the
+left; it is 19–35% fast on the right, whose friction is above the config's average. The model's spin-up
+curves follow the measured ones. A repeat of the duty steps after the HAT had been power-cycled gave the
+same speeds (7.7 / 13.9 / 18.3 / 20.2 rad/s at 0.1 / 0.2 / 0.5 / 1.0), so the mode behaves the same after
+the firmware reloads.
+
+*Open: speed ripple at low duty.* In slow PWM the no-load speed ripples by an extra 2–3 rad/s (sd) at duty
+0.1–0.15, at about 10 Hz; the other modes show 1.0–1.4 rad/s even at full duty, which is friction varying
+around the turn plus quantization. `pwm_probe` (robot secured; one command, the same value every 5 ms, or a new
+value every 5 ms) gives the same ripple all three ways, so the firmware times the pulses itself and a new
+`set` doesn't restart them. Ripple sd (rad/s) and main frequency at no load, left wheel:
+
+| duty | 0.05 | 0.10 | 0.15 | 0.20 |
+|---|---|---|---|---|
+| Ripple sd | 2.8–2.9 | 3.1 | 3.9–4.4 | 1.2–2.0 |
+| Frequency | 10 Hz | 10 Hz | 15 Hz | 6–36 Hz (no clear peak) |
+
+The 100 Hz encoder can't tell f from 100 − f, so the true pulse rate may be 85–90 Hz. Either way, at the
+small duties balancing uses, the drive delivers its torque in pulses large enough to move a free motor by
+±4–5 rad/s. On the robot, the body and both rotors share each pulse, so the effect is several times
+smaller, but the averaged `SlowPwmActuator` leaves it out. The next check is a reference-engine experiment
+with the duty applied as a pulse train. (An earlier run, with the wheel dragging after the robot fell off
+its stand, seemed to show 100 × duty Hz; it is superseded.)
+
+*Backlash* (`backlash`, left motor, beam still on, rocked by hand with the motor in slow PWM at duty 0): the
+encoder on the output shaft moved 5–6° peak-to-peak, and the two ends of the play were 2.6° apart. That is
+the gearbox, matching LEGO's ±3° figure. By eye the beam tip moved 19 mm at 96 mm, or **11.3° in total**: the
+extra ~6° is play the encoder can't see, from the axle in the motor's cross-hole and the beam on the axle.
+The wheel's coupling has some of that. So the free play between motor and wheel is about ±3° (gearbox) plus
+up to ±3° (LEGO couplings), and well above the ±1.5° at which the B5 test raised costs 19–129%: **port the
+backlash model (B5)**. A wheel-on visual check would narrow the coupling share.
+
+*Balance point* (`balance_point`, 8 free falls on the wheels with the motors coasting). The script's regression
+θ̈ = cθ + eθ̇ + h is **ill-conditioned for falls from rest**: an exponential fall keeps θ̇ proportional to
+θ − θ0, so c and e trade off (it returned c = 1.3 s⁻², ±0.04 rad). A shared fit, θ − θ0 = αe^{pt} + βe^{−pt}
+over all falls, found p = 5.05 s⁻¹ but moved by up to 0.03 rad when any one trial was left out. The robust
+estimate comes from **which way each release fell**, corrected for the hand's release speed (θ_start + v0/p).
+The last fall backward started at −0.015 rad and the first forward at +0.003 (−0.026 and −0.005 uncorrected),
+so **θ0 ≈ −0.010 ± 0.010 rad** in the IMU's frame. Saved as a provisional `pitch_zero` in the Pi's
+`calibration.json`. That uncertainty matches `pitch_bias` = ±0.015 rad, which stays. (`robot.calibrate
+balance`, holding the robot at its balance point by feel, turned out impractical by hand.)
+
+**Still to measure:** `discharge` (about an hour on the stand), and optionally `stall` (R
+with a multimeter) and `load` (the braking quadrant directly).
 
 ## 9. Sources
 

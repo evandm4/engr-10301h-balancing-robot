@@ -26,10 +26,16 @@ def _is_zero(value) -> bool:
 def actuator_torque(robot: BatchRobot, command, relative_wheel_speed, xp=np):
     """Applied torque for a torque command. See Actuator.torque in the CPU code.
 
-    In voltage mode `command` is the drive voltage from voltage_drive (VoltageModeActuator.torque)."""
+    In voltage mode `command` is the drive voltage from voltage_drive (VoltageModeActuator.torque);
+    in slow PWM it is the duty (SlowPwmActuator.torque)."""
     if not robot.dc_motor:
         return xp.clip(command, -robot.max_torque, robot.max_torque)
     rotor_speed = robot.gear_ratio * relative_wheel_speed
+    if robot.slow_pwm:
+        i = xp.divide(xp.copysign(robot.supply_voltage, command) - robot.torque_constant * rotor_speed,
+                      robot.resistance)
+        i = xp.clip(i, -robot.current_limit, robot.current_limit)
+        return robot.n_motors * robot.gear_ratio * robot.gear_efficiency * robot.torque_constant * xp.abs(command) * i
     if robot.voltage_mode:
         i = xp.divide(command - robot.torque_constant * rotor_speed, robot.resistance)
         i = xp.clip(i, -robot.current_limit, robot.current_limit)
@@ -47,9 +53,23 @@ def actuator_torque(robot: BatchRobot, command, relative_wheel_speed, xp=np):
 def voltage_drive(robot: BatchRobot, command, x_dot, theta_dot, xp=np):
     """The drive voltage the robot code sends for a torque command (VoltageModeActuator.drive).
 
-    x_dot and theta_dot are the MEASURED values (after sensor noise and bias)."""
+    x_dot and theta_dot are the MEASURED values (after sensor noise and bias). In slow PWM it
+    returns the duty instead (SlowPwmActuator.drive)."""
     w_hat = xp.divide(x_dot, robot.wheel_radius) - theta_dot
     c = xp.clip(command, -robot.max_torque, robot.max_torque)
+    if robot.slow_pwm:
+        per_motor = xp.divide(c, robot.n_motors)
+        a_hat = robot.gear_ratio * robot.est_gear_efficiency * robot.est_torque_constant / robot.est_resistance
+        back_emf = 0.0 * w_hat     # an array, so torch keeps the dtype in where() below; v - 0 is exact
+        if robot.voltage_feedforward:
+            back_emf = robot.est_torque_constant * (robot.gear_ratio * w_hat)
+            if robot.voltage_feedforward_gain != 1.0:
+                back_emf = robot.voltage_feedforward_gain * back_emf
+        v = robot.supply_voltage
+        den = xp.where(c >= 0, a_hat * (v - back_emf), a_hat * (v + back_emf))
+        ok = den > 0
+        duty = xp.where(ok, xp.divide(per_motor, xp.where(ok, den, 1.0)), xp.copysign(1.0, per_motor))
+        return xp.clip(duty, -1.0, 1.0)
     volts = robot.est_resistance * xp.divide(
         c, robot.n_motors * robot.gear_ratio * robot.est_gear_efficiency * robot.est_torque_constant)
     if robot.voltage_feedforward:
