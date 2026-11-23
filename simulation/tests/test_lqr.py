@@ -298,7 +298,9 @@ def test_cost_terms_add_up():
     batched = BatchEvaluator(SHORT, CONFIG.build_lqr_space(), controller="lqr")
     r = batched.evaluate_population(_gain_sets(SHORT)[:3])
     total = r.pitch_error + SHORT.effort_weight * r.effort + SHORT.velocity_weight * r.velocity_error
-    np.testing.assert_allclose(total, r.costs, rtol=1e-12)    # these three don't fall
+    up = r.costs < SHORT.fall_penalty      # the runs that didn't fall (on the Pololu robot, all of them)
+    assert up.any()
+    np.testing.assert_allclose(total[up], r.costs[up], rtol=1e-12)
 
 
 # ---- PyTorch backend ------------------------------------------------------------------

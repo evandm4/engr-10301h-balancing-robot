@@ -1,10 +1,48 @@
 # A4: baselines on the LEGO robot
 
 SOFTWARE_PLAN A4, 2026-11-22. The LEGO robot (`legobot_config.py`) on its derived scenario (A3,
-`legobot_scenario.py`), with the voltage-mode driver since B1 and the simulated IMU since B2. These are the reference points the
+`legobot_scenario.py`), with the voltage-mode driver since B1, the simulated IMU since B2 and the encoder model since B3. These are the reference points the
 LEGO tuning runs (E1, E2) are compared against. Re-score with `python hardware/legobot/legobot_baselines.py`.
 
-## Scores with the simulated IMU (B2; current)
+## Scores with the encoder model (B3; current)
+
+Since B3 the velocity the controller (and the feedforward) sees comes from the motors' encoders as the
+Build HAT reports them: 1° counts sampled at 100 Hz, 5 ms in transit, held, differenced 10 ms apart.
+IMU and voltage-mode driver as before; gains and scenario unchanged.
+
+| Baseline | Plain (seeds 1–3, 9 runs) | Robust, train seeds 1–50 (150) | Robust, dev seeds 5000–5049 (150) | Dev chaos |
+|---|---|---|---|---|
+| Hand-tuned PID | 2.381 (0) | 2.692 (0) | 2.645 (0) | 4.4e-3 |
+| Model-based PID | 1.920 (0) | 74.98 (6) | 99.39 (8) | 12 |
+| Cost-matched LQR | 1.946 (0) | 3.068 (0) | 39.52 (3) | 0.12 |
+
+Dev seeds, same robots, one change at a time (mean cost, falls of 150):
+
+| Baseline | As scored | Robot code's constants exact | Encoder off (white velocity noise) | Current-mode driver |
+|---|---|---|---|---|
+| Hand-tuned PID | 2.64 (0) | 2.59 (0) | 2.61 (0) | 2.52 (0) |
+| Model-based PID | 99.4 (8) | 74.6 (6) | 26.5 (2) | 2.01 (0) |
+| Cost-matched LQR | 39.5 (3) | 2.84 (0) | 1.77 (0) | 2.36 (0) |
+
+The new falls need the voltage-mode driver: with current mode the encoder costs nothing in falls. The
+feedforward cancels back-EMF with a wheel speed that is 5–15 ms old (held and in transit), which leaves a
+delayed drag of c_m (ω − ω̂) on the motors. The model-based PID's falls all come at 3.4–4.0 s, just after
+the climb to cruise speed, mostly from the 0.14 rad tilt at 20–25 ms latency, and its chaos term (12)
+says the outcome flips with a 1e-4 rad nudge: the loop is near an instability there. The hand-tuned PID
+is unaffected. Robot-code options to try later (none modeled yet): a smaller feedforward gain, or
+predicting the wheel speed forward over its age from the commanded torque.
+
+Plain-scenario sensitivity (reference engine, 9 runs, no falls in any case):
+
+| Velocity sensing | Hand-tuned | Model-based | LQR |
+|---|---|---|---|
+| White noise 0.025 m/s (B2) | 2.336 | 1.823 | 1.511 |
+| Encoder, 5 ms transit (configured) | 2.381 | 1.920 | 1.946 |
+| Encoder, no transit delay | 2.354 | 1.864 | 1.708 |
+| Encoder, 10 ms transit | 2.406 | 1.990 | 2.293 |
+| Encoder differenced 5 ms apart | 2.644 | 2.003 | 2.960 |
+
+## Scores with the simulated IMU (B2, superseded by B3)
 
 Since B2 the controller sees the robot code's complementary-filter estimate (τ = 0.5 s) from a simulated
 gyro and accelerometer (10 cm above the axle), instead of true pitch plus white noise. Voltage-mode

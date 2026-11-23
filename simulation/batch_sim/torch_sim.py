@@ -22,6 +22,7 @@ takes a moment, and replays are cheap. On a CPU device it runs the same code
 without graphs (useful for tests).
 """
 
+import math
 from dataclasses import fields
 from typing import Optional
 
@@ -30,7 +31,7 @@ import numpy as np
 from .controller import LQR_STATE_GAINS, cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
 from .physics import accelerometer_tilt, derivatives, rk4_step, voltage_drive
 from .robot import BatchRobot
-from .schedule import Schedule, SimSpec, build_schedule, per_sim_ring_size
+from .schedule import Schedule, SimSpec, build_schedule, encoder_steps, per_sim_ring_size
 from .simulate import BatchResult
 from .xp import torch_ops
 
@@ -116,6 +117,14 @@ class TorchSimulator:
         tau = spec.filter_time_constant
         self.alpha = tau / (tau + spec.control_dt)   # Python floats, as ComplementaryFilter
         self.one_minus_alpha = 1.0 - self.alpha
+        # Encoder: counts sampled at the start of every n_period-th step, in a small ring (see simulate_batch).
+        self.encoder = spec.encoder_counts > 0
+        if self.encoder:
+            self.n_period, self.n_delay = encoder_steps(spec)
+            self.resolution = 2.0 * math.pi / spec.encoder_counts
+            self.speed_per_count = self.resolution / spec.encoder_period
+            self.n_counts = self.n_delay // self.n_period + 3
+            self.counts = torch.zeros(self.n_counts, B, dtype=dtype, device=device)
         self.alive = zeros(torch.bool)
         self.fall_time = zeros()
         self.pitch_error, self.effort, self.velocity_error = zeros(), zeros(), zeros()
@@ -127,8 +136,21 @@ class TorchSimulator:
 
     # ---- one step, written as in-place updates so it can be captured --------
 
+    def _encoder_sample(self):
+        """Store this step's count if it is a sampling step. Idempotent within a step (the state
+        has not moved yet), so both the control tick and the physics step can call it."""
+        torch, xp = self.torch, self.xp
+        step = self.step
+        slot = torch.div(step, self.n_period, rounding_mode="floor") % self.n_counts
+        x, _, theta, _ = self.state
+        count = xp.floor((xp.divide(x, self.robot.wheel_radius) - theta) / self.resolution)
+        old = self.counts[slot]
+        self.counts.index_copy_(0, slot, torch.where(step % self.n_period == 0, count.unsqueeze(0), old))
+
     def _controller_tick(self):
         spec, xp = self.spec, self.xp
+        if self.encoder:
+            self._encoder_sample()
         _, x_dot, theta, theta_dot = self.state
         if self.noise is not None:
             n = self.noise[self.tick][0][:, self.seed_index]    # (3, B): velocity, pitch, pitch-rate noise
@@ -155,6 +177,12 @@ class TorchSimulator:
         elif spec.pitch_rate_bias or spec.pitch_bias:   # deterministic, so they need no table
             theta = theta + spec.pitch_bias
             theta_dot = theta_dot + spec.pitch_rate_bias
+        if self.encoder:
+            torch = self.torch
+            m = torch.div(self.step - self.n_delay, self.n_period, rounding_mode="floor")   # latest sample available
+            difference = self.counts[m % self.n_counts][0] - self.counts[(m - 1) % self.n_counts][0]
+            speed = torch.where(m >= 1, difference * self.speed_per_count, 0.0)
+            x_dot = self.robot.wheel_radius * (speed + theta_dot)
         if self.lqr:
             command, velocity_integral = lqr_update(
                 x_dot, theta, theta_dot, self.goal_per_tick[self.tick], spec.control_dt,
@@ -183,6 +211,8 @@ class TorchSimulator:
     def _physics_step(self):
         spec, xp, torch = self.spec, self.xp, self.torch
         dt, alive = spec.dt, self.alive
+        if self.encoder:
+            self._encoder_sample()
         if self.per_sim_delay:
             # The command issued at tick (step - delay) // spc, or the zero row before the first arrives.
             since = self.step - self.delay_steps
@@ -223,7 +253,7 @@ class TorchSimulator:
 
     def _reset(self):
         for buffer in (*self.state, self.pitch_integral, self.velocity_integral, self.setpoint, self.in_flight,
-                       self.estimate, self.applied, self.ring, *([self.ring_drive] if self.voltage else []), self.pitch_error, self.effort, self.velocity_error, self.step, self.tick):
+                       self.estimate, self.applied, self.ring, *([self.counts] if self.encoder else []), *([self.ring_drive] if self.voltage else []), self.pitch_error, self.effort, self.velocity_error, self.step, self.tick):
             buffer.zero_()
         self.state[2].copy_(self.start_pitch)
         self.alive.fill_(True)

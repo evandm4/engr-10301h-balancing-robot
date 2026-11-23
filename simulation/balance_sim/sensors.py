@@ -1,10 +1,59 @@
 """Sensor model: what the controller actually sees, as opposed to true state."""
 
 import math
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
+
+
+class Encoder:
+    """The motors' angle sensors as the Build HAT reports them (SOFTWARE_PLAN B3).
+
+    Every `period` the HAT samples the motor angle (wheel relative to body,
+    x / r - theta) in whole counts of 2 pi / counts_per_turn; each sample reaches
+    the robot code `delay` later and is held until the next one arrives. The
+    robot code's wheel speed is the difference of the two latest counts over one
+    period, so it changes once per period and carries quantization noise of
+    (2 pi r / counts) / (period sqrt 6) in ground speed (DATASHEET 5.4).
+
+    observe(t, state) is called at the start of every physics step; speed() and
+    angle() return what the robot code has at that moment. Gearbox slack is not
+    modeled (only the position reading, which no controller uses, would show it).
+    """
+
+    def __init__(self, counts_per_turn: int, period: float, delay: float, wheel_radius: float):
+        if counts_per_turn <= 0 or not (period > 0) or delay < 0 or not (wheel_radius > 0):
+            raise ValueError("counts_per_turn, period and wheel_radius must be positive, delay non-negative")
+        self.counts_per_turn, self.period, self.delay, self.wheel_radius = counts_per_turn, period, delay, wheel_radius
+        self.resolution = 2.0 * math.pi / counts_per_turn       # rad per count
+        self.speed_per_count = self.resolution / period         # rad/s per count of difference
+        self.reset()
+
+    def reset(self) -> None:
+        self._in_flight = deque()   # (time available, count)
+        self._n_samples = 0
+        self._latest = self._previous = None
+
+    def observe(self, t: float, state) -> None:
+        if t >= self._n_samples * self.period - 1e-12:
+            relative_angle = float(state[0]) / self.wheel_radius - float(state[2])
+            self._in_flight.append((self._n_samples * self.period + self.delay,
+                                    float(np.floor(relative_angle / self.resolution))))
+            self._n_samples += 1
+        while self._in_flight and self._in_flight[0][0] <= t + 1e-12:
+            self._previous, self._latest = self._latest, self._in_flight.popleft()[1]
+
+    def speed(self) -> float:
+        """Relative wheel speed (rad/s) from the two latest counts; 0 until there are two."""
+        if self._previous is None:
+            return 0.0
+        return (self._latest - self._previous) * self.speed_per_count
+
+    def angle(self) -> float:
+        """Relative wheel angle (rad) of the latest count; 0 until the first arrives."""
+        return 0.0 if self._latest is None else self._latest * self.resolution
 
 
 @dataclass
@@ -29,12 +78,39 @@ class SensorNoise:
     velocity_std: float = 0.0       # m/s, encoder-derived velocity
     seed: int = 0
     _rng: Optional[np.random.Generator] = field(default=None, repr=False, compare=False)
+    # Encoder model (Encoder; SOFTWARE_PLAN B3), on when encoder_counts > 0: velocity is then
+    # wheel_radius x (the encoder's wheel speed + the measured pitch rate) and position
+    # wheel_radius x (its angle + the measured pitch), in place of velocity_std and position_std.
+    # The simulator calls observe() at every physics step.
+    encoder_counts: int = 0             # counts per wheel turn relative to the body; 0 = off
+    encoder_period: float = 0.010       # s between the driver's angle samples
+    encoder_delay: float = 0.0          # s from a sample to the robot code having it
+    wheel_radius: float = 0.0           # m (needed with the encoder)
 
     def __post_init__(self):
+        self._encoder = (Encoder(self.encoder_counts, self.encoder_period, self.encoder_delay, self.wheel_radius)
+                         if self.encoder_counts > 0 else None)
         self.reset()
 
     def reset(self) -> None:
         self._rng = np.random.default_rng(self.seed)
+        if getattr(self, "_encoder", None) is not None:
+            self._encoder.reset()
+
+    @property
+    def has_encoder(self) -> bool:
+        return self._encoder is not None
+
+    def observe(self, t: float, state) -> None:
+        """Called by the simulator at the start of every physics step (time t)."""
+        if self._encoder is not None:
+            self._encoder.observe(t, state)
+
+    def _apply_encoder(self, measured: np.ndarray) -> None:
+        """Replace position and velocity with the encoder's, given measured pitch and pitch rate."""
+        e = self._encoder
+        measured[1] = self.wheel_radius * (e.speed() + measured[3])
+        measured[0] = self.wheel_radius * (e.angle() + measured[2])
 
     def measure(self, state: np.ndarray) -> np.ndarray:
         measured = np.array(state, dtype=float)
@@ -43,6 +119,8 @@ class SensorNoise:
         measured[1] += self.velocity_std * noise[1]
         measured[2] += self.pitch_std * noise[2] + self.pitch_bias
         measured[3] += self.pitch_rate_std * noise[3] + self.pitch_rate_bias
+        if self._encoder is not None:
+            self._apply_encoder(measured)
         return measured
 
 
@@ -138,4 +216,6 @@ class IMUSensor(SensorNoise):
         measured[1] += self.velocity_std * noise[1]
         measured[2] = estimate
         measured[3] = gyro
+        if self._encoder is not None:
+            self._apply_encoder(measured)
         return measured

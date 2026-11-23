@@ -37,8 +37,12 @@ def spec_from_eval_config(config: EvalConfig, controller: str = "cascaded") -> S
         # control_dt the sensor was built with: variations of an EvalConfig change only control_dt.
         # gravity: the batch engine uses the robot's (BatchRobot.gravity), as the config sets the sensor's from it
         imu = dict(imu=True, imu_height=s.imu_height, filter_time_constant=s.filter_time_constant)
+    encoder = {}
+    if getattr(s, "has_encoder", False):   # B3: the wheel radius comes from the BatchRobot
+        encoder = dict(encoder_counts=s.encoder_counts, encoder_period=s.encoder_period,
+                       encoder_delay=s.encoder_delay)
     return SimSpec(
-        **imu,
+        **imu, **encoder,
         controller=controller,
         goal=step_profile(config.goal_steps, config.goal_transition),
         disturbance=push_profile(config.pushes) if config.pushes else None,

@@ -246,7 +246,10 @@ def test_float32_stays_close_to_float64():
     stable = r64.n_fell == 0
     assert stable.sum() >= 12
     assert (r32.n_fell[stable] == 0).all()
-    np.testing.assert_allclose(r32.costs[stable], r64.costs[stable], rtol=1e-3)
+    # A quantized encoder (B3) turns a last-bit difference into a whole count now and then, so
+    # float32 drifts further from float64 there: 0.5%, against 0.1% with smooth sensing.
+    rtol = 5e-3 if SHORT.sensor.has_encoder else 1e-3
+    np.testing.assert_allclose(r32.costs[stable], r64.costs[stable], rtol=rtol)
 
 
 # ---- IMU sensor: gyro + accelerometer through the complementary filter (SOFTWARE_PLAN B2) ----
@@ -342,3 +345,88 @@ def test_imu_filter_runs_at_the_eval_configs_control_period():
     np.testing.assert_array_equal(batched.costs, expected.costs)
     ref = Evaluator(config, SPACE).evaluate_gains(HAND_TUNED)
     np.testing.assert_allclose(batched.costs, ref.costs, rtol=COST_RTOL)
+
+
+# ---- Encoder: quantized, sampled, delayed wheel angle (SOFTWARE_PLAN B3) ----
+
+def _encoder_config(imu=True, voltage=False, delay=0.005, base=SHORT, latency=None):
+    """Noisy sensor (IMU or noise model) with the encoder on, built explicitly, plus pushes."""
+    common = dict(pitch_std=0.004, pitch_bias=0.01, pitch_rate_std=0.02, pitch_rate_bias=0.015, velocity_std=0.01,
+                  seed=0, encoder_counts=360, encoder_period=0.010, encoder_delay=delay,
+                  wheel_radius=base.params.wheel_radius)
+    if imu:
+        sensor = IMUSensor(imu_height=0.1, filter_time_constant=0.5, control_dt=base.control_dt,
+                           gravity=base.params.gravity, **common)
+    else:
+        sensor = SensorNoise(**common)
+    config = replace(base, sensor=sensor, pushes=((0.5, 0.1, 1.5), (1.4, 0.05, -2.0)))
+    if latency is not None:
+        config = replace(config, latency=latency)
+    return _voltage_config(True, config) if voltage else replace(config, voltage_estimate=None)
+
+
+ENCODER_CONFIGS = {
+    "noise_model": _encoder_config(imu=False),
+    "imu": _encoder_config(imu=True),
+    "voltage_imu": _encoder_config(imu=True, voltage=True),
+    "imu_no_delay": _encoder_config(imu=True, delay=0.0),
+    "imu_latency_between_steps": _encoder_config(imu=True, latency=0.0037),
+}
+
+
+@pytest.mark.parametrize("name", list(ENCODER_CONFIGS))
+def test_encoder_costs_and_falls_match_reference(name):
+    config = ENCODER_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    assert batched.spec.encoder_counts == 360
+    gains = _candidates()
+    result = batched.evaluate_population(gains)
+    for i, g in enumerate(gains):
+        expected = ref.evaluate_gains(g)
+        np.testing.assert_allclose(result.costs[i], expected.costs, rtol=COST_RTOL)
+        assert result.n_fell[i] == expected.n_fell
+    assert 0 < result.n_fell.sum() < result.costs.size
+
+
+@pytest.mark.parametrize("name", list(ENCODER_CONFIGS))
+def test_encoder_trajectories_match_reference_exactly(name):
+    config = ENCODER_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    gains = _candidates(n=12, seed=1)
+    pitch, seed = ref.scenarios()[1]
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), schedule=batched.schedule, record=True)
+    for i, g in enumerate(gains):
+        expected = ref.run(g, pitch, seed)
+        np.testing.assert_array_equal(run.states[:len(expected.t), i], expected.states)
+        assert run.fell[i] == expected.fell
+
+
+def test_encoder_changes_the_run():
+    gains = _candidates(n=6, seed=5)
+    config = ENCODER_CONFIGS["imu"]
+    off = replace(config, sensor=replace(config.sensor, encoder_counts=0))
+    assert not np.allclose(BatchEvaluator(off, SPACE).evaluate_population(gains).costs,
+                           BatchEvaluator(config, SPACE).evaluate_population(gains).costs, rtol=1e-6)
+
+
+@pytest.mark.parametrize("voltage", [False, True])
+def test_encoder_per_simulation_delay_matches_reference(voltage):
+    config = _encoder_config(imu=True, voltage=voltage)
+    batched = BatchEvaluator(config, SPACE)
+    gains = _candidates(n=6, seed=2)
+    pitch, seed = batched.scenarios()[0]
+    delays = np.array([0, 1, 3, 4, 7, 12])
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), delay_steps=delays, record=True)
+    for i, (g, d) in enumerate(zip(gains, delays)):
+        ref = Evaluator(replace(config, latency=d * config.dt), SPACE)
+        expected = ref.run(g, pitch, seed)
+        np.testing.assert_array_equal(run.states[:len(expected.t), i], expected.states)
+
+
+@pytest.mark.parametrize("field, value", [("encoder_period", 0.0123), ("encoder_delay", 0.0037)])
+def test_encoder_timing_must_be_a_multiple_of_dt(field, value):
+    sensor = replace(ENCODER_CONFIGS["imu"].sensor, **{field: value})
+    with pytest.raises(ValueError, match=field):
+        BatchEvaluator(replace(ENCODER_CONFIGS["imu"], sensor=sensor), SPACE)

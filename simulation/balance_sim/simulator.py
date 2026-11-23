@@ -93,6 +93,7 @@ def simulate(
     drive = 0.0         # what the actuator gets for it (the same, but a voltage-mode driver's volts)
     to_drive = getattr(dynamics, "drive", None)
     imu = sensor is not None and getattr(sensor, "needs_accelerations", False)
+    encoder = sensor is not None and getattr(sensor, "has_encoder", False)
     if imu and abs(sensor.control_dt - control_dt) > 1e-12:
         raise ValueError(f"the IMU filter runs at {sensor.control_dt} s but the controller at {control_dt} s")
     fell, fall_time = False, None
@@ -100,6 +101,8 @@ def simulate(
     for k in range(n_steps):
         t = k * dt
         push = () if disturbance is None else (disturbance(t),)
+        if encoder:
+            sensor.observe(t, state)
         if k % spc == 0:
             if sensor is None:
                 measured = state

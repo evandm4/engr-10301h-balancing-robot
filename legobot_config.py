@@ -83,16 +83,22 @@ ACTUATOR = ActuatorConfig(
 # bias turns into an offset of bias x tau. In this model pitch_std and pitch_bias are the
 # accelerometer tilt's. Noise kept at 10x the datasheet for both sensors (gyro 0.02 rad/s
 # against 2.2e-3; accelerometer tilt 0.0135 rad against 1.35e-3 at DLPF cfg 3) until
-# measured on the chassis (8.4): LEGO frames rattle. The encoder values are for 360 counts
-# per turn at r = 34.5 mm, differenced 10 ms apart (the motors report at 100 Hz).
+# measured on the chassis (8.4): LEGO frames rattle. Velocity comes from the motors' own
+# encoders as the Build HAT reports them (SOFTWARE_PLAN B3): 360 counts per turn, sampled at
+# 100 Hz, about 5 ms in transit (two 2 ms data lines; DATASHEET 6), held between samples, and
+# differenced 10 ms apart: 0.025 m/s of quantization noise at r = 34.5 mm, averaged over
+# speeds (DATASHEET 5.4). Differencing 5 ms apart raised every baseline's cost (B3).
 SENSOR = SensorConfig(
     model="imu",
     pitch_std=0.0135,              # rad, accelerometer tilt per sample (raw, before the filter)
     pitch_bias=0.015,              # rad, accelerometer offset after calibration, and LEGO mount play
     pitch_rate_std=0.02,           # rad/s, gyro
     pitch_rate_bias=0.01,          # rad/s, gyro, after calibrating at boot
-    position_std=0.0010,           # m: +/-3 deg including gearbox slack
-    velocity_std=0.025,            # m/s
+    position_std=0.0010,           # m: unused with the encoder (kept for the noise model)
+    velocity_std=0.025,            # m/s: unused with the encoder (kept for the noise model)
+    encoder_counts=360,
+    encoder_period_s=0.010,
+    encoder_delay_s=0.005,
     imu_height=0.10,               # m above the axle, Est. (the HAT stack's height; DATASHEET 3.4)
     filter_time_constant=0.5,      # s: 1 s raised the baselines' cost 15-25% more, 0.25 s was mixed (B2)
 )

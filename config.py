@@ -200,12 +200,23 @@ class SensorConfig:
     model: str = "noise"
     imu_height: float = 0.10           # m, "imu" only
     filter_time_constant: float = 0.5  # s, "imu" only: complementary-filter crossover 1/(2 pi tau)
+    # Encoder model (either sensor model; balance_sim.Encoder, SOFTWARE_PLAN B3): with
+    # encoder_counts > 0, velocity and position come from counts sampled every
+    # encoder_period_s, reaching the robot code encoder_delay_s later, in place of
+    # velocity_std and position_std. 0 keeps the white-noise velocity.
+    encoder_counts: int = 0            # counts per wheel turn (relative to the body)
+    encoder_period_s: float = 0.010
+    encoder_delay_s: float = 0.0
 
-    def build(self, seed: int = 0, gravity: float = 9.81, control_dt: float = 0.005) -> SensorNoise:
-        """gravity and control_dt matter only for the "imu" model (ProjectConfig.build_sensor passes them)."""
+    def build(self, seed: int = 0, gravity: float = 9.81, control_dt: float = 0.005,
+              wheel_radius: float = 0.0) -> SensorNoise:
+        """gravity and control_dt matter only for the "imu" model, wheel_radius only with the
+        encoder (ProjectConfig.build_sensor passes them)."""
         common = dict(pitch_std=self.pitch_std, pitch_bias=self.pitch_bias, pitch_rate_std=self.pitch_rate_std,
                       pitch_rate_bias=self.pitch_rate_bias, position_std=self.position_std,
-                      velocity_std=self.velocity_std, seed=seed)
+                      velocity_std=self.velocity_std, seed=seed, encoder_counts=self.encoder_counts,
+                      encoder_period=self.encoder_period_s, encoder_delay=self.encoder_delay_s,
+                      wheel_radius=wheel_radius)
         if self.model == "noise":
             return SensorNoise(**common)
         if self.model == "imu":
@@ -591,7 +602,8 @@ class ProjectConfig:
         return Planar2D(robot, fall_angle=self.timing.fall_angle_rad, actuator=actuator)
 
     def build_sensor(self, seed: int = 0) -> SensorNoise:
-        return self.sensor.build(seed, gravity=self.robot.gravity, control_dt=self.timing.control_dt_s)
+        return self.sensor.build(seed, gravity=self.robot.gravity, control_dt=self.timing.control_dt_s,
+                                 wheel_radius=self.robot.wheel_radius)
 
     def build_pitch_controller(self, gains=None) -> PIDController:
         """A pitch-only PID (no velocity loop) with the configured limits.

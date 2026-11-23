@@ -59,6 +59,14 @@ class SimSpec:
     imu: bool = False
     imu_height: float = 0.0             # m, accelerometer above the axle along the body axis
     filter_time_constant: float = 0.5   # s
+    # Encoder (balance_sim.sensors.Encoder, SOFTWARE_PLAN B3), on when encoder_counts > 0: the
+    # controller's velocity is wheel_radius x (the encoder's wheel speed + the measured pitch rate).
+    # The driver samples every encoder_period and each sample reaches the robot code encoder_delay
+    # later; both must be whole multiples of dt. The wheel radius is the robot's (BatchRobot.wheel_radius);
+    # the reference uses the sensor's wheel_radius, which config sets from the robot.
+    encoder_counts: int = 0             # counts per wheel turn relative to the body; 0 = off
+    encoder_period: float = 0.010       # s
+    encoder_delay: float = 0.0          # s
 
     def __post_init__(self):
         if self.latency < 0:
@@ -67,6 +75,13 @@ class SimSpec:
         if n < 1 or abs(self.control_dt / self.dt - n) > 1e-9 * max(1, n):
             raise ValueError(f"control_dt ({self.control_dt}) must be a whole multiple of dt ({self.dt}), "
                              "as in balance_sim.steps_per_control")
+        if self.encoder_counts > 0:
+            for name, minimum in (("encoder_period", 1), ("encoder_delay", 0)):
+                value = getattr(self, name)
+                m = round(value / self.dt)
+                if m < minimum or abs(value / self.dt - m) > 1e-9 * max(1, m):
+                    raise ValueError(f"{name} ({value}) must be a whole multiple of dt ({self.dt}) "
+                                     "for the batched engines" + (" (and positive)" if minimum else ""))
         if self.pitch_reference not in ("commanded", "upright"):
             raise ValueError(f"pitch_reference must be 'commanded' or 'upright', got {self.pitch_reference!r}")
         if self.controller not in CONTROLLERS:
@@ -117,6 +132,11 @@ def build_schedule(spec: SimSpec) -> Schedule:
 
     return Schedule(n_steps, steps_per_control, n_ticks, active, ring_size, goal_per_tick, goal_per_step,
                     force_per_step)
+
+
+def encoder_steps(spec: SimSpec) -> tuple:
+    """(period, delay) of the encoder in whole physics steps."""
+    return round(spec.encoder_period / spec.dt), round(spec.encoder_delay / spec.dt)
 
 
 def latency_steps(latency: float, dt: float) -> int:

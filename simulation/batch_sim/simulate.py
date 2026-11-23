@@ -19,12 +19,14 @@ The loop stops early once every simulation in the batch has fallen.
 from dataclasses import dataclass
 from typing import Optional
 
+import math
+
 import numpy as np
 
 from .controller import cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
 from .physics import accelerometer_tilt, derivatives, rk4_step, voltage_drive
 from .robot import BatchRobot
-from .schedule import Schedule, SimSpec, build_schedule, per_sim_ring_size
+from .schedule import Schedule, SimSpec, build_schedule, encoder_steps, per_sim_ring_size
 
 
 @dataclass
@@ -111,8 +113,19 @@ def simulate_batch(
     pitch_error, effort, velocity_error = zeros(), zeros(), zeros()
     upright_reference = spec.pitch_reference == "upright"
     history = [np.stack(state, axis=-1)] if record else None
+    encoder = spec.encoder_counts > 0
+    if encoder:
+        # Counts sampled every n_period steps (the state at the start of the step, before the
+        # control tick), each usable n_delay steps later; a ring keeps the few still needed.
+        n_period, n_delay = encoder_steps(spec)
+        resolution = 2.0 * math.pi / spec.encoder_counts
+        speed_per_count = resolution / spec.encoder_period
+        counts = np.zeros((n_delay // n_period + 3, B), dtype=dtype)
 
     for k in range(schedule.n_steps):
+        if encoder and k % n_period == 0:
+            counts[(k // n_period) % len(counts)] = np.floor((np.divide(state[0], robot.wheel_radius) - state[2])
+                                                             / resolution)
         if k % spc == 0:
             j = k // spc
             _, x_dot, theta, theta_dot = state
@@ -141,6 +154,10 @@ def simulate_batch(
             elif spec.pitch_rate_bias or spec.pitch_bias:   # deterministic, so they need no table
                 theta = theta + spec.pitch_bias
                 theta_dot = theta_dot + spec.pitch_rate_bias
+            if encoder:
+                m = (k - n_delay) // n_period if k >= n_delay else -1
+                speed = (counts[m % len(counts)] - counts[(m - 1) % len(counts)]) * speed_per_count if m >= 1 else 0.0
+                x_dot = robot.wheel_radius * (speed + theta_dot)
             if lqr:
                 command, velocity_integral = lqr_update(
                     x_dot, theta, theta_dot, goal_per_tick[j], control_dt,
