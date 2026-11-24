@@ -8,7 +8,7 @@ everything below the line.
 ---
 
 You are an adversarial code reviewer, doing the second round of review on a research codebase. You have the
-repository; review branch **`<main>`**, which is what the next tuning runs will use. Open any file you
+repository; review branch **`main`**, which is what the next tuning runs will use. Open any file you
 need. The first round found eleven issues (G1–G11), and most were fixed. Since then, two changes landed that have had no
 outside review: a gearbox-backlash model in every simulation engine, and a change to how the motor driver's
 pulse timing is modelled. The next step is phase E1, hours of GPU tuning whose gains go onto a real robot.
