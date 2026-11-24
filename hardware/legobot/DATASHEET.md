@@ -902,7 +902,51 @@ speed, and the person flicking couldn't get the wheel above about 12 rad/s once 
 mode. The harder test (B2a: the load.py lowering run, with a mass sinking against the motor at duty 0) is not
 done; it would check the braking quadrant under load, not the zero-drive case.
 
-**Still to measure:** `discharge` (about an hour on the stand), and optionally `stall` (R
+**Bench checks A1, A3, A5 re-verified (2026-11-24, after Round-2 robot-code fixes).** Deployed `8e3fe6e` (no
+`-dirty`; includes `Watchdog._halt`/`join()`, `calibrate_gyro` I²C bridge, optional line-lock fallback, and
+voltage-scaled smoothed runaway `0.85 * w_nl(vin)` seeded with `Safety.vin` at startup). Robot on the stand,
+wheels clear, `--pitch-zero 1.58` (stand read `+1.584 rad`), vin `7.85–7.94 V`. Logs:
+`bench_data/20261124_205924_balance_*` (A3), `bench_data/20261124_210041_balance_*` (A5).
+
+| # | Result |
+|---|---|
+| A1 | `DEPLOYED` = `8e3fe6e 2026-11-24 14:55` (no `-dirty`). Pass |
+| A3 `--bench --seconds 5 --inject unlock` | Armed at `0.50 s` (`vin 7.94 V`, locked at `+107 ppm`). Injected unlock at `1.01 s`: logged `"line lock lost at 1.01 s: ticking on the Pi's clock"` and kept running cleanly to `stopped: done` (`5.00 s`, `1001` ticks, `201/1001` locked, `0` overruns, period `5.000 ± 0.003 ms`). Summary recorded `line lock lost while armed: 1 times`; wheels `[0.0, 0.0]` deg/s 1 s after stop. Pass |
+| A5 `--duty-cap 0.6 --seconds 10` | Armed at `0.51 s` (`vin 7.85 V`, threshold `0.85 * w_nl(7.85) = 17.59 rad/s`). Both wheels crossed `17.59 rad/s` at `0.85 s` after arming (`t = 1.357 s`) and tripped at **`2.18 s`** after arming (`t = 2.692 s`, `1.34 s` after crossing, vs `4.7 s` before smoothing): `"wheels running away (mean +18.2, +17.6 rad/s over 1.5 s): lifted?"`. `438/438` ticks locked, `0` overruns, wheels `[0.0, 0.0]` deg/s 1 s after stop. Pass |
+
+**B3 (partial, 7.87 V vs 7.44 V): motor rail scaling (2026-11-24, left wheel, wheels off the ground, slow PWM
+`1 0.01`; `robot.measure.motor_steps --wheels-off --wheel on --side left --duties 1.0 0.5`, logs
+`bench_data/20261124_210715_motor_steps*`).** Idle `vin` read `7.88 -> 7.85 V` (mean `7.865 V`), vs
+`7.45 -> 7.43 V` (`7.440 V`) in the `20261123_061856` baseline:
+
+| Duty | `7.440 V` (`20261123`) | `7.865 V` (`20261124`) | Measured $\Delta\omega$ | Linear-rail prediction (`k = 0.352`) |
+|---|---|---|---|---|
+| `0.50` | `17.87 rad/s` (`+17.97 / -17.77`) | `18.61 rad/s` (`+18.72 / -18.50`) | `+0.74 rad/s` (`+4.1%`) | `18.99 rad/s` (`+1.13 rad/s`, `-2.0%` gap) |
+| `1.00` | `19.50 rad/s` (`+19.59 / -19.41`) | `20.24 rad/s` (`+20.31 / -20.17`) | `+0.74 rad/s` (`+3.8%`) | `20.61 rad/s` (`+1.17 rad/s`, `-1.8%` gap) |
+
+Speed rises cleanly above the `7.44 V` baseline (`+0.74 rad/s` at both duties), ruling out a `~7.2–7.5 V`
+regulated motor rail. The measured slope (`1.74 rad/s/V` vs `2.75` predicted) leaves a uniform `~1.8–2.0%`
+(`~0.14 V` equivalent) shortfall at `7.87 V` — within `torque_constant` spread / pack sag or session drift,
+but repeat once on a freshly charged `~8.4 V` pack (predicted `~22.1 rad/s` at duty `1.0`) to rule out any
+clamp above `7.9 V`.
+
+**C3: right drivetrain friction inspection and low-duty re-check (2026-11-24, wheels off the ground, tires on,
+slow PWM `1 0.01`, `vin = 7.83–7.85 V`; `robot.measure.motor_steps --wheels-off --wheel on --side both --duties 0.1 0.15 0.2`,
+logs `bench_data/20261124_211351_motor_steps*`).** Hand spin check confirmed no external beam rub or pinched
+axle — the extra drag on the right side is internal to the right motor.
+
+| Duty | Left (`+ / -`, mean) | Right (`+ / -`, mean) | Right vs Left | Implied $\tau_c$ (left / right, assuming $a = 0.0597$) |
+|---|---|---|---|---|
+| `0.10` | `+7.84 / -7.82` (`7.83 rad/s`) | `+6.29 / -6.31` (`6.30 rad/s`) | `-19.5%` | `0.0249 / 0.0297 N m` |
+| `0.15` | `+11.32 / -11.51` (`11.42 rad/s`) | `+10.26 / -10.45` (`10.36 rad/s`) | `-9.3%` | `0.0263 / 0.0315 N m` |
+| `0.20` | `+14.11 / -14.26` (`14.19 rad/s`) | `+13.48 / -13.35` (`13.42 rad/s`) | `-5.4%` | `0.0241 / 0.0296 N m` |
+
+Right is now symmetric forward vs backward (`+6.29 / -6.31` vs `+5.86 / -6.75` on 2026-11-23), and consistently
+slower than left across all three low duties. Assuming left's `a = 0.0597 N m/V` gives mean $\tau_c = 0.0251$
+(left) and `0.0303 N m` (right), pair sum `0.0554 N m` (right at the top of `legobot_config.ROBUSTNESS`'s
+`0.030–0.055 N m` range). Re-evaluate together with right-motor `a` after Bench C1.
+
+**Still to measure:** `B3` at `~8.4 V` (once a pack is fully charged), `discharge` (about an hour on the stand), and optionally `stall` (R
 with a multimeter) and `load` (the braking quadrant directly).
 
 ## 9. Sources
