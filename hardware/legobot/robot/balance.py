@@ -166,8 +166,7 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
     deadline = t0
     tick = 0
     pacer = pacer or control.Pacer(dt)
-    locked = False
-    need_lock = line_clock is not None      # --no-line-lock runs unlocked, on purpose (not what the sim tuned for)
+    locked = was_locked = False
     say(f"hold the robot upright at its balance point to arm (|pitch| < {lc.ARM_TILT} rad, still for "
         f"{lc.ARM_HOLD_S} s)")
     while True:
@@ -192,7 +191,7 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
                 hat.fault = (t, "Motor power fault (injected)")
             # "imu": the next IMU_ERROR_LIMIT reads raise OSError (below)
             elif inject == "unlock" and line_clock is not None:
-                line_clock.stale = -1.0       # locked() is false from now on
+                line_clock.stale = -1.0       # locked() is false from now on: the loop falls back to the Pi's clock
             if inject in ("loop", "hang"):
                 late += clock.now() - t
                 t = clock.now()
@@ -239,15 +238,22 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
 
         reason = reason or safety.check(t, theta, duties if drive else (0.0, 0.0), (ex["w_left"], ex["w_right"]),
                                         ages, vr, hat.fault, hat.reader_alive(), phase == 1)
-        # The simulator the gains were tuned in assumes the loop is locked to the HAT's pulse ticks
-        # (legobot_config ACTUATOR.pwm_tick_locked, review G6): unlocked, a command can wait up to a whole
-        # extra tick. So no arming without the lock, and losing it while armed ends the run.
-        if not reason and phase == 1 and need_lock and not locked:
-            reason = "lost the lock to the HAT's line grid (the tuned gains assume it)"
+        # The line lock is optional. Bench B1 (2026-11-23) showed the HAT's pulse ticks wander against its
+        # data lines, so locking can't fix the wait to a pulse, and the simulator draws that wait at random
+        # (legobot_config: pwm_tick_locked False). The lock still keeps the motor data's age steady, so the
+        # loop paces on it when it has it and falls back to the Pi's clock when it doesn't (Pacer.next).
+        # Arming doesn't wait for it, and losing it is logged, not a trip.
+        if line_clock is not None and phase == 1 and locked != was_locked:
+            if not locked:
+                stats["line lock lost while armed"] = stats.get("line lock lost while armed", 0) + 1
+                say(f"  line lock lost at {t - t_arm:.2f} s: ticking on the Pi's clock")
+            else:
+                say(f"  line lock regained at {t - t_arm:.2f} s")
+        was_locked = locked
         if reason:
             hat.coast()
         elif phase == 0:
-            if abs(theta) < lc.ARM_TILT and abs(gyro) < lc.ARM_RATE and (locked or not need_lock):
+            if abs(theta) < lc.ARM_TILT and abs(gyro) < lc.ARM_RATE:
                 still_since = t if still_since is None else still_since
                 if t - still_since >= lc.ARM_HOLD_S:
                     phase, t_arm = 1, t
@@ -262,8 +268,7 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
                 still_since = None
             if phase == 0 and tick % 200 == 0:     # once a second: how far from the arming window
                 say(f"  waiting to arm: pitch {theta:+.3f} rad (need |pitch| < {lc.ARM_TILT}), "
-                    f"rate {gyro:+.2f} rad/s (need < {lc.ARM_RATE})"
-                    + ("" if locked or not need_lock else "; no lock to the HAT's lines yet"))
+                    f"rate {gyro:+.2f} rad/s (need < {lc.ARM_RATE})")
             if phase == 0 and t - t0 > lc.ARM_TIMEOUT_S:
                 reason = f"not armed within {lc.ARM_TIMEOUT_S:.0f} s"
         t_cmd = None
@@ -390,7 +395,7 @@ def main(argv=None):
     ap.add_argument("--no-calibration", action="store_true", help="pitch zero 0 (no calibration.json)")
     ap.add_argument("--pitch-zero", type=float, help="override the pitch zero (rad), e.g. the tilt on a bench stand")
     ap.add_argument("--no-line-lock", action="store_true",
-                    help="tick on the Pi's clock, not the HAT's line grid (bench experiments only: tuned gains assume the lock)")
+                    help="tick on the Pi's clock only, never on the HAT's line grid")
     ap.add_argument("--line-phase", type=float, help=f"command write phase after the line grid, s "
                     f"(default loop_config.LINE_WRITE_PHASE_S = {lc.LINE_WRITE_PHASE_S})")
     ap.add_argument("--inject", choices=("loop", "hang", "stale", "vin", "fault", "imu", "unlock"))
@@ -515,6 +520,8 @@ def main(argv=None):
     print(f"stopped: {reason}")
     if stats.get("IMU read errors"):
         notes["IMU read errors"] = stats["IMU read errors"]
+    if stats.get("line lock lost while armed"):
+        notes["line lock lost while armed"] = f"{stats['line lock lost while armed']} times (fell back to the Pi's clock)"
     if line_clock is not None and line_clock.t_ref is not None:
         notes["line period at end"] = (f"{line_clock.period * 1e3:.5f} ms "
                                        f"({(line_clock.period / hat_period - 1) * 1e6:+.0f} ppm vs nominal)")

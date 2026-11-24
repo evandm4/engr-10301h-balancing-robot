@@ -16,6 +16,9 @@ CPU = 3                    # pin the loop (and the threads it starts) to this co
 # In slow PWM the HAT's 10 ms pulse ticks are locked to its 100 Hz data lines (C3, measure/tick_lock.py),
 # so the loop runs two ticks per line period at a fixed phase of that grid (control.LineClock, Pacer) and
 # each command reaches the HAT at the same point before a pulse tick. --no-line-lock runs on the Pi's clock.
+# Bench B1 (2026-11-23) then showed the pulse ticks wander against the lines, so the lock doesn't fix the
+# wait to a pulse (the simulator draws it at random). It still steadies the motor data's age, so the loop
+# uses it when it has it and falls back to the Pi's clock when it doesn't; arming doesn't wait for it.
 LINE_LOCK = True
 LINE_WRITE_PHASE_S = 0.0065  # s after the grid's line (lower envelope of the left port's arrivals) at which the
                            # command write starts. robot.lock_sweep, 2026-11-23 (duty 1.0 steps, sawtooth fits): the

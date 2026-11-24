@@ -234,8 +234,7 @@ def test_closed_loop_tracks_the_scenario(tmp_path, controller):
 
 
 @pytest.mark.parametrize("inject, expect", [("loop", "loop stalled"), ("stale", "stale"), ("vin", "battery"),
-                                            ("fault", "fault"), ("imu", "IMU read failed 2 times"),
-                                            ("unlock", "lost the lock")])
+                                            ("fault", "fault"), ("imu", "IMU read failed 2 times")])
 def test_injected_trips(tmp_path, inject, expect):
     reason = balance.main(["--sim", "--seconds", "3", "--inject", inject, "--outdir", str(tmp_path)])
     assert expect in reason
@@ -323,3 +322,15 @@ def test_port_lag_reads_the_offset_between_the_two_ports_line_grids():
     lag = control.port_lag(list(left), list(right), 0.010)
     assert abs(lag - 0.0042) < 0.0005
     assert control.port_lag(list(left[:10]), list(right), 0.010) is None
+
+
+def test_losing_the_line_lock_falls_back_to_the_pi_clock(tmp_path):
+    """Bench B1: the lock can't fix the wait to a pulse, so losing it is logged, not a trip. The run goes
+    on, ticking on the Pi's clock, and the summary says how often it was lost."""
+    reason = balance.main(["--sim", "--sim-noise", "--seconds", "3", "--inject", "unlock", "--outdir", str(tmp_path)])
+    assert reason == "done"
+    summary = next(tmp_path.glob("*_summary.txt")).read_text()
+    assert "line lock lost while armed: 1 times" in summary
+    raw = next(tmp_path.glob("*_raw.csv")).read_text().splitlines()
+    locked = [int(row.split(",")[raw[0].split(",").index("locked")]) for row in raw[1:]]
+    assert 1 in locked and locked[-1] == 0          # locked before the injection, Pi clock after
