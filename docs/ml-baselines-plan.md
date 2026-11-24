@@ -220,6 +220,7 @@ comparison.
    |---|---|---|---|
    | Smoke | 5000-5009 (30; the first 10 dev seeds) | 20 s | unit tests, quick checks after each change |
    | Development | 5000-5049 (150) | 60 s, plus 20 s for the overfitting gap only | every hyperparameter, architecture and run-selection decision |
+   | Extended dev | 5050-5149 (300) | 60 s (or 20 s) | confirming dev selections on scenarios they weren't picked on; never for selection |
    | Validation | 3000-3099 (300), frozen | 60 s | headline typical-cost numbers, once, on final controllers |
    | Fall-rate | 6000-6999 (3,000), frozen | 60 s | fall rates and the latency sweep, once, at the end |
 

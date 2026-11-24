@@ -574,6 +574,8 @@ class RobustnessSettings:
     # retired sets are never used again.
     smoke_seeds: Tuple[int, ...] = tuple(range(5000, 5010))
     dev_seeds: Tuple[int, ...] = tuple(range(5000, 5050))
+    # For confirming selections made on dev_seeds on scenarios they weren't picked on; never for selection.
+    dev_extended_seeds: Tuple[int, ...] = tuple(range(5050, 5150))
     fall_rate_seeds: Tuple[int, ...] = tuple(range(6000, 7000))
     retired_seeds: Tuple[int, ...] = tuple(range(100, 110)) + tuple(range(1000, 1100)) + tuple(range(2000, 2100))
     # Fresh-scenario ablations draw from here up. Spent by the PR #10 review (2026-11-09):
@@ -876,7 +878,8 @@ class ProjectConfig:
     # output goes, which seeds other tiers hold back, the LQR and PID search settings, and
     # values derived from the rest.
     NOT_SCORING = ("lqr", "search", "derived", "learning.output_dir", "robustness.validation_seeds",
-                   "robustness.fall_rate_seeds", "robustness.retired_seeds", "robustness.fresh_seed_start")
+                   "robustness.dev_extended_seeds", "robustness.fall_rate_seeds", "robustness.retired_seeds",
+                   "robustness.fresh_seed_start")
     # Keys added after runs were saved, with the value that leaves scoring as it was then: a saved snapshot
     # without one is read as having it.
     ADDED_DEFAULTS = {"robot.gearbox_backlash": 0.0, "robot.coupling_backlash": 0.0}
@@ -916,6 +919,8 @@ class ProjectConfig:
         physics-derived minimum Kp, the resolved search bounds, motor limits).
         """
         data = asdict(self)
+        if self.name == "pololu":
+            data["robustness"].pop("dev_extended_seeds", None)
         # asdict leaves out properties; the weights are what the cost uses.
         data["cost"]["velocity_weight"] = self.cost.velocity_weight
         data["cost"]["effort_weight"] = self.cost.effort_weight
@@ -951,6 +956,7 @@ class ProjectConfig:
             validation_seeds=tuple(r.validation_seeds),
             smoke_seeds=tuple(r.smoke_seeds),
             dev_seeds=tuple(r.dev_seeds),
+            dev_extended_seeds=tuple(r.dev_extended_seeds),
             fall_rate_seeds=tuple(r.fall_rate_seeds),
             retired_seeds=tuple(r.retired_seeds),
             randomize=tuple(r.randomize),

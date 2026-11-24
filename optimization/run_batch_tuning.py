@@ -251,6 +251,8 @@ def main():
     folder = results_dir("batch_tuning", time.strftime("%Y%m%d-%H%M%S"))
     snapshot = CONFIG.snapshot()
     robust_snapshot = asdict(robustness) if robustness else None
+    if CONFIG.name == "pololu" and robust_snapshot is not None:
+        robust_snapshot.pop("dev_extended_seeds", None)
     for s in searches.values():
         save_result(s, folder, extra={"config": snapshot, "robustness": robust_snapshot,
                                       "backend": args.backend, "dtype": np.dtype(evaluator.dtype).name})

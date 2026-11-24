@@ -251,3 +251,20 @@ def test_checking_tier_keeps_the_frozen_validation_seeds_behind_final():
     assert set(range(2000, 2100)) <= set(robust.retired_seeds)
     with pytest.raises(ValueError):
         replace(robust, dev_seeds=(2000,), smoke_seeds=())
+
+
+def test_dev_extended_seeds_are_registered_and_disjoint():
+    from config import POLOLU_CONFIG
+
+    robust = CONFIG.build_robustness()
+    assert robust.dev_extended_seeds == tuple(range(5050, 5150))
+    assert "robustness.dev_extended_seeds" in CONFIG.NOT_SCORING
+    assert "dev_extended_seeds" not in POLOLU_CONFIG.snapshot()["robustness"]
+    for other in (robust.train_seeds, robust.smoke_seeds, robust.dev_seeds, robust.validation_seeds,
+                  robust.fall_rate_seeds, robust.retired_seeds):
+        assert not (set(robust.dev_extended_seeds) & set(other))
+    assert max(robust.dev_extended_seeds) < CONFIG.robustness.fresh_seed_start
+    for bad in (robust.train_seeds[0], robust.dev_seeds[-1], robust.validation_seeds[0],
+                robust.fall_rate_seeds[0], robust.retired_seeds[0]):
+        with pytest.raises(ValueError):
+            replace(robust, dev_extended_seeds=(bad,))
