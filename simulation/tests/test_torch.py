@@ -9,6 +9,7 @@ that every run the GPU disagrees on is one NumPy itself can't reproduce when
 nudged by 1e-15.
 """
 
+import math
 from dataclasses import replace
 
 import numpy as np
@@ -17,6 +18,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from batch_sim import BatchRobot, cascaded_update, derivatives, limited_integral, simulate_batch, torch_ops
+from batch_sim.physics import backlash_end_step, backlash_release, backlash_terms
 from batch_sim.torch_sim import TorchSimulator
 from batch_tuning import BatchEvaluator, decode_units, differential_evolution_search, robot_from_eval_config
 from balance_sim import IMUSensor, SensorNoise
@@ -35,6 +37,10 @@ BASE = CONFIG.build_eval_config()
 SHORT = replace(BASE, duration=2.0, goal_steps=((0.3, 0.3), (1.2, -0.2)), start_pitches=(0.1, -0.08),
                 train_seeds=(1, 2))
 RNG = np.random.default_rng(7)
+# Whole-run tolerance. With the LEGO robot's free play, the engagement impacts amplify last-bit differences to
+# ~2e-8 over these 2 s runs (no fall changes), so 1e-7 there; 1e-9 for a rigid drive train.
+TOL = 1e-7 if SHORT.params.backlash > 0 else 1e-9
+BACKLASH_TOL = 1e-7
 
 
 def _t(a, device, dtype=torch.float64):
@@ -155,8 +161,8 @@ def test_float64_matches_numpy_for_well_behaved_gains(device, reference):
     up = ~ref.fell
     assert up.sum() >= 0.75 * len(G)
     assert not got.fell[up].any()
-    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
-    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=TOL)
+    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=TOL)
 
 
 @pytest.mark.parametrize("feedforward", [True, False])
@@ -173,8 +179,8 @@ def test_voltage_mode_float64_matches_numpy(device, feedforward):
     up = ~ref.fell
     assert up.sum() >= 0.5 * len(G)
     assert not got.fell[up].any()
-    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
-    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=TOL)
+    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=TOL)
 
 
 @pytest.mark.parametrize("feedforward", [True, False])
@@ -190,8 +196,8 @@ def test_slow_pwm_float64_matches_numpy(device, feedforward):
                          dtype=torch.float64, record=True).run(G, pitch, seed_index)
     np.testing.assert_array_equal(got.fell, ref.fell)
     up = ~ref.fell
-    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
-    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=TOL)
+    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=TOL)
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -206,8 +212,8 @@ def test_pdm_float64_matches_numpy(device):
                          dtype=torch.float64, record=True).run(G, pitch, seed_index)
     np.testing.assert_array_equal(got.fell, ref.fell)
     up = ~ref.fell
-    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
-    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=TOL)
+    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=TOL)
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -223,13 +229,13 @@ def test_pdm_per_simulation_phase_float64_matches_numpy(device):
     got = sim.run(G, pitch, seed_index)
     np.testing.assert_array_equal(got.fell, ref.fell)
     up = ~ref.fell
-    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=TOL)
     # New per-simulation phases on the same simulator (run(robot=...)) must take effect too.
     robot2 = replace(robot, pwm_tick_phase=rng.uniform(0, 1, len(G)))
     ref2 = simulate_batch(evaluator.spec, robot2, G, pitch, noise, seed_index, evaluator.schedule)
     got2 = sim.run(G, pitch, seed_index, robot=robot2)
     np.testing.assert_array_equal(got2.fell, ref2.fell)
-    np.testing.assert_allclose(got2.cost[~ref2.fell], ref2.cost[~ref2.fell], rtol=1e-9)
+    np.testing.assert_allclose(got2.cost[~ref2.fell], ref2.cost[~ref2.fell], rtol=TOL)
 
 
 def test_voltage_feedforward_gain_float64_matches_numpy():
@@ -244,8 +250,8 @@ def test_voltage_feedforward_gain_float64_matches_numpy():
     up = ~ref.fell
     assert up.sum() >= 0.5 * len(G)
     assert not got.fell[up].any()
-    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
-    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=TOL)
+    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=TOL)
 
 
 @needs_cuda
@@ -263,7 +269,7 @@ def test_full_default_scenario_float64_matches_numpy():
                             space).evaluate_population(gains)
     reproducible = np.abs(nudged.costs - ref.costs) <= 1e-9 * np.abs(ref.costs)
     assert reproducible.mean() >= 0.8
-    np.testing.assert_allclose(got.costs[reproducible], ref.costs[reproducible], rtol=1e-9)
+    np.testing.assert_allclose(got.costs[reproducible], ref.costs[reproducible], rtol=TOL)
     np.testing.assert_array_equal(got.costs[reproducible] > config.fall_penalty,
                                   ref.costs[reproducible] > config.fall_penalty)
 
@@ -308,8 +314,8 @@ def test_everyone_falls_early_stop_and_fall_times(device, short_eval):
                          dtype=torch.float64, record=True).run(G, pitch, seed_index)
     assert got.fell.all()
     np.testing.assert_array_equal(got.fall_time, ref.fall_time)
-    np.testing.assert_allclose(got.cost, ref.cost, rtol=1e-9)
-    np.testing.assert_allclose(got.states, ref.states, atol=1e-9)   # history padded after the stop
+    np.testing.assert_allclose(got.cost, ref.cost, rtol=TOL)
+    np.testing.assert_allclose(got.states, ref.states, atol=TOL)   # history padded after the stop
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -322,7 +328,7 @@ def test_no_noise_zero_latency_and_per_robot_parameters(device):
     gains = _near_hand_tuned(n)
     ref = simulate_batch(spec, robot, gains, 0.05, schedule=ev.schedule)
     got = TorchSimulator(spec, robot, n, None, ev.schedule, device=device, dtype=torch.float64).run(gains, 0.05)
-    np.testing.assert_allclose(got.cost, ref.cost, rtol=1e-9)
+    np.testing.assert_allclose(got.cost, ref.cost, rtol=TOL)
 
 
 def test_wrong_gains_shape_rejected(short_eval):
@@ -338,7 +344,7 @@ def test_torch_evaluator_matches_numpy_evaluator(short_eval):
     gains = _near_hand_tuned(40, seed=9)
     ref = short_eval.evaluate_population(gains)
     ev = BatchEvaluator(SHORT, short_eval.space, backend="torch")
-    np.testing.assert_allclose(ev.evaluate_population(gains).costs, ref.costs, rtol=1e-9)
+    np.testing.assert_allclose(ev.evaluate_population(gains).costs, ref.costs, rtol=TOL)
     # Validation seeds get their own noise table and simulator.
     val = ev.evaluate_gains(HAND_TUNED, seeds=[100, 101])
     assert val.mean_cost == pytest.approx(short_eval.evaluate_gains(HAND_TUNED, seeds=[100, 101]).mean_cost,
@@ -387,8 +393,8 @@ def test_imu_float64_matches_numpy(device, voltage):
     up = ~ref.fell
     assert up.sum() >= 0.5 * len(G)
     assert not got.fell[up].any()
-    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
-    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=TOL)
+    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=TOL)
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -410,8 +416,8 @@ def test_encoder_float64_matches_numpy(device):
     up = ~ref.fell
     assert up.sum() >= 0.5 * len(G)
     assert not got.fell[up].any()
-    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
-    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=TOL)
+    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=TOL)
 
 
 @pytest.mark.parametrize("imu", [False, True])
@@ -434,5 +440,75 @@ def test_per_simulation_pitch_bias_float64_matches_numpy(device, imu):
     up = ~ref.fell
     assert up.sum() >= 0.5 * len(G)
     assert not got.fell[up].any()
-    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=1e-9)
-    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=1e-9)
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=TOL)
+    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=TOL)
+
+
+# ---- Backlash: free play between motor and wheel (SOFTWARE_PLAN B5; PHYSICS.md 10.3) ----
+BACKLASH = replace(SHORT, params=SHORT.params.with_changes(gearbox_backlash=math.radians(2.8),
+                                                           coupling_backlash=math.radians(1.5)))
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_backlash_step_functions_match_numpy(device):
+    """Derivatives (open and closed), the opening check and the engagement, one call each on random states."""
+    robot = BatchRobot.from_params(BACKLASH.params, SHORT.motor, voltage_estimate=_estimate(SHORT.motor))
+    n = 5000
+    play = BACKLASH.params.backlash
+    state = [RNG.normal(0, 1, n), RNG.normal(0, 1, n), RNG.uniform(-1, 1, n), RNG.normal(0, 3, n),
+             RNG.uniform(-1.2, 1.2, n) * play, RNG.normal(0, 30, n)]
+    contact = RNG.choice([-1.0, 0.0, 1.0], n)
+    shaft = RNG.normal(0, 0.05, n)
+    torque = RNG.normal(0, 3, n)
+    tensors = lambda arrays: tuple(_t(a, device) for a in arrays)
+    xp = torch_ops()
+    (expected, e_tau), (got, g_tau) = (backlash_terms(robot, tuple(state), torque, contact),
+                                       backlash_terms(robot, tensors(state), _t(torque, device), _t(contact, device), xp))
+    for g, e in zip((*got, g_tau), (*expected, e_tau)):
+        np.testing.assert_allclose(g.cpu().numpy(), e, rtol=0, atol=1e-13 * np.abs(e).max())
+    np.testing.assert_array_equal(
+        backlash_release(robot, tensors(state), _t(torque, device), _t(contact, device), xp).cpu().numpy(),
+        backlash_release(robot, tuple(state), torque, contact))
+    e_state, e_contact, e_shaft = backlash_end_step(robot, tuple(state), contact, shaft)
+    g_state, g_contact, g_shaft = backlash_end_step(robot, tensors(state), _t(contact, device), _t(shaft, device), xp)
+    np.testing.assert_array_equal(g_contact.cpu().numpy(), e_contact)
+    for g, e in zip((*g_state, g_shaft), (*e_state, e_shaft)):
+        np.testing.assert_allclose(g.cpu().numpy(), e, rtol=0, atol=1e-13 * np.abs(e).max())
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_backlash_float64_matches_numpy(device):
+    evaluator = BatchEvaluator(BACKLASH, SPACE)
+    G, pitch, seed_index, noise = _flat(evaluator, _near_hand_tuned(32))
+    rng = np.random.default_rng(5)
+    robot = replace(evaluator.robot, gearbox_backlash=np.radians(rng.uniform(2.6, 3.0, len(G))),
+                    coupling_backlash=np.radians(rng.uniform(0.0, 3.0, len(G))))
+    ref = simulate_batch(evaluator.spec, robot, G, pitch, noise, seed_index, evaluator.schedule, record=True)
+    sim = TorchSimulator(evaluator.spec, robot, len(G), noise, evaluator.schedule, device=device,
+                         dtype=torch.float64, record=True)
+    got = sim.run(G, pitch, seed_index)
+    assert got.states.shape[-1] == 8 and np.any(np.diff(ref.states[:, :, 7], axis=0))
+    np.testing.assert_array_equal(got.fell, ref.fell)
+    up = ~ref.fell
+    np.testing.assert_allclose(got.cost[up], ref.cost[up], rtol=BACKLASH_TOL)
+    np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=BACKLASH_TOL)
+    # New per-simulation plays on the same simulator (run(robot=...)) must take effect too.
+    robot2 = replace(robot, gearbox_backlash=np.radians(rng.uniform(2.6, 3.0, len(G))))
+    ref2 = simulate_batch(evaluator.spec, robot2, G, pitch, noise, seed_index, evaluator.schedule)
+    got2 = sim.run(G, pitch, seed_index, robot=robot2)
+    np.testing.assert_array_equal(got2.fell, ref2.fell)
+    np.testing.assert_allclose(got2.cost[~ref2.fell], ref2.cost[~ref2.fell], rtol=BACKLASH_TOL)
+    with pytest.raises(ValueError, match="play must be positive"):
+        sim.run(G, pitch, seed_index, robot=replace(robot, gearbox_backlash=np.zeros(len(G)),
+                                                    coupling_backlash=np.zeros(len(G))))
+
+
+@needs_cuda
+def test_backlash_cuda_graph_replay_matches_running_step_by_step():
+    evaluator = BatchEvaluator(BACKLASH, SPACE)
+    G, pitch, seed_index, noise = _flat(evaluator, decode_units(SPACE, RNG.random((32, SPACE.dim))))
+    make = lambda graphs: TorchSimulator(evaluator.spec, evaluator.robot, len(G), noise, evaluator.schedule,
+                                         dtype=torch.float64, use_graphs=graphs)
+    graphed, eager = make(True).run(G, pitch, seed_index), make(False).run(G, pitch, seed_index)
+    np.testing.assert_array_equal(graphed.cost, eager.cost)
+    np.testing.assert_array_equal(graphed.final_state, eager.final_state)

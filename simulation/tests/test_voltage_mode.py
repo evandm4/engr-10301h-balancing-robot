@@ -9,7 +9,7 @@ from config import CONFIG
 from balance_sim import DCMotorActuator, Planar2D, VoltageModeActuator, simulate
 
 MOTOR = CONFIG.actuator.build_motor_params()
-ROBOT = CONFIG.build_robot_params()
+ROBOT = CONFIG.build_robot_params().with_changes(gearbox_backlash=0.0, coupling_backlash=0.0)   # rigid: compares two drivers, not the play
 LIMIT = ROBOT.max_torque
 
 

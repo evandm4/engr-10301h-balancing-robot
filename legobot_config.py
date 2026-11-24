@@ -22,6 +22,7 @@ The motor, body and sensor values are measured (SOFTWARE_PLAN C3, C4; DATASHEET 
 robustness spreads are shrunk to their measurement uncertainty.
 """
 
+import math
 from dataclasses import replace
 
 from config import (
@@ -56,6 +57,14 @@ ROBOT = RobotConfig(
                                    # 0.016 / 0.019 from coast-downs
     coulomb_friction_speed=1.0,    # rad/s, as config.py (PHYSICS.md 9.4)
     gravity=9.81,
+    # Free play between motor and wheel (SOFTWARE_PLAN B5; PHYSICS.md 10.3), measured 2026-11-23 (DATASHEET 8.7;
+    # bench_data/*_backlash.csv): rocking the wheel against the motor held at duty 0 moved the encoder on the
+    # output shaft 5 deg peak-to-peak in 1 deg counts (5-6 deg), so the gearbox play is upstream of the encoder,
+    # +-2.6-3 deg. The beam tip moved 11.3 deg in all: the other ~6 deg (+-0-3) is in the LEGO couplings (axle
+    # in the motor's cross-hole, wheel hub), downstream of the encoder, which can't see it. The nominal robot
+    # takes the middle of each; ROBUSTNESS draws both per scenario.
+    gearbox_backlash=math.radians(2.8),    # rad, motor side to the encoder's output shaft
+    coupling_backlash=math.radians(1.5),   # rad, output shaft to the wheel
 )
 
 # -------------------------------------------------------------- ACTUATOR ---
@@ -79,9 +88,14 @@ ROBOT = RobotConfig(
 ACTUATOR = ActuatorConfig(
     model="slow_pwm",
     pwm_tick_s=0.010,              # s: the HAT's pulse-density tick (DATASHEET 8.7); a whole number of dt steps
-    pwm_tick_locked=True,          # the robot paces its loop on the HAT's line grid and won't arm or run without
-                                   # the lock (robot/balance.py), so each tick falls where a command arrives
-                                   # and the latency below is the whole sample-to-pulse delay (review G6)
+    pwm_tick_locked=False,         # bench B1 (2026-11-23, DATASHEET 8.7; review G6): the ticks keep no fixed
+                                   # phase against the HAT's line grid. The right tick moved 3.1 ms after a
+                                   # power cycle, both wander within a power-up (right 7.15 -> 4.35 ms in 16
+                                   # min) and a motor-cable swap moved both. So the wait from a command's
+                                   # arrival to the next tick is anywhere in 0-10 ms: ROBUSTNESS draws the
+                                   # phase per scenario, and TIMING's latency stops at the HAT. The locked
+                                   # model (balance_sim.locked_pwm_tick_phase) stays in the code; it isn't
+                                   # this robot's
     voltage_feedforward=True,
     gear_ratio=1.0,                # lumped: constants below are output-referred
     torque_constant=0.348,         # V s/rad, output k_e, measured: 0.352 / 0.344 left / right (LEGO's sheet 0.355;
@@ -129,10 +143,12 @@ SENSOR = SensorConfig(
 )
 
 # ---------------------------------------------------------------- TIMING ---
-# DATASHEET 6 and the locked loop (SOFTWARE_PLAN D2): from the IMU sample to the motor's pulse, the IMU
-# filter (~3 ms, DLPF cfg 3, est.), read + compute until the write starts (1.3 ms mean, 3.6 ms worst,
-# measured), the write to the HAT's tick (1.8 ms left, 3.8 ms right, measured by lock_sweep) and the
-# current rise (L/R ~3 ms, est.): about 9 ms (left) to 11 ms (right), 15 ms at worst. 10 ms nominal.
+# DATASHEET 6: from the IMU sample to the motor's pulse, leaving out the wait for the HAT's pulse tick: the
+# IMU filter (~3 ms, DLPF cfg 3, est.), read + compute until the write starts (1.3 ms mean, 3.6 ms worst,
+# measured), the serial command (2.4 ms to the last byte, measured) and the current rise (L/R ~3 ms, est.):
+# about 9.7 ms typical, 12 ms worst. 10 ms nominal. The wait for the tick (0-10 ms, bench B1) comes on top,
+# from the tick phase ROBUSTNESS draws; plain runs keep ActuatorConfig.pwm_tick_phase (0.25: the first tick
+# one physics step after the first sample).
 TIMING = TimingConfig(
     latency_s=0.010,
     dt_s=0.0025,
@@ -170,14 +186,24 @@ ROBUSTNESS = replace(
         # COM offset e: a pitch offset of atan(e / l), 0.011 rad per mm at l = 90 mm. Last in the
         # list, so the draws above are unchanged. Plain (non-robust) runs keep +b.
         ("pitch_bias", -0.015, 0.015),        # rad
-        # The pulse ticks' phase is no longer drawn (it was uniform in a tick, B1b): the robot loop is
-        # locked to the ticks (ACTUATOR.pwm_tick_locked), so each scenario's phase follows its latency.
+        # SOFTWARE_PLAN B5: the free play (ROBOT above), +-2.6-6 deg in all. After pitch_bias, so the draws
+        # above are unchanged.
+        ("gearbox_backlash", math.radians(2.6), math.radians(3.0)),   # rad: the encoder's 5-6 deg peak-to-peak
+        ("coupling_backlash", 0.0, math.radians(3.0)),                # rad: up to the rest of the beam's 11.3 deg
+        # The pulse ticks' phase against the control loop, as a fraction of a 10 ms tick (B1b): bench B1 found
+        # it fixed neither between power-ups nor within one (ACTUATOR.pwm_tick_locked), so it is drawn per
+        # scenario, uniform over a tick. Last, so the draws above are unchanged. (It was drawn in B1b, then
+        # left out from review G6 until B1, while the loop was taken to be locked to the ticks.)
+        ("pwm_tick_phase", 0.0, 1.0),
     ),
-    # The locked sample-to-pulse budget (TIMING): 9-11 ms typical, 15 ms worst; drawn in whole 2.5 ms steps,
-    # so 7.5, 10, 12.5 or 15 ms. Was 5-25 ms with the tick phase drawn on top, up to 35 ms in all, against
-    # 2-4 ms of tick wait on the locked robot (review G6). Final gains still get a wider latency sweep as
-    # an evaluation, not as a training target.
-    latency_range_s=(0.0075, 0.015),
+    # The sample-to-pulse budget without the tick wait (TIMING): 9.7 ms typical, 12 ms worst; drawn in whole
+    # 2.5 ms steps, so 7.5, 10 or 12.5 ms. Each command then waits 0-3 physics steps for the next tick (0-7.5 ms;
+    # 0-10 ms on the hardware). A tick sends the newest command, which is never more than a step old in the sim (0-5 ms on
+    # the robot), so the loop's delay is 7.5-15 ms. A sudden disturbance's first response can wait a whole tick
+    # (legobot_scenario.catch_latencies). Step quantization makes the sim half a step optimistic on average.
+    # History: 5-25 ms with the phase drawn (B1b), 7.5-15 ms with the ticks locked (review G6), this after
+    # bench B1. Final gains still get a wider latency sweep as an evaluation, not as a training target.
+    latency_range_s=(0.0075, 0.0125),
 )
 
 # ------------------------------------------- CONTROLLER, SCENARIO, COST ---
@@ -185,9 +211,10 @@ ROBUSTNESS = replace(
 # below is printed, with its derivation, by
 #     python hardware/legobot/legobot_scenario.py          (--check re-derives config.py's)
 # which repeats config.py's ScenarioConfig/CostConfig method on this robot. "Corner" means
-# every corner of ROBUSTNESS above. The response starts after the top of the latency range (15 ms)
-# for a start tilt, and a tick later (25 ms) for a push, which can come just after a sample whose
-# command meets a tick (legobot_scenario.catch_latencies; review G4). Catch tests use the averaged
+# every corner of ROBUSTNESS above. The response to a start tilt starts after the top of the latency
+# range plus a whole tick (12.5 + 10 = 22.5 ms: the first sample's command can just miss a tick), and to a
+# push a control period later still (27.5 ms: the push can start just after a sample), since bench B1 left
+# the tick phase free (legobot_scenario.catch_latencies; review G4, G6). Catch tests use the averaged
 # slow-PWM actuator at full torque, which is what full-duty pulses deliver.
 #
 # Lean cap and top speed. config.py fixed the lean cap at 25 deg and took the top speed as the
@@ -216,7 +243,8 @@ CONTROLLER = replace(
     # mode): its RHP zero is relatively faster (z/p 1.05, Pololu 0.80), so the outer loop (z/3 = 2.84 rad/s)
     # outruns the integral pole (1.63 rad/s) and the cascade's separation fails. The rule: the smallest ratio,
     # in steps of 0.1, that is linearly stable over the whole training latency range. 0.2 is still unstable
-    # (1.0003); 0.3 gives 0.997 at 0-20 ms. Robust scoring (legobot_baselines.py, NumPy, 2026-11-23): training
+    # (1.0003); 0.3 gives 0.997 at 0-20 ms, and 0.9975 at 35 ms, so it still holds with the free tick phase
+    # since bench B1 (loop delay 7.5-15 ms in the sim, up to about 17.5 ms on the robot). Robust scoring (legobot_baselines.py, NumPy, 2026-11-23): training
     # 29.8 (2 falls) -> 18.3 (1), dev 6.5 -> 7.2 (0 falls either way), dev chaos 0.26 -> 12. 0.4 falls more.
     # On Pololu, 0.3 is unstable at 15 ms.
     design_integral_ratio=0.3,
@@ -228,11 +256,15 @@ CONTROLLER = replace(
 #   t = 2-3.25 s     0 -> 0.40 m/s in 1.25 s: peak 0.70 m/s^2, a 0.125 rad lean (half of
 #                    Pololu's 0.25 / 0.30 of pitch_limit_rad).
 #   t = 3.25-9.5 s   cruise at 0.40 m/s, 53% of the nominal no-load speed (Pololu 53%).
-#   t = 5.5, 7.5 s   pushes, forward then backward: 1.02 N for 50 ms = 0.051 N s, 98% of the
+#   t = 5.5, 7.5 s   pushes, forward then backward: 0.67 N for 50 ms = 0.034 N s, 98% of the
 #                    largest forward push a full-torque response catches at 0.40 m/s on every
-#                    corner (0.0523 N s: light, tall, high rotor inertia, weakest motor, most
-#                    friction; 0.108 nominal at 10 ms). 50 ms is under the 119 ms fastest unstable
-#                    time constant (123 ms nominal). Backward: 0.325 catchable, easy (braking is
+#                    corner, with the free play in its worst position (closed away from the
+#                    recovery, so the motor side first crosses the whole gap; decided 2026-11-23,
+#                    the user) and a 27.5 ms reaction (above): 0.0342 N s (light, tall, high rotor
+#                    inertia, weakest motor, most friction, most play: +-6 deg; 0.081 nominal at
+#                    25 ms). Was 0.70 N with the ticks locked (25 ms, 0.0357 N s) and 1.02 N before
+#                    the play was modelled (0.0523 N s). 50 ms is under the 119 ms fastest unstable
+#                    time constant (123 ms nominal). Backward: 0.301 catchable, easy (braking is
 #                    helped by back-EMF), as on the Pololu robot.
 #   t = 9.5-11.9 s   0.40 -> -0.15 m/s in 2.4 s: 0.50 m/s^2, 0.092 rad.
 #   t = 11.9-14 s    cruise backward at -0.15 m/s (Pololu's 0.5/1.3 of top speed).
@@ -247,16 +279,17 @@ SCENARIO = replace(
         (14.0, 0.0, 2.0),     # gentle stop: 0.16 m/s^2
     ),
     pushes=(
-        (5.5, 0.05, 1.02),    # from behind at 0.40 m/s
-        (7.5, 0.05, -1.02),   # from the front at 0.40 m/s
+        (5.5, 0.05, 0.67),    # from behind at 0.40 m/s
+        (7.5, 0.05, -0.67),   # from the front at 0.40 m/s
     ),
     start_pitches_deg=(2.8648, -8.5944, 17.1887),    # 0.05, -0.15, 0.30 rad
 )
 
 # Cost limits (CostConfig's Bryson rule), in the Pololu cost's proportions:
 #   pitch_limit_rad 0.30: Pololu's is both 77% of its catchable start tilt and 69% of its lean
-#     cap. Here those give 0.35 (of the 0.454 rad caught on every corner; 0.628 nominal at 10 ms)
-#     and 0.30; the smaller keeps the goal profile's leans (shares of it) under the cap.
+#     cap. Here those give 0.32 (of the 0.412 rad caught on every corner with the play at its worst and a
+#     22.5 ms reaction; 0.548 nominal at 20 ms) and 0.30; the smaller keeps the goal profile's leans (shares
+#     of it) under the cap.
 #   velocity_limit 0.06 m/s: Pololu's 0.2/1.3 of the top speed.
 #   torque_limit 0.09 N m: Pololu's 0.1/0.135 of the nominal lean-cap torque (0.119), so pitch
 #     and effort trade as they do there; 10% of max_torque.

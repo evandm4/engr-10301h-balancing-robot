@@ -396,3 +396,98 @@ the chaos term rose from 0.26 to 12. The torch engine scored the same gains 7.2 
 the two engines disagree on one borderline fall. Under pulse-density PWM a run is bit-chaotic, and a flipped
 fall moves a 150-scenario mean by ~11. Treat robust-score differences of that size between candidates as
 noise, unless the falls are traced. These are the reference points for E1.
+
+### Backlash modelled (SOFTWARE_PLAN B5; 2026-11-23; superseded by the re-derived pushes below)
+
+Gearbox play ±2.8° and coupling play ±1.5° on the nominal robot, drawn per scenario in robust scoring (gearbox
+±2.6–3.0°, coupling ±0–3°; PHYSICS.md 10.3). `python hardware/legobot/legobot_baselines.py`:
+
+| Baseline | Plain (9) | Robust train (150) | Robust dev (150) | Dev worst | Dev chaos |
+|---|---|---|---|---|---|
+| Hand-tuned PID (2.5, 1.5, 0.2, 0.5) | 29.51 (0) | 354.3 (28) | 388.1 (31) | 1972 | 520 |
+| Model-based PID (1.98, 5.24, 0.15, 0.52) | 13.35 (0) | 230.7 (19) | 284.1 (23) | 1978 | 310 |
+
+The plain costs rose 187% (hand-tuned) and 89% (model-based) with no falls; robust, the falls went from 0–2 to
+19–31 of 150. The model-based PID's come about 0.5 s after the 5.5 s forward push (at 0.40 m/s), and their rate barely depends on
+the size of the play (8 of 43 dev scenarios with ±2.6–3.5° in all, 3 of 16 with ±5.5–6°) but rises with the
+latency (2 of 37 at 7.5 ms, 10 of 36 at 15 ms; model-based PID). The
+stiff tooth contact drops 17 of the same 150 dev robots, so the falls are the play's, not the step size's
+(PHYSICS.md 10.3: the 2.5 ms model may overstate them by up to a third). Neither baseline was designed for
+play; E2 tunes against it. The robust means are dominated by the falls (each moves a 150-scenario mean by ~11).
+
+### Pushes re-derived with the play in the catch test (2026-11-23)
+
+The scenario's catch test (`legobot_scenario.py`) now steps the play model, with the play as a corner like the rest
+and in its worst position: closed away from the recovery, so a full-torque response first carries the motor side
+across the whole gap (the user's choice; at a steady cruise it sits closed forward, which for a forward push is the
+best case: 0.0531 N s on every corner, against 0.0523 without play). Worst corner: 0.0357 N s forward (±6° of
+play, light, tall, weakest motor, most friction), 0.306 backward, 0.436 rad of start tilt. So the pushes are
+**0.70 N** × 50 ms (98%, was 1.02 N). `pitch_limit_rad` stays 0.30 (the lean cap's bound, under the tilt's 0.33),
+and with it the start tilts. `RECORDED_CATCH` holds the new values.
+
+| Baseline | Plain (9) | Robust train (150) | Robust dev (150) | Dev worst | Dev chaos |
+|---|---|---|---|---|---|
+| Hand-tuned PID (2.5, 1.5, 0.2, 0.5) | 28.34 (0) | 262.0 (20) | 264.3 (20) | 1972 | 360 |
+| Model-based PID (1.98, 5.24, 0.15, 0.52) | 13.19 (0) | 116.1 (9) | 192.2 (15) | 1978 | 180 |
+
+Against the 1.02 N pushes with play: train falls 28 → 20 and 19 → 9, dev 31 → 20 and 23 → 15. Every remaining
+dev fall is catchable: each scenario's forward push is caught by full torque on its own robot and latency (20 of
+20, 15 of 15, play at its worst), and no start tilt exceeds 0.30 rad against the 0.436 rad caught on every
+corner. Where they fall (dev):
+- *Hand-tuned:* 14 of 20 at 3.6–4.8 s, while settling into the 0.40 m/s cruise after the acceleration (it ends at
+  3.25 s), before any push; 3 at 6.2–6.3 s after the forward push; one each at the 0.30 rad start and at 9.3 s.
+- *Model-based:* 6 of 15 at 0.6–1.2 s recovering from the 0.30 rad start tilt; 6 at 5.0–6.4 s around the forward
+  push; 3 later (7.9, 8.7 s and one at 5.7 s).
+
+So these falls are the controllers' (neither baseline was designed for play), for E2's tuning to remove.
+
+### Pulse ticks at a free phase after bench B1 (2026-11-23)
+
+Bench B1 found that the HAT's pulse ticks keep no fixed phase against its data-line grid. The right tick moved
+3.1 ms after a power cycle, both ticks wander within one power-up, and a motor-cable swap moved both
+(DATASHEET 8.7; triage G6). So the lock model (review G6: ticks where each command arrives, latency 7.5–15 ms) is
+reverted for this robot. `pwm_tick_locked=False`, and `pwm_tick_phase` is drawn per scenario again (uniform over a
+tick, last in `randomize_range`, so the earlier draws are unchanged). `latency_range_s` is now the sample-to-HAT
+delay without the tick wait: 7.5–12.5 ms (DATASHEET 6: 9.7 ms typical, 12 ms worst). Each command then waits for
+the next tick: 0–10 ms on the robot, and 0–7.5 ms in the engines, whose ticks and arrivals fall on 2.5 ms steps.
+A new command arrives every 5 ms, though, and a tick sends the newest one. So in closed loop the wait adds only
+0–5 ms on the robot (0 or 2.5 ms in the engines, set by the phase). A full tick's wait hits only the first
+reaction to a sudden disturbance, which is the case the catch bound below covers.
+
+The catch bound (`legobot_scenario.catch_latencies`) now gives a start tilt latency + tick (22.5 ms) and a push
+latency + control period + tick (27.5 ms). Those reactions were 15 and 25 ms with the ticks locked.
+`test_free_tick_phase_reaction_is_within_the_catch_bound` checks this in the reference engine. Over every phase, the
+worst first pulse comes one physics step inside each bound. The full derivation (about 30 min) gives, on the worst
+corner with the play at its worst:
+- forward push: 0.0342 N s (was 0.0357), so **the pushes are 0.67 N** × 50 ms (was 0.70).
+- backward push: 0.301 N s (was 0.306).
+- start tilt: 0.412 rad (was 0.436).
+
+`pitch_limit_rad` stays 0.30 (the lean cap's bound, under the tilt's 0.32), so the start tilts, cost limits and
+goal profile don't change. The model-based PID stays linearly stable across the longer delay: spectral radius
+0.9975 at 35 ms.
+
+| Baseline | Plain (9) | Robust train (150) | Robust dev (150) | Dev worst | Dev chaos |
+|---|---|---|---|---|---|
+| Hand-tuned PID (2.5, 1.5, 0.2, 0.5) | 31.62 (0) | 170.9 (12) | 226.5 (17) | 1965 | 290 |
+| Model-based PID (1.98, 5.24, 0.15, 0.52) | 13.17 (0) | 73.0 (5) | 120.9 (9) | 1973 | 92 |
+
+Against the locked model with play (previous section), the falls dropped:
+- train: 20 → 12 (hand-tuned) and 9 → 5 (model-based);
+- dev: 20 → 17 and 15 → 9.
+
+The closed-loop delay is drawn from about the same spread as before: 7.5–15 ms with an 11.25 ms mean, against
+7.5, 10, 12.5 or 15 ms locked. What changed is which pulse each delay lines up with, and the pushes are 4% smaller.
+With a fall moving a 150-scenario mean by about 11, the drop is within what re-drawing the phases can do, so read it
+as no worse, not better. The hand-tuned plain cost rose 12% (28.34 → 31.62), because plain runs now use the default
+phase 0.25. At the nominal 10 ms that puts the newest command a step before each tick, where the locked phase had put
+it on the tick.
+
+Every dev fall is catchable, traced scenario by scenario. Each push or start tilt before a fall is caught by
+full torque on that scenario's own robot and latency, with the play at its worst and the full-tick reaction:
+- *Hand-tuned (17):* 12 at 3.9–4.7 s, settling into the 0.40 m/s cruise after the acceleration (no disturbance
+  in the 2 s before); 4 at 5.9–6.2 s after the forward push; 1 at the 0.30 rad start.
+- *Model-based (9):* 4 at 0.76–1.21 s recovering from the 0.30 rad start; 4 at 6.2–6.8 s after the forward push;
+  1 at 4.99 s, before the push.
+
+The same pattern as with the lock. These falls are for E2's tuning to remove.

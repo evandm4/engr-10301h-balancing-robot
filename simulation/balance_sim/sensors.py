@@ -19,8 +19,8 @@ class Encoder:
     (2 pi r / counts) / (period sqrt 6) in ground speed (DATASHEET 5.4).
 
     observe(t, state) is called at the start of every physics step; speed() and
-    angle() return what the robot code has at that moment. Gearbox slack is not
-    modeled (only the position reading, which no controller uses, would show it).
+    angle() return what the robot code has at that moment. With backlash the angle
+    is the motor's output shaft's (Planar2D's state[6]), not the wheel's.
     """
 
     def __init__(self, counts_per_turn: int, period: float, delay: float, wheel_radius: float):
@@ -38,7 +38,10 @@ class Encoder:
 
     def observe(self, t: float, state) -> None:
         if t >= self._n_samples * self.period - 1e-12:
-            relative_angle = float(state[0]) / self.wheel_radius - float(state[2])
+            # With backlash (Planar2D) the encoder reads the output shaft, state[6], which the gearbox
+            # play separates from the motor side and the coupling play from the wheel (PHYSICS.md 10.3).
+            relative_angle = (float(state[6]) if len(state) > 6
+                              else float(state[0]) / self.wheel_radius - float(state[2]))
             self._in_flight.append((self._n_samples * self.period + self.delay,
                                     float(np.floor(relative_angle / self.resolution))))
             self._n_samples += 1

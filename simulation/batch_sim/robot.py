@@ -54,6 +54,16 @@ class BatchRobot:
     # Constant pitch-estimate offset, rad. None: the SimSpec's scalar. A (B,) array gives each simulation
     # its own (drawn per scenario by robust.sample_robots through randomize_range).
     pitch_bias: object = None
+    # Free play between motor and wheel, half-widths in rad (RobotParams.gearbox_backlash, coupling_backlash;
+    # physics.backlash_*). The plain number 0 for both is a rigid drive train, simulated as before.
+    gearbox_backlash: object = 0.0
+    coupling_backlash: object = 0.0
+
+    @property
+    def has_backlash(self) -> bool:
+        """True unless both plays are the plain number 0 (a per-simulation array always counts)."""
+        rigid = lambda v: isinstance(v, (int, float)) and v == 0
+        return not (rigid(self.gearbox_backlash) and rigid(self.coupling_backlash))
 
     @classmethod
     def from_params(cls, params, motor=None, voltage_estimate=None, voltage_feedforward=True,
@@ -72,7 +82,7 @@ class BatchRobot:
         values = {name: getattr(params, name) for name in (
             "body_mass", "body_com_height", "body_inertia", "wheel_mass", "wheel_radius",
             "wheel_inertia", "rotor_inertia", "max_torque", "wheel_friction", "coulomb_friction",
-            "coulomb_friction_speed", "gravity")}
+            "coulomb_friction_speed", "gravity", "gearbox_backlash", "coupling_backlash")}
         if motor is not None:
             values["dc_motor"] = True
             values.update({name: getattr(motor, name) for name in (

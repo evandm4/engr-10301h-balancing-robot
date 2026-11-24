@@ -139,6 +139,98 @@ def rk4_step(robot: BatchRobot, state, torque, dt: float, xp=np, force=0.0):
     return tuple(s + h * (a + 2 * b + 2 * c + d) for s, a, b, c, d in zip(state, k1, k2, k3, k4))
 
 
+# ---- Backlash: free play between motor and wheel (Planar2D's module docstring; PHYSICS.md 10.3) ----
+# With play, the integrated state is the 6-tuple (x, x_dot, theta, theta_dot, gap, motor_speed), and two more
+# (B,) arrays ride along: contact (+1 / -1 closed on that side, 0 open; a float) and shaft (the encoder's
+# output-shaft angle). The arithmetic repeats Planar2D._backlash_terms, begin_step and end_step.
+
+def backlash_terms(robot: BatchRobot, state, torque, contact, xp=np, force=0.0):
+    """(d(state)/dt of the 6-tuple, tau_net) with each simulation's play closed or open (Planar2D._backlash_terms)."""
+    p = robot
+    _, x_dot, theta, theta_dot, gap, motor_speed = state
+    closed = contact != 0
+    c = xp.abs(contact)
+
+    wheel_speed = xp.divide(x_dot, p.wheel_radius) - theta_dot
+    speed = xp.where(closed, wheel_speed, motor_speed)
+    tau = actuator_torque(p, torque, speed, xp)
+    tau = tau - p.wheel_friction * speed
+    if not _is_zero(p.coulomb_friction):
+        tau = tau - p.coulomb_friction * xp.tanh(xp.divide(speed, p.coulomb_friction_speed))
+
+    sin_t, cos_t = xp.sin(theta), xp.cos(theta)
+    ml = p.body_mass * p.body_com_height
+    coupled = c * p.rotor_inertia
+    a = (p.body_mass + p.wheel_mass + p.wheel_inertia / p.wheel_radius**2
+         + xp.divide(coupled, p.wheel_radius**2))
+    b = ml * cos_t - xp.divide(coupled, p.wheel_radius)
+    d = p.body_mass * p.body_com_height**2 + p.body_inertia + coupled
+
+    drive = c * tau
+    rhs_x = xp.divide(drive, p.wheel_radius) + ml * sin_t * theta_dot**2
+    rhs_t = -drive + ml * p.gravity * sin_t
+    if not _is_zero(force):
+        rhs_x = rhs_x + force
+        rhs_t = rhs_t + force * p.body_com_height * cos_t
+
+    det = a * d - b * b
+    x_ddot = (d * rhs_x - b * rhs_t) / det
+    theta_ddot = (a * rhs_t - b * rhs_x) / det
+    gap_rate = xp.where(closed, 0.0, motor_speed - wheel_speed)
+    motor_accel = xp.where(closed, 0.0, xp.divide(tau, p.rotor_inertia))
+    return (x_dot, x_ddot, theta_dot, theta_ddot, gap_rate, motor_accel), tau
+
+
+def backlash_release(robot: BatchRobot, state, torque, contact, xp=np, force=0.0):
+    """contact after opening every closed play whose transmitted torque has reversed (Planar2D.begin_step)."""
+    derivs, tau = backlash_terms(robot, state, torque, contact, xp, force)
+    wheel_accel = xp.divide(derivs[1], robot.wheel_radius) - derivs[3]
+    transmitted = tau - robot.rotor_inertia * wheel_accel
+    return xp.where(contact * transmitted < 0.0, 0.0, contact)
+
+
+def backlash_rk4_step(robot: BatchRobot, state, torque, contact, dt: float, xp=np, force=0.0):
+    """rk4_step for the 6-tuple, each play held closed or open over the step."""
+    f = lambda s: backlash_terms(robot, s, torque, contact, xp, force)[0]
+    k1 = f(state)
+    k2 = f(_axpy(state, 0.5 * dt, k1))
+    k3 = f(_axpy(state, 0.5 * dt, k2))
+    k4 = f(_axpy(state, dt, k3))
+    h = dt / 6.0
+    return tuple(s + h * (a + 2 * b + 2 * c + d) for s, a, b, c, d in zip(state, k1, k2, k3, k4))
+
+
+def backlash_end_step(robot: BatchRobot, state, contact, shaft, xp=np):
+    """After a step (Planar2D.end_step): inelastic engagement where an open play has closed, closed motor
+    sides held on the wheel, and the shaft moved by the plays. Returns (state 6-tuple, contact, shaft)."""
+    p = robot
+    x, x_dot, theta, theta_dot, gap, motor_speed = state
+    r, inertia = p.wheel_radius, p.rotor_inertia
+    play = p.gearbox_backlash + p.coupling_backlash
+    closes = (contact == 0) & (xp.abs(gap) >= play)
+    contact = xp.where(closes, xp.copysign(1.0, gap), contact)
+    ml = p.body_mass * p.body_com_height
+    a_open = p.body_mass + p.wheel_mass + p.wheel_inertia / r**2
+    b_open = ml * xp.cos(theta)
+    d_open = p.body_mass * p.body_com_height**2 + p.body_inertia
+    p_x = a_open * x_dot + b_open * theta_dot + (inertia / r) * motor_speed
+    p_t = b_open * x_dot + d_open * theta_dot - inertia * motor_speed
+    a = a_open + inertia / r**2
+    b = b_open - inertia / r
+    d = d_open + inertia
+    det = a * d - b * b
+    x_dot = xp.where(closes, (d * p_x - b * p_t) / det, x_dot)
+    theta_dot = xp.where(closes, (a * p_t - b * p_x) / det, theta_dot)
+    closed = contact != 0
+    gap = xp.where(closed, contact * play, gap)
+    motor_speed = xp.where(closed, xp.divide(x_dot, r) - theta_dot, motor_speed)
+    wheel_angle = xp.divide(x, r) - theta
+    low = wheel_angle + xp.maximum(gap - p.gearbox_backlash, -p.coupling_backlash)
+    high = wheel_angle + xp.minimum(gap + p.gearbox_backlash, p.coupling_backlash)
+    shaft = xp.minimum(xp.maximum(shaft, low), high)
+    return (x, x_dot, theta, theta_dot, gap, motor_speed), contact, shaft
+
+
 def pdm_update(total, duty, xp=np):
     """One tick of the HAT's pulse-density modulation over (B,) arrays (balance_sim.pdm_update):
     returns (new running sum, this tick's duty: -1, 0 or +1). Both comparisons are exact, so the

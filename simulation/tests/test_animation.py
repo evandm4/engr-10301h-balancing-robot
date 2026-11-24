@@ -30,8 +30,10 @@ def test_trajectory_round_trip_is_exact(tmp_path, runs):
     for label, run in runs.items():
         path = save_trajectory(run, tmp_path / f"{label}.csv", label=label, gains=[1.0, 2.0])
         loaded, meta = load_trajectory(path)
-        for field in ("t", "states", "torques", "velocity_goal", "pitch_reference"):
+        for field in ("t", "torques", "velocity_goal", "pitch_reference"):
             np.testing.assert_array_equal(getattr(loaded, field), getattr(run, field))
+        # The file keeps the four states every model shares; the LEGO robot's free play adds four more.
+        np.testing.assert_array_equal(loaded.states, run.states[:, :4])
         assert (loaded.fell, loaded.fall_time, loaded.duration) == (run.fell, run.fall_time, run.duration)
         assert meta["label"] == label and meta["gains"] == [1.0, 2.0]
     assert runs["too weak"].fell and not runs["hand-tuned"].fell

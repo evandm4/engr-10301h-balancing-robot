@@ -29,7 +29,7 @@ from batch_tuning import spec_from_eval_config
 from config import CONFIG
 
 RNG = np.random.default_rng(12345)
-ROBOT = CONFIG.build_robot_params()
+ROBOT = CONFIG.build_robot_params().with_changes(gearbox_backlash=0.0, coupling_backlash=0.0)   # rigid: the free play has test_backlash.py
 MOTOR = CONFIG.actuator.build_motor_params()
 SPEC = spec_from_eval_config(CONFIG.build_eval_config())
 

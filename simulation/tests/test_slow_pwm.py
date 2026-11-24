@@ -172,6 +172,86 @@ def test_locked_ticks_fall_where_each_command_takes_effect(delay_steps):
     assert delay_steps < late < delay_steps + 4
 
 
+class _ReactToMotion:
+    """Zero until a sample sees the robot move, then a fixed torque (duty above 0.5); never acts if torque is 0."""
+
+    def __init__(self, torque):
+        self.torque, self.on = torque, False
+
+    def reset(self):
+        self.on = False
+
+    def update(self, measured, dt):
+        self.on = self.on or any(abs(v) > 0 for v in measured[:4])
+        return self.torque if self.on else 0.0
+
+    def pitch_reference(self):
+        return 0.0
+
+    def goal_velocity(self, t):
+        return 0.0
+
+
+def _legobot_scenario():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[2] / "hardware" / "legobot" / "legobot_scenario.py"
+    spec = importlib.util.spec_from_file_location("legobot_scenario", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("delay_steps", [3, 4, 5])
+def test_free_tick_phase_reaction_is_within_the_catch_bound(delay_steps):
+    """Bench B1: the HAT's ticks run at a free phase, so a command waits for the next tick. In the reference
+    engine, over every phase, the first pulse that acts on a start tilt comes at most latency + tick - one
+    step after the tilt, and on a push at most latency + control period + tick - one step after it starts
+    (the push starting on a sample, which still sees the robot at rest). legobot_scenario.catch_latencies
+    gives latency + tick and latency + control period + tick: one step more, the hardware's continuous wait,
+    and both are reached to within that step at the worst phase."""
+    from dataclasses import replace
+
+    from balance_sim import Planar2D, RobotParams, simulate
+    from legobot_config import LEGOBOT_CONFIG
+
+    dt, control_dt, tick = 0.0025, 0.005, 0.010
+    robot = RobotParams(body_mass=0.36, body_com_height=0.06, body_inertia=8.8e-4, wheel_mass=0.078,
+                        wheel_radius=0.0345, wheel_inertia=6e-5, rotor_inertia=1.09e-3, max_torque=0.9,
+                        wheel_friction=0.0, coulomb_friction=0.0, coulomb_friction_speed=1.0, gravity=9.81)
+    push_step = 8                                      # a sample step (every 2nd), 20 ms in
+
+    def first_effect(phase, tilt):
+        """Steps from the disturbance to the step whose pulse first changed the motion."""
+        runs = []
+        for torque in (0.0, 0.9):
+            act = SlowPwmActuator(MOTOR, max_torque=0.9, pwm_tick=tick, pwm_tick_phase=phase)
+            plant = Planar2D(robot, fall_angle=1.5, actuator=act)
+            start = plant.initial_state()
+            start[2] = 0.05 if tilt else 0.0
+            push = None if tilt else (lambda t: 2.0 if push_step * dt - 1e-9 <= t < (push_step + 4) * dt else 0.0)
+            runs.append(simulate(plant, _ReactToMotion(torque), duration=0.1, dt=dt, control_dt=control_dt,
+                                 latency=delay_steps * dt, initial_state=start, disturbance=push).states)
+        differ = [k for k in range(min(len(runs[0]), len(runs[1]))) if (runs[0][k] != runs[1][k]).any()]
+        return differ[0] - 1 - (0 if tilt else push_step)
+
+    phases = [(j + 0.5) / 4 for j in range(4)]
+    worst_tilt = max(first_effect(p, True) for p in phases)
+    worst_push = max(first_effect(p, False) for p in phases)
+    assert worst_tilt == delay_steps + 4 - 1
+    assert worst_push == delay_steps + 2 + 4 - 1
+
+    scenario = _legobot_scenario()
+    cfg = replace(LEGOBOT_CONFIG, actuator=replace(LEGOBOT_CONFIG.actuator, pwm_tick_locked=False),
+                  timing=replace(LEGOBOT_CONFIG.timing, dt_s=dt, control_dt_s=control_dt))
+    bound_tilt, bound_push = scenario.catch_latencies(cfg, delay_steps * dt)
+    assert bound_tilt == pytest.approx((worst_tilt + 1) * dt)
+    assert bound_push == pytest.approx((worst_push + 1) * dt)
+    locked = replace(cfg, actuator=replace(cfg.actuator, pwm_tick_locked=True))
+    assert scenario.catch_latencies(locked, delay_steps * dt) == pytest.approx((delay_steps * dt, delay_steps * dt + tick))
+
+
 def test_locked_tick_must_be_whole_control_periods():
     from balance_sim import locked_pwm_tick_phase
 
