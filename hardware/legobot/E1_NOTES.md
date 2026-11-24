@@ -26,7 +26,7 @@ Manifest: `results/legobot/e1_step1_manifest.json` (`03:03:22`–`04:17:20`, `4,
 
 ### Full Step 1 Results (NumPy Float64 Re-Scoring)
 
-| Run | Candidate | Gains `[kp, ki, kd, kv_p]` | Train 20 s obj (`1–50`) | Plain 60 s (`30` runs) | Dev 60 s obj (`5000–5049`) | Dev 60 s falls (`/150`) | Dev 60 s worst |
+| Run | Candidate | Gains `[kp, ki, kd, kv_p]` | Train 20 s obj (`1–50`) | Plain 60 s (`run_tuning.py`, seeds `100–109`, retired; `30` runs) | Dev 60 s obj (`5000–5049`) | Dev 60 s falls (`/150`) | Dev 60 s worst |
 |---|---|---|---:|---:|---:|---:|---:|
 | *Baselines* | `hand-tuned` | `[2.5000, 1.5000, 0.2000, 0.5000]` | `115.73` | `54.19 (0)` | `217.91` | `13` | `1948.8` |
 | *Baselines* | `model-based` | `[1.9797, 5.2360, 0.1509, 0.5153]` | `93.41` | `28.81 (0)` | `105.31` | `6` | `1998.7` |
@@ -45,7 +45,7 @@ Manifest: `results/legobot/e1_step1_manifest.json` (`03:03:22`–`04:17:20`, `4,
 | `20261124-041714` | `CMA-ES` best (warm, s1) | `[2.0067, 3.3848, 0.1510, 0.5026]` | `58.09` | `28.14 (0)` | `93.26` | `5` | `1998.0` |
 | `20261124-041714` | `CMA-ES (mean)` (warm, s1) | `[2.0173, 3.9543, 0.1641, 0.5388]` | `59.41` | `31.49 (0)` | `83.91` | `4` | `1997.9` |
 
-*(No candidate hit any search bound: `at_search_bound == []` for every row.)*
+*(No candidate hit any search bound: `at_search_bound == []` for every row. The "Plain 60 s" column is `run_tuning.py`'s nominal-robot scoring on `ScenarioConfig.validation_seeds = 100–109` — retired from robust tiers, printed automatically by existing `run_batch_tuning.py` `ref val` behaviour and never used for selection.)*
 
 ### Key Step 1 Findings
 1. **No Step 1 candidate beats the untuned `model-based` PID out of sample:** On `300` fresh `60 s` runs (`5050–5149`, NumPy float64, Section 3), `model-based` scores `mean = 60.11`, `5/300` falls, `median = 27.80`, whereas every Step 1 full-budget candidate has at least as many falls (`5–13/300`, `mean = 58.87–110.81`, all McNemar $p \ge 0.057$) and typical tracking cost equal within noise (e.g., `5000–5049`-selected `CMA-mid / seed0` scores `mean = 72.01`, `7/300` falls, `med = 27.33`, paired ratio `0.985 [0.976, 0.993]` vs `model-based` on exact JSON gains, or `72.2` / `7/300` / `27.59` on 4-d.p. rounded table gains; 2-run `model-based` vs `CMA-mid (mean)` ratio `0.991 [0.972, 1.010]`; vs `CMA-warm (mean)` `0.931 [0.875, 0.994]`, favoring `model-based`). `CMA-mid`'s `1.046 [1.006, 1.084]` edge in Section 3 holds on the selection seeds `5000–5049` only.
