@@ -192,8 +192,8 @@ def caught(R: BatchRobot, *, speed, impulse=0.0, start_pitch=0.0, push_duration=
 
 class _Play:
     """The play's extra state through a catch test, stepped as the engines step it (begin: release,
-    RK4 with each play open or closed, end: engagement). The robot code's drive takes the motor side's own
-    speed (measured exactly, as drive() takes the wheel's)."""
+    RK4 with each play open or closed, end: engagement). The robot code's drive takes the encoder output
+    shaft's speed (self.shaft, between gearbox and coupling play, as the engines do), not the motor side's."""
 
     def __init__(self, R, state, closed_side=0.0):
         n = size(R)
@@ -204,15 +204,20 @@ class _Play:
         side = np.broadcast_to(np.asarray(closed_side, float), (n,)).copy()   # +1 / -1 closed that way, 0 open
         self.state = (x, x_dot, theta, theta_dot, side * play, wheel.copy())
         self.contact = side
-        self.shaft = x / R.wheel_radius - theta
+        # With the play initially closed on `side` (gap = side * (gearbox + coupling)), both stops of the shaft's
+        # play operator meet at wheel_angle + side * coupling_backlash (and at wheel_angle when side == 0).
+        self.shaft = (x / R.wheel_radius - theta) + side * R.coupling_backlash
+        self.shaft_speed = wheel.copy()
 
     def step(self, torque, dt, force):
         R, s = self.R, self.state
-        motor_x_dot = R.wheel_radius * (s[5] + s[3])        # the x_dot at which the wheel would turn as the motor side
-        applied = drive(R, torque, motor_x_dot, s[3])
+        shaft_x_dot = R.wheel_radius * (self.shaft_speed + s[3])   # x_dot reconstructed from encoder shaft speed
+        applied = drive(R, torque, shaft_x_dot, s[3])
         contact = backlash_release(R, s, applied, self.contact, np, force)
         s = backlash_rk4_step(R, s, applied, contact, dt, np, force)
-        self.state, self.contact, self.shaft = backlash_end_step(R, s, contact, self.shaft, np)
+        prev_shaft = self.shaft
+        self.state, self.contact, self.shaft = backlash_end_step(R, s, contact, prev_shaft, np)
+        self.shaft_speed = (self.shaft - prev_shaft) / dt
         return self.state[:4]
 
 
@@ -381,7 +386,7 @@ POLOLU_PUSH_SHARE = 0.145 / 0.149             # push / largest catchable on ever
 # (about 30 min). nominal_* are at the nominal 10 ms (push 25 ms, tilt 20 ms). With the ticks locked (push 25 ms,
 # tilt 15 ms): forward 0.03572, backward 0.3059, tilt 0.436, nominal forward 0.085, nominal tilt 0.589. Without
 # the play, locked: forward 0.0523, backward 0.3250, tilt 0.486, nominal forward 0.099, nominal tilt 0.628.
-RECORDED_CATCH = dict(forward=0.03772, backward=0.3049, tilt=0.423, nominal_forward=0.085, nominal_tilt=0.561)
+RECORDED_CATCH = dict(forward=0.03772, backward=0.3043, tilt=0.423, nominal_forward=0.085, nominal_tilt=0.559)
 
 
 def lean_cap_table(N, R, caps_deg):

@@ -164,6 +164,9 @@ def main():
               f"{'latency %g-%g ms' % tuple(1000 * x for x in robustness.latency_range) if robustness.latency_range else 'fixed latency'}, "
               f"chaos penalty weight {robustness.sensitivity_weight:g} "
               f"-> {sims_per_eval} simulations per evaluation")
+    elif eval_config.slow_pwm and eval_config.pwm_tick > 0 and not eval_config.pwm_tick_locked:
+        print(f"Note: --plain holds pwm_tick_phase fixed at {eval_config.pwm_tick_phase:g} on every scenario "
+              "(omit --plain to randomize tick phase per scenario).")
 
     cma_x0 = None
     if args.cma_x0 != "midpoint":

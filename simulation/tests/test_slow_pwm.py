@@ -228,7 +228,9 @@ def test_free_tick_phase_reaction_is_within_the_catch_bound(delay_steps):
     from dataclasses import replace
 
     from balance_sim import Planar2D, RobotParams, simulate
-    from legobot_config import LEGOBOT_CONFIG
+    from config import load_config
+
+    LEGOBOT_CONFIG = load_config("legobot")
 
     dt, control_dt, tick = 0.0025, 0.005, 0.010
     robot = RobotParams(body_mass=0.36, body_com_height=0.06, body_inertia=8.8e-4, wheel_mass=0.078,
@@ -272,3 +274,83 @@ def test_locked_tick_must_be_whole_control_periods():
     assert locked_pwm_tick_phase(6, 4, 2) == pytest.approx(2.5 / 4)
     with pytest.raises(ValueError):
         locked_pwm_tick_phase(6, 3, 2)
+
+
+def test_caught_holds_zero_torque_for_round_latency_over_dt_steps_and_uses_shaft_speed(monkeypatch):
+    """H5 / L8: caught(..., dt=0.0025) holds torque == 0 for round(latency / dt) steps even when latency has
+    float overshoot (0.0025 * 5 + 0.005 + 0.010 = 0.027500000000000004), and _Play.step passes the encoder
+    shaft speed (stationary while crossing open gearbox play from rest) rather than the accelerating motor speed."""
+    from dataclasses import replace
+    import numpy as np
+    from config import load_config
+
+    LEGOBOT_CONFIG = load_config("legobot")
+    scenario = _legobot_scenario()
+    N = scenario.nominal_robot(LEGOBOT_CONFIG)
+    lt, lp = scenario.catch_latencies(LEGOBOT_CONFIG, 0.0125)
+    assert lp > 0.0275                                 # the IEEE-754 overshoot that broke float t += dt
+
+    orig_drive = scenario.drive
+    seen = []
+
+    def spy_drive(R, command, x_dot, theta_dot):
+        seen.append((float(np.ravel(command)[0]), float(np.ravel(x_dot)[0]), float(np.ravel(theta_dot)[0])))
+        return orig_drive(R, command, x_dot, theta_dot)
+
+    monkeypatch.setattr(scenario, "drive", spy_drive)
+    for robot in (N, replace(N, gearbox_backlash=0.0, coupling_backlash=0.0)):
+        for latency in (lt, lp):
+            seen.clear()
+            assert bool(scenario.caught(robot, speed=0.40, impulse=0.01, push_duration=0.05, latency=latency, dt=0.0025)[0])
+            zeros = 0
+            for cmd, _, _ in seen:
+                if cmd == 0.0:
+                    zeros += 1
+                else:
+                    break
+            assert zeros == round(latency / 0.0025)
+            assert seen[zeros][0] > 0.0
+
+    # Directly step _Play from rest with open gearbox play: motor_speed (state[5]) accelerates immediately under
+    # full torque while the shaft sits held on its stop until gearbox play is crossed, so drive() must see w_hat == 0.
+    seen.clear()
+    zero_state = (np.zeros(1), np.zeros(1), np.zeros(1), np.zeros(1))
+    play = scenario._Play(replace(N, gearbox_backlash=math.radians(5.0), coupling_backlash=math.radians(2.0)),
+                          zero_state, closed_side=-1.0)
+    play.step(np.array([1.0]), 0.0005, 0.0)            # step 1 accelerates motor side inside the 5 deg gearbox gap
+    assert play.state[5][0] > 0.1                      # motor side is now moving forward
+    play.step(np.array([1.0]), 0.0005, 0.0)            # step 2's drive() must still see shaft speed == 0, not s[5]
+    _, x_dot_arg, theta_dot_arg = seen[-1]
+    w_hat = x_dot_arg / float(N.wheel_radius) - theta_dot_arg
+    assert w_hat == pytest.approx(0.0, abs=1e-12)
+
+
+def test_steady_state_loop_delay_distribution_with_free_tick_phase():
+    """H4 / L8: on dt = 2.5 ms with control_dt = 5 ms (every 2 steps) and pwm_tick = 10 ms (every 4 steps), a
+    free uniform tick phase adds 0 steps (50%) or 1 step (50%) of closed-loop wait to each scenario's delay_steps.
+    Configured (7.5, 12.5) ms -> {7.5: 1/6, 10: 1/3, 12.5: 1/3, 15: 1/6} ms (mean 11.25 ms); (10, 15) ms shifts +2.5 ms."""
+    from dataclasses import replace
+    import numpy as np
+    from balance_sim import pwm_tick_offset
+    from batch_tuning import BatchEvaluator, sample_delay_steps, sample_robots
+    from config import load_config
+
+    LEGOBOT_CONFIG = load_config("legobot")
+    dt, spc, pdm_steps = 0.0025, 2, 4
+    # Exact grid over all (delay_steps, pdm_offset) pairs: at every tick k >= delay_steps + spc, the newest
+    # command that has arrived at or before k was sampled delay_steps + ((k - delay_steps) % spc) steps ago.
+    for lo_s, hi_s, expected_ms in [
+        (0.0075, 0.0125, {7.5: 1 / 6, 10.0: 1 / 3, 12.5: 1 / 3, 15.0: 1 / 6}),
+        (0.0100, 0.0150, {10.0: 1 / 6, 12.5: 1 / 3, 15.0: 1 / 3, 17.5: 1 / 6}),
+    ]:
+        rob = replace(LEGOBOT_CONFIG.build_robustness(), latency_range=(lo_s, hi_s))
+        seeds = tuple(range(1, 401))                   # 400 seeds x 3 tilts = 1,200 scenarios
+        delays = sample_delay_steps(rob, seeds, 3, dt)
+        base = BatchEvaluator(LEGOBOT_CONFIG.build_eval_config(), LEGOBOT_CONFIG.build_search_space()).robot
+        phases = sample_robots(base, rob, seeds, 3).pwm_tick_phase
+        offsets = np.array([pwm_tick_offset(float(p), pdm_steps) for p in phases])
+        waits = (offsets - delays) % spc               # 0 or 1 physics steps at every steady-state tick
+        eff_ms = (delays + waits) * dt * 1000.0
+        assert set(np.round(eff_ms, 6)) == set(expected_ms)
+        for ms, prob in expected_ms.items():
+            assert np.mean(np.isclose(eff_ms, ms)) == pytest.approx(prob, abs=0.04)

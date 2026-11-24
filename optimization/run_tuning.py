@@ -64,10 +64,14 @@ def main():
     hand_tuned = np.array(CONFIG.controller.hand_tuned_gains)
     validation_seeds = CONFIG.scenario.validation_seeds
     space = CONFIG.build_search_space()
-    evaluator = Evaluator(CONFIG.build_eval_config(), space)
+    eval_config = CONFIG.build_eval_config()
+    evaluator = Evaluator(eval_config, space)
     validator = Evaluator(CONFIG.build_eval_config(validation=True), space)   # the longer held-out scenario
 
     print(f"Search space: {', '.join(f'{p.name} [{p.low:.3g}, {p.high:.3g}]' for p in space.parameters)}")
+    if eval_config.slow_pwm and eval_config.pwm_tick > 0 and not eval_config.pwm_tick_locked:
+        print(f"Note: plain tuning holds pwm_tick_phase fixed at {eval_config.pwm_tick_phase:g} on every run "
+              "(use run_batch_tuning.py without --plain to randomize tick phase per scenario).")
     print("Running differential evolution ...")
     de = differential_evolution_search(evaluator, max_iter=args.iters, pop_multiplier=args.pop,
                                        seed=args.seed, workers=args.workers)
