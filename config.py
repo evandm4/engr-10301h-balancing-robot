@@ -884,10 +884,12 @@ class ProjectConfig:
     # without one is read as having it.
     ADDED_DEFAULTS = {"robot.gearbox_backlash": 0.0, "robot.coupling_backlash": 0.0}
 
-    def scoring_differences(self, snapshot: dict) -> list:
+    def scoring_differences(self, snapshot: dict, ignore: tuple = ()) -> list:
         """Dotted keys (e.g. "robustness.latency_range_s") where a saved snapshot() differs from
         this config in something that changes how a controller is trained or scored. An empty
-        list means a run saved under that snapshot is comparable with runs made now."""
+        list means a run saved under that snapshot is comparable with runs made now. `ignore`
+        names further sections that don't apply to the controller at hand: a PID or LQR passes
+        ("learning",), since the learned controllers' scales change neither its tuning nor its score."""
         import json
 
         normalize = lambda value: json.loads(json.dumps(value, default=str))
@@ -895,7 +897,7 @@ class ProjectConfig:
         then = normalize(snapshot)
         differences = []
         for section in sorted(set(now) | set(then)):
-            if section in self.NOT_SCORING:
+            if section in self.NOT_SCORING or section in ignore:
                 continue
             a, b = now.get(section), then.get(section)
             if not isinstance(a, dict) or not isinstance(b, dict):

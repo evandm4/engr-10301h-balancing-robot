@@ -186,6 +186,34 @@ def test_embedded_config_drift_is_a_warning_not_silence(tmp_path):
     assert any("no snapshot.json" in w for w in entry.warnings)
 
 
+def test_learning_scale_drift_flags_policies_but_not_gains(tmp_path):
+    """PR #15 validation V1: re-measured LEARNING scales change what a learned policy's inputs are divided by, but
+    not how a PID or LQR is tuned or scored, so only policies warn; a real scoring drift still warns for gains."""
+    from compare_controllers import existing_controllers, gain_runs, policy_runs
+    drifted = json.loads(json.dumps(CONFIG.snapshot(), default=str))
+    drifted["learning"]["int_v_scale"] = CONFIG.learning.int_v_scale * 2
+    path = _save_cma_result(tmp_path / "pid", {"config": drifted})
+    (entry,) = gain_runs(f"CMA={path}")
+    assert entry.warnings == []
+    comparison = tmp_path / "comparison.json"
+    comparison.write_text(json.dumps({"config": drifted, "results": {"cma-es": {"gains": json.loads(path.read_text())["gains"]}}}))
+    assert all(e.warnings == [] for e in existing_controllers(comparison))
+
+    drifted["robustness"]["latency_range_s"] = [0.010, 0.015]        # the E1 cma_lat10_15 case: still reported
+    (entry,) = gain_runs(f"CMA={_save_cma_result(tmp_path / 'lat', {'config': drifted})}")
+    assert len(entry.warnings) == 1 and "robustness.latency_range_s" in entry.warnings[0]
+    assert "learning" not in entry.warnings[0]
+
+    spec = CONFIG.build_policy_spec("linear")
+    run = tmp_path / "policy"
+    run.mkdir()
+    save_policy(run / "final.npz", spec, pid_equivalent_weights(spec, CONFIG.reference_pid_gains()),
+                CONFIG.robot.max_torque)
+    (run / "snapshot.json").write_text(json.dumps({"config": drifted}))
+    (entry,) = policy_runs(f"L={run}/final.npz")
+    assert any("learning.int_v_scale" in w for w in entry.warnings)
+
+
 def test_gain_runs_end_to_end_on_smoke_under_any_robot(tmp_path):
     """H12: a tiny comparison of the tuning scripts' own <method>.json (dict gains) against the reference runs under
     both robots (the LEGO one scores against its provisional baseline)."""
