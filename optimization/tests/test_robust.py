@@ -227,7 +227,11 @@ def test_torch_backend_matches_numpy_in_robust_mode(space):
     ref = BatchEvaluator(SHORT, space, robustness=ROBUST).evaluate_population(gains)
     gpu = BatchEvaluator(SHORT, space, robustness=ROBUST, backend="torch", max_batch=64)   # several chunks
     got = gpu.evaluate_population(gains)
-    np.testing.assert_allclose(got.costs, ref.costs, rtol=1e-9)
+    # The LEGO robot (pulse-density ticks and free play): the GPU's rounding grows to 1e-12-2e-9 relative over these
+    # 2 s runs, spread over every scenario (8.6e-10 at worst before its tick phase was drawn, 2.1e-9 after; torch on
+    # the CPU 1e-10). A flipped pulse or play event would move a cost by ~1e-3, so 1e-8 still catches any divergence.
+    rtol = 1e-8 if SHORT.slow_pwm and SHORT.pwm_tick > 0 else 1e-9
+    np.testing.assert_allclose(got.costs, ref.costs, rtol=rtol)
     np.testing.assert_allclose(got.sensitivity, ref.sensitivity, rtol=1e-6, atol=1e-12)
 
 

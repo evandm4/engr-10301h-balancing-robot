@@ -143,7 +143,7 @@ measured number is at the **output shaft**, so the motor is described as a lumpe
 | Field | Value | Tag | Notes |
 |---|---|---|---|
 | `latency_s` | 0.010 s (keep) | Derived/Est. | Budget is about 6–15 ms (section 6), slower than the Pololu build's 1.5–6 ms |
-| `latency_range_s` | (0.005, 0.025) | Derived/Est. | Shifted up to cover the budget with margin; 2.5 ms is not reachable on this hardware |
+| `latency_range_s` | (0.0075, 0.0125) since bench B1 (was (0.005, 0.025)) | Derived/Est. | Sample to the HAT, without the 0–10 ms wait for the pulse tick, which the drawn tick phase adds (section 6, 2026-11-23 notes) |
 | `control_dt_s` | 0.005 s | — | Possible for the IMU path; motor data only refreshes every 10 ms (7.3) |
 
 ## 3. Component data
@@ -503,6 +503,18 @@ and the sim then added up to a tick (10 ms) of wait on top. With the loop locked
 D2) the whole sample-to-pulse delay is about 9 ms (left motor) to 11 ms (right), 15 ms at worst: IMU filter ~3 ms
 (est.), read and compute 1.3 ms (3.6 worst), write to tick 1.8 / 3.8 ms (lock_sweep), L/R ~3 ms (est.). The sim
 now draws 7.5–15 ms with the ticks locked (`legobot_config`), and the robot won't arm or run without the lock.
+
+*Reverted 2026-11-23 after bench B1 (8.7):* the ticks keep no fixed phase against the line grid (the right tick
+moved 3.1 ms after a power cycle, both wander within a power-up, a cable swap moved both), so the lock fixes the
+loop's pace but not the wait to the tick. The budget is now split in two. **Sample to the HAT, without the tick
+wait:** IMU filter ~3 ms (est.), read and compute 1.3 ms (3.6 worst, measured), serial command 2.4 ms (measured),
+L/R ~3 ms (est.): about 9.7 ms typical, 12 ms worst (HAT parse, under 1 ms est., inside the grid's rounding).
+**Wait for the next tick:** 0–10 ms, uniform. The sim draws the first as 7.5–12.5 ms on its 2.5 ms grid
+(`legobot_config.ROBUSTNESS.latency_range_s`) and the second from the tick phase, drawn per scenario
+(`pwm_tick_phase`; 0–7.5 ms in 2.5 ms steps, as the engine's ticks and arrivals fall on its steps). A sudden
+disturbance's first response can therefore come up to 20 ms after its sample in the sim, and about 22 ms on the
+robot. In closed loop, a new command arrives every 5 ms and each tick sends the newest one, so the feedback delay is
+the latency plus 0–5 ms on the robot (0 or 2.5 ms in the sim).
 
 ## 7. Where the current model doesn't match this robot
 

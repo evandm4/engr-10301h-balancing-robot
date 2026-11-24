@@ -90,9 +90,8 @@ def corner_robots(cfg: ProjectConfig, driver: str = None) -> BatchRobot:
     return replace(base, **changes)
 
 
-# Robustness ranges the catch tests here don't see: the pulse-density tick phase (no longer drawn for the LEGO
-# robot, whose ticks are locked; catch_latencies covers their wait), and the pitch offset, which full torque
-# ignores. Held at the base value and left out of the corners (they would only duplicate robots).
+# Robustness ranges the catch tests here don't see: the pulse-density tick phase (catch_latencies covers the
+# longest wait it can give, a whole tick), and the pitch offset, which full torque ignores. Held at the base value and left out of the corners (they would only duplicate robots).
 NOT_IN_CORNERS = ("pwm_tick_phase", "pitch_bias")
 
 
@@ -240,23 +239,32 @@ def _step_with_force(R, state, torque, dt, force):
 
 
 def catch_latencies(cfg: ProjectConfig, latency: float):
-    """(start-tilt reaction, push reaction) in seconds, for a sim latency (sample to torque).
+    """(start-tilt reaction, push reaction) in seconds, for a sim latency (sample to the HAT, or to the
+    torque without pulse ticks).
 
-    Without pulse ticks both are the latency (config.py's convention). With the HAT's 10 ms pulse ticks
-    locked to the loop (ActuatorConfig.pwm_tick_locked), only the samples whose commands meet a tick act:
-    one per tick. A start tilt is seen by the first sample, which is one of them, so it gets the latency.
-    A push can start just after one of them, and the next that acts is a tick later, so it gets the
-    latency plus a tick (review G4: the bound used to leave the tick out, so pushes at 98% of it could be
-    uncatchable). Unlocked ticks aren't supported here: their wait depends on a phase the catch test
-    doesn't model."""
+    Without pulse ticks both are the latency (config.py's convention).
+
+    With the HAT's 10 ms pulse ticks at a free phase (the LEGO robot since bench B1), a command takes effect
+    at the first tick after it arrives: up to a tick later. A start tilt is seen by the first sample, whose
+    command can just miss a tick: latency + tick. A push can start just after a sample, so the next sample
+    sees it a control period later, and that sample's command can just miss a tick: latency + control
+    period + tick. A step-quantized engine waits at most a tick less one physics step (its ticks and
+    arrivals both fall on steps; test_slow_pwm checks both cases in the reference engine), so these bound
+    the engines and the hardware's continuous wait alike.
+
+    With the ticks locked to the loop (ActuatorConfig.pwm_tick_locked; not this robot after B1, but a valid
+    model), the latency includes the wait and only the samples whose commands meet a tick act: one per tick.
+    A start tilt is seen by the first sample, which is one of them, so it gets the latency. A push can start
+    just after one of them, and the next that acts is a tick later, so it gets the latency plus a tick
+    (review G4: the bound used to leave the tick out, so pushes at 98% of it could be uncatchable)."""
     a = cfg.actuator
     tick = a.pwm_tick_s if a.model == "slow_pwm" else 0.0
     if not tick:
         return latency, latency
-    if not a.pwm_tick_locked:
-        raise ValueError("catch_latencies models locked pulse ticks only (ActuatorConfig.pwm_tick_locked)")
     steps = math.ceil(latency / cfg.timing.dt_s - 1e-9) * cfg.timing.dt_s     # as the simulators round it
-    return steps, steps + tick
+    if a.pwm_tick_locked:
+        return steps, steps + tick
+    return steps + tick, steps + cfg.timing.control_dt_s + tick
 
 
 def largest_catchable_impulse(R, speed, latency, push_duration=0.05, j_max=2.0, steps=18, sign=1.0):
@@ -362,11 +370,12 @@ TOP_SPEED_CHOICE = 0.40
 LEAN_SOFTENING = 0.5
 POLOLU_PUSH_SHARE = 0.145 / 0.149             # push / largest catchable on every corner
 # What a full run of the catch simulations gives for legobot_config.py as of 2026-11-23 (measured robot, slow
-# PWM with ticks locked to the loop, latency to 15 ms: push reaction 25 ms, tilt 15 ms; gearbox and coupling
-# play, B5, in its worst position), for --quick. Re-run without --quick after changing the config. nominal_* are
-# at the nominal 10 ms (push 20 ms). Without the play: forward 0.0523, backward 0.3250, tilt 0.486, nominal
-# forward 0.099, nominal tilt 0.628.
-RECORDED_CATCH = dict(forward=0.03572, backward=0.3059, tilt=0.436, nominal_forward=0.085, nominal_tilt=0.589)
+# PWM with the tick phase free since bench B1, latency to 12.5 ms: push reaction 27.5 ms, tilt 22.5 ms; gearbox
+# and coupling play, B5, in its worst position), for --quick. Re-run without --quick after changing the config
+# (about 30 min). nominal_* are at the nominal 10 ms (push 25 ms, tilt 20 ms). With the ticks locked (push 25 ms,
+# tilt 15 ms): forward 0.03572, backward 0.3059, tilt 0.436, nominal forward 0.085, nominal tilt 0.589. Without
+# the play, locked: forward 0.0523, backward 0.3250, tilt 0.486, nominal forward 0.099, nominal tilt 0.628.
+RECORDED_CATCH = dict(forward=0.03420, backward=0.3009, tilt=0.412, nominal_forward=0.081, nominal_tilt=0.548)
 
 
 def lean_cap_table(N, R, caps_deg):

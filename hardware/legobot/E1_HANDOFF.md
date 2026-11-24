@@ -3,7 +3,11 @@
 State on 2026-11-23, branch `legobot-config` (merged with `main`, PR #13 included):
 - **Review fixes are in:** the review's findings (`docs/legobot-review/triage.md`), with the slow-PWM
   `drive()` fix.
-- **Tick lock:** the simulated pulse ticks are locked to the loop, and the latency range is 7.5–15 ms.
+- **Pulse ticks at a free phase (bench B1, 2026-11-23):** the lock model (ticks locked to the loop, 7.5–15 ms)
+  was reverted after B1 found the HAT's ticks keep no fixed phase. Each scenario now draws the tick phase
+  (`pwm_tick_phase`, a 0–10 ms wait) on top of a 7.5–12.5 ms sample-to-HAT latency, and the scenario was
+  re-derived with the longer reactions (A4_BASELINES.md, last section). E1 numbers made before this aren't
+  comparable with ones after it.
 - **Model-based PID:** made linearly stable (integral ratio 0.3).
 - **Tests:** they run clean under both robots in `C:\venvs\balancebot`, torch included.
 - **Baselines:** the reference points are A4_BASELINES.md's last table.
@@ -12,8 +16,8 @@ State on 2026-11-23, branch `legobot-config` (merged with `main`, PR #13 include
 
 | Item | Gates |
 |---|---|
-| Bench B1 (tick offsets after a power cycle) and B2 (duty 0: coast or brake), in BENCH_CHECKS.md | E1 conclusions: either result can change the simulation model. Check `docs/legobot-review/triage.md` for their status before trusting E1 numbers |
-| The backlash port (part 2 below) | E2. *Done 2026-11-23 on branch `claude/legobot-backlash`* (PHYSICS.md 10.3): the play is drawn per scenario and the pushes are re-derived with it (0.70 N, was 1.02). The baselines fall in 6–13% of robust scenarios, every fall catchable (A4_BASELINES.md, last section). E1 results without it are not comparable with E2's |
+| Bench B1 (tick offsets after a power cycle) and B2 (duty 0: coast or brake), in BENCH_CHECKS.md | E1 conclusions. *Both done 2026-11-23.* B1 failed: the ticks keep no fixed phase, so the lock model was reverted (free tick phase drawn per scenario, latency 7.5–12.5 ms, pushes 0.67 N; triage G6, branch `claude/legobot-tick-timing-574623`). B2: duty 0 coasts, as modelled. E1 can start once that branch is merged |
+| The backlash port (part 2 below) | E2. *Done 2026-11-23 on branch `claude/legobot-backlash`* (PHYSICS.md 10.3): the play is drawn per scenario and the pushes are re-derived with it (0.70 N, was 1.02; 0.67 N after B1). The baselines fall in 3–11% of robust scenarios, every fall catchable (A4_BASELINES.md, last section). E1 results without it are not comparable with E2's |
 | Bench B3–B4 and C1–C5 | E2 (final tuning) |
 
 ---
@@ -46,12 +50,13 @@ checks run in another window, and so may the backlash port (part 2 of `hardware/
 
 **Steps:**
 1. Benchmark, then run the default robust tuning (DE and CMA-ES) in float64. Compare with A4's baselines:
-   hand-tuned train 10.69, dev 22.52; model-based train 18.32, dev 7.19.
+   hand-tuned train 170.9 (12 of 150 fell), dev 226.5 (17); model-based train 73.0 (5), dev 120.9 (9)
+   (A4_BASELINES.md, last section: play modelled, free tick phase).
 2. Ablations, to find which models matter. Re-tune or re-score with one model switched to its idealized
    form at a time, and see what changes the tuned gains or their cost:
    - the IMU and complementary filter, against measured pitch with noise;
    - the encoder, against continuous velocity;
-   - the pulse ticks, against averaged slow PWM;
+   - the pulse ticks, against averaged slow PWM, and the tick phase's spread, against one fixed phase;
    - the feedforward constants' mismatch spreads;
    - the pitch offset spread;
    - the latency range.
