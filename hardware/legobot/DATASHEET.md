@@ -804,6 +804,81 @@ so **θ0 ≈ −0.010 ± 0.010 rad** in the IMU's frame. Saved as a provisional 
 `calibration.json`. That uncertainty matches `pitch_bias` = ±0.015 rad, which stays. (`robot.calibrate
 balance`, holding the robot at its balance point by feel, turned out impractical by hand.)
 
+**Bench checks A1–A6 (2026-11-23, after the external review's robot-code changes).** Deployed 5b38606 (no
+`-dirty`); robot on the stand, wheels clear, vin 8.0 V, `--pitch-zero 1.53` (the stand's tilt: the IMU read
++1.513 rad against the `calibration.json` zero of −0.010, so the unarmed first try ended "not armed within 30 s").
+Logs: `bench_data/20261123_193041` (A2), `_193055` (A3), `_193103` (A4), `_193152` (A5), `_193021` (the unarmed try).
+
+| # | Result |
+|---|---|
+| A1 | `DEPLOYED` = `5b38606 2026-11-23 13:26`. Pass |
+| A2 `--inject imu` | "IMU read failed 2 times in a row: [Errno 121]" 1 s after arming; both wheels 0 deg/s 1 s later; `_run.csv`, `_raw.csv` and the summary written. Pass |
+| A3 `--inject unlock` | "lost the lock to the HAT's line grid (the tuned gains assume it)". Pass. Wheels read [−10, 0] deg/s 1 s after the stop (one encoder count of creep), not exactly 0 |
+| A4 `--inject hang` | "watchdog fired: loop silent 107 ms" (within ~100 ms). The first tick after the 0.5 s hang read both wheels at 0 deg/s, from about −900 deg/s before. The loop logs nothing during the hang, so "stopped for the whole 0.5 s" is inferred from that reading. Pass |
+| A5 `--duty-cap 0.6 --seconds 10` | "wheels running away (−19.2, −19.2 rad/s for 1.5 s)" at 4.7 s, wheels at 0 a second later. The trip works, but late: the wheels were above 17 rad/s from about 0.9 s (duty 0.6, 19.4 rad/s on average), and **4.4% of ticks dip below 17** (the per-tick speed is a 1° count difference, ±1–2 rad/s), which resets the 1.5 s counter. It fired only when a clean 1.5 s streak happened (300 ticks), about 4 s after the wheels passed 17. Partial pass (see triage G11) |
+| A6 | Every run printed "locked to the HAT's lines" before "armed". Pass |
+
+Line period at start: +28 to +165 ppm (it moved between runs; the lock tracks it). Every tick of every armed
+run was locked except one in A3 (the injected unlock).
+
+**B1: do the tick offsets survive a power cycle? (2026-11-23, 19:38 power-up #1 of 2; `lock_sweep --wheels-off`,
+duty 1.0, 8 trials per 1 ms offset, 80 per wheel; logs `bench_data/20261123_193851_lock_sweep*` (left) and
+`_194052_lock_sweep*` (right).)** Fitted by the same sawtooth, t_d = base + ((cliff − write phase) mod line
+period), least squares over every trial, 90% interval from 300 bootstrap resamples:
+
+| | Before (16:45–16:47, vin 7.4 V) | After the power cycle (vin 7.9–8.0 V) | Moved |
+|---|---|---|---|
+| Left cliff | 8.25 ms (7.2–8.45), base 13.9 | 8.55 ms (8.2–8.9), base 13.2 | +0.3 ms: holds |
+| Right cliff | 10.25 ms (0.2–1.15 past a line), base 13.2 | **7.15 ms (6.2–7.2)**, base 13.4 | **−3.1 ms** |
+
+**The left tick holds; the right tick moved by about 3 ms against the left port's line grid**, more than the
+~1 ms the model tolerates. The right-left offset was +2.0 ms and is now −1.4 ms. The model's wait from write
+to tick, at `LINE_WRITE_PHASE_S` = 6.5 ms, was 1.8 ms (left) and 3.8 ms (right); it is now 2.1 and **0.65 ms**.
+The right interval's low end (6.2 ms) is *before* the 6.5 ms write phase, so some right-wheel commands would miss
+their tick and wait a whole extra 10 ms. The sim's 7.5–15 ms latency range (which assumed a 1.8–3.8 ms wait)
+needs the right wheel's tick treated as drifting between sessions, or the robot must measure the offset at
+startup. Power-up #2 not run: B1's instruction is to stop and report on a move. (The vin difference, 7.4 against
+8.0 V, and the line period, 9.9970 against 9.9984 ms, are the other things that changed between the two sessions.)
+
+*Follow-up (Phase D session, same power-up, Pi booted 19:38; I refit both logs the same way and got the same
+numbers).* Two more right-wheel sweeps: `20261123_195424_lock_sweep*` (grid from the right port's own lines)
+gave a cliff of 1.2 ms (90% 1.2–2.2) with the right lines lagging the left by 4.1 ms at the start (5.9 ms by
+the Phase D session's estimate); `_195633_lock_sweep*` (left grid) gave **4.35 ms (4.2–6.3)**, with the right
+lines lagging the left by 7.65 ms. So on the left grid the right cliff read 7.15 ms at 19:40 and 4.35 ms 16
+minutes later, **with no power cycle between**: it is not fixed within a power-up, and the two ports' line
+streams sit on separate 10 ms grids whose gap resets on each `configure()` (1.5–8 ms across the day's balance
+logs). The right tick does not follow the right port's own lines either (that predicted 8.2–9.9 ms on the left
+grid). The left cliff stays at 8.3–8.8 ms. Caveat: the right sweeps are noisy (a sawtooth beats a flat line by
+only 3–5% in rms, 4.6 against 4.7 ms), so some of the spread is the measurement; more trials per offset would
+separate the two.
+
+*Cable-swap test (Phase D session, Evan swapped the motor cables between ports A and B; same power-up, Pi up
+since 19:38; 80 trials each, all timed on port A's lines; I refit both).* `20261123_201112_lock_sweep*`: port A
+with the right motor, cliff 3.2 ms (my bootstrap 2.6–4.1). `_201250_lock_sweep*`: port B with the left motor,
+cliff 3.15 ms (3.15–3.35). Before the swap port A (left motor) read 8.8 ms at 19:38 and port B (right motor)
+7.2 then 4.35 ms. Trial scatter was 4.1–4.8 ms in every run. So: **no port or motor fault** (the scatter
+follows neither the port nor the motor; the latency test also gave 4.4 ms for both wheels), **both ports' ticks
+landed at the same 3.2 ms after the swap, with no power cycle**, and "the left tick holds" above was premature:
+the one clean left run (19:38) was probably luck. Likely mechanism, not proven: the tick is fixed within a run,
+and re-plugging a motor makes the HAT re-detect it and restart its pulse timing; one swap doesn't prove that.
+**For B1: neither wheel's tick phase can be assumed, and a startup measurement isn't reliable either.** Proposed
+resolution (Phase D session): the sim draws the wait to tick uniformly over 0–10 ms per run for both wheels
+(possibly one shared draw). That needs all three engines and is a task for the engines session, after the B5
+backlash port commits, not this bench session. The motors are back on their normal ports (left A, right B).
+
+**B2(b): does duty 0 coast or brake? (2026-11-23, left wheel, wheels off the ground, vin 7.9 V, slow PWM
+`1 0.01`; `robot.measure.coast_vs_brake`, log `bench_data/20261123_195004_coast_vs_brake*`.)** The wheel was
+flicked by hand 8 times, alternating `port 0 ; coast` and `pwm ; set 0` (the mode hidden from the person
+flicking). Time for the speed to fall from 12 to 3 rad/s: **coast 0.212 s (sd 0.016, n = 4), `set 0` 0.228 s
+(sd 0.015, n = 4)**. No difference, and `set 0` is if anything 0.016 s slower. Both stops took 0.3–0.4 s from
+the release and were close to linear in speed (friction-dominated). A shorted winding would damp the wheel with
+a time constant J/(a k + b) = 5.84e-4 / (0.0597 × 0.352 + 7e-4) ≈ 27 ms, so 12 → 3 rad/s in about 40 ms, five
+times faster than seen. **So duty 0 coasts, as `SlowPwmActuator` assumes.** Caveats: the hand pushing sets the
+speed, and the person flicking couldn't get the wheel above about 12 rad/s once released (the logged "peaks" of
+15–27 rad/s include the hand's push), so the 12 → 3 rad/s window starts partly in the push; four trials per
+mode. The harder test (B2a: the load.py lowering run, with a mass sinking against the motor at duty 0) is not
+done; it would check the braking quadrant under load, not the zero-drive case.
+
 **Still to measure:** `discharge` (about an hour on the stand), and optionally `stall` (R
 with a multimeter) and `load` (the braking quadrant directly).
 

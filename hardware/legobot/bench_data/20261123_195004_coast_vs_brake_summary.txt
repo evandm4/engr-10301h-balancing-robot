@@ -1,0 +1,11 @@
+vin 7.87 side left pwmparams [1.0, 0.01]
+trial 1 coast peak 15.15 t_12_to_3 0.2000
+trial 2 pwm0 peak 22.98 t_12_to_3 0.2099
+trial 3 coast peak 21.13 t_12_to_3 0.1999
+trial 4 pwm0 peak 17.45 t_12_to_3 0.2200
+trial 5 coast peak 18.88 t_12_to_3 0.2401
+trial 6 pwm0 peak 24.79 t_12_to_3 0.2300
+trial 7 coast peak 24.96 t_12_to_3 0.2099
+trial 8 pwm0 peak 27.38 t_12_to_3 0.2501
+coast: 4 trials, 12->3 rad/s in 0.212 s (sd 0.016)
+pwm0: 4 trials, 12->3 rad/s in 0.228 s (sd 0.015)

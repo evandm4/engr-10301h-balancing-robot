@@ -1,0 +1,25 @@
+reason: watchdog fired: loop silent 107 ms
+armed at: 0.504455159000031
+vin at start: 8.04
+watchdog priority: SCHED_FIFO 51
+reader priority: SCHED_FIFO 49
+loop priority: SCHED_FIFO 50
+memory locked: True
+gyro bias: 0.04558573513100149
+gyro sd at rest: 0.0031023761320352556
+accel |g| ratio: 1.0069893511326802
+line period at start: 10.00051 ms (+51 ppm vs nominal)
+line lock: command write phase 6.50 ms, tick offset 0.30 ms
+wheels 1 s after stop (deg/s): [0.0, 0.0]
+line period at end: 10.00236 ms (+236 ppm vs nominal)
+run: 1.50 s, 201 ticks
+period: mean 7.501  sd 35.274  p50 5.001  p99 5.067  max 505.106 ms (n=200)
+lateness: mean 2.490  sd 35.187  p50 0.000  p99 0.034  max 500.103 ms (n=201)
+overruns (> 7.5 ms late): 1
+compute (IMU read to command sent): mean 1.363  sd 0.138  p50 1.315  p99 1.829  max 2.067 ms (n=201)
+IMU read: mean 0.685  sd 0.060  p50 0.660  p99 0.929  max 1.058 ms (n=201)
+ticks locked to the HAT's lines: 201 of 201
+command write phase after the line grid, mod 5 ms: mean 1.376  sd 0.088  p50 1.352  p99 1.804  max 2.063 ms (n=200)
+motor data age at the tick, left: mean 2.421  sd 2.519  p50 0.515  p99 5.503  max 5.515 ms (n=201)
+motor data age at the tick, right: mean 4.157  sd 3.267  p50 4.206  p99 9.400  max 9.490 ms (n=201)
+pitch: mean -0.0280 sd 0.0011 rad; |duty| max 0.30
