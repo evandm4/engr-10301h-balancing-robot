@@ -359,7 +359,8 @@ dev 28.588). The tables above stand. The catch bound behind the 98% pushes leave
 
 ### Ticks locked to the loop, latency 7.5–15 ms (review G4, G6; 2026-11-23)
 
-The robot loop is locked to the HAT's pulse ticks and won't arm or run without the lock, so the simulation
+The robot loop was locked to the HAT's pulse ticks and wouldn't arm or run without the lock (bench B1 and `c85c4da`
+later undid both; see the last section), so the simulation
 no longer draws the tick phase: each scenario's ticks fall where its commands arrive
 (`ActuatorConfig.pwm_tick_locked`), and its latency, now 7.5–15 ms, is the whole delay from the sample to the
 pulse (DATASHEET 6). Before, 5–25 ms with up to a tick of wait on top gave up to 35 ms. The scenario

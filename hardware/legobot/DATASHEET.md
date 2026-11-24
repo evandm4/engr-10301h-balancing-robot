@@ -514,7 +514,7 @@ L/R ~3 ms (est.): about 9.7 ms typical, 12 ms worst (HAT parse, under 1 ms est.,
 (`pwm_tick_phase`; 0–7.5 ms in 2.5 ms steps, as the engine's ticks and arrivals fall on its steps). A sudden
 disturbance's first response can therefore come up to 20 ms after its sample in the sim, and about 22 ms on the
 robot. In closed loop, a new command arrives every 5 ms and each tick sends the newest one, so the feedback delay is
-the latency plus 0–5 ms on the robot (0 or 2.5 ms in the sim).
+the latency plus 0–5 ms on the robot (0 or 2.5 ms in the sim). The robot no longer requires the lock (`c85c4da`, on `legobot-config`): it paces on it when locked and falls back to the Pi's clock otherwise; a lost lock is logged, not a trip.
 
 ## 7. Where the current model doesn't match this robot
 

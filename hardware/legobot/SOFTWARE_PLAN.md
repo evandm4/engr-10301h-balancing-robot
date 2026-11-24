@@ -252,8 +252,7 @@ bound adds a tick to the push reaction (the scenario re-derives unchanged). A4_B
 phase across power cycles, within a power-up or across a cable swap. So since 2026-11-23 the tick phase is drawn per
 scenario again (`pwm_tick_locked=False`; the option stays in the code), the latency is the sample-to-HAT delay
 without the tick wait (7.5–12.5 ms), and the catch bound is latency + tick for a start tilt and latency + control
-period + tick for a push (22.5 / 27.5 ms). Re-derived pushes: 0.67 N (were 0.70). The robot's refusal to arm
-without the lock no longer protects a sim assumption (triage notes).
+period + tick for a push (22.5 / 27.5 ms). Re-derived pushes: 0.67 N (were 0.70). The robot no longer requires the lock (`c85c4da`, on `legobot-config`): it paces on it when locked and falls back to the Pi's clock otherwise; a lost lock is logged, not a trip.
 **Before E1:** run the bench checks in the triage (B1 `lock_sweep` after a power cycle and B2 coast vs brake at
 duty 0 are done and in the model; still to do: the motor rail at 8.4 V and the right motor's lever test). Run the LEGO searches in float64 (G5). Score
 the final gains on a wider latency sweep as an evaluation.
