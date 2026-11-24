@@ -1,0 +1,120 @@
+{
+  "started_at": "2026-11-24 03:03:22",
+  "ghelper": {},
+  "runs": [
+    {
+      "label": "full_seed0_midpoint",
+      "args": [
+        "--robot",
+        "legobot",
+        "--backend",
+        "torch",
+        "--no-show",
+        "--seed",
+        "0",
+        "--cma-x0",
+        "midpoint"
+      ],
+      "folder": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261124-032414",
+      "elapsed_s": 1255.45,
+      "power_before": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 5.49,
+        "gpu_sm_clock_mhz": 360.0
+      },
+      "power_after": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 8.48,
+        "gpu_sm_clock_mhz": 360.0
+      }
+    },
+    {
+      "label": "full_seed1_midpoint",
+      "args": [
+        "--robot",
+        "legobot",
+        "--backend",
+        "torch",
+        "--no-show",
+        "--seed",
+        "1",
+        "--cma-x0",
+        "midpoint"
+      ],
+      "folder": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261124-034505",
+      "elapsed_s": 1248.14,
+      "power_before": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 6.09,
+        "gpu_sm_clock_mhz": 360.0
+      },
+      "power_after": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 5.96,
+        "gpu_sm_clock_mhz": 360.0
+      }
+    },
+    {
+      "label": "warm_seed0_model_based",
+      "args": [
+        "--robot",
+        "legobot",
+        "--backend",
+        "torch",
+        "--no-show",
+        "--seed",
+        "0",
+        "--cma-x0",
+        "model-based",
+        "--de-iters",
+        "2",
+        "--de-pop",
+        "6"
+      ],
+      "folder": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261124-040107",
+      "elapsed_s": 960.36,
+      "power_before": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 5.83,
+        "gpu_sm_clock_mhz": 360.0
+      },
+      "power_after": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 12.41,
+        "gpu_sm_clock_mhz": 360.0
+      }
+    },
+    {
+      "label": "warm_seed1_model_based",
+      "args": [
+        "--robot",
+        "legobot",
+        "--backend",
+        "torch",
+        "--no-show",
+        "--seed",
+        "1",
+        "--cma-x0",
+        "model-based",
+        "--de-iters",
+        "2",
+        "--de-pop",
+        "6"
+      ],
+      "folder": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261124-041714",
+      "elapsed_s": 964.87,
+      "power_before": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 10.15,
+        "gpu_sm_clock_mhz": 360.0
+      },
+      "power_after": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 6.63,
+        "gpu_sm_clock_mhz": 360.0
+      }
+    }
+  ],
+  "keep_awake_ok": true,
+  "finished_at": "2026-11-24 04:17:20"
+}

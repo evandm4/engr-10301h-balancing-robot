@@ -154,11 +154,20 @@ def test_invalid_motor_torque_limit_rejected():
 
 # ---- everything together ---------------------------------------------------
 
-@pololu_only
 def test_robot_still_balances_under_combined_moderate_conditions(motor_dyn):
-    result = run(motor_dyn, sensor=CONFIG.build_sensor(), latency=CONFIG.timing.latency_s)
-    assert not result.fell
-    assert compute_metrics(result).max_abs_pitch < 0.2
+    if CONFIG.name == "pololu":
+        result = run(motor_dyn, sensor=CONFIG.build_sensor(), latency=CONFIG.timing.latency_s)
+        assert not result.fell
+        assert compute_metrics(result).max_abs_pitch < 0.2
+        return
+    # The LEGO robot's pitch-only PID falls on the HAT's pulses: balance it with the hand-tuned cascade, over
+    # several sensor seeds (one noise draw can decide a run on a pulse-density drive with free play).
+    for seed in range(3):
+        result = simulate(motor_dyn, CONFIG.build_controller(), duration=5.0, initial_state=motor_dyn.initial_state(0.1),
+                          control_dt=CONFIG.timing.control_dt_s, sensor=CONFIG.build_sensor(seed),
+                          latency=CONFIG.timing.latency_s)
+        assert not result.fell, seed
+        assert compute_metrics(result).max_abs_pitch < 0.25, seed      # a pulse-density drive swings further
 
 
 def test_gear_efficiency_lowers_torque_at_the_current_limit_only():

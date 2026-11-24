@@ -185,7 +185,9 @@ def simulate_batch(
             if spec.imu:
                 # Accelerations at the sample: the drive in effect just before this tick, the push now.
                 force = float(schedule.force_per_step[k])
-                derivs = (backlash_terms(robot, state, applied, contact, np, force)[0] if backlash
+                # Released contact for the sample only (as begin_step); the live contact is not touched.
+                sense_contact = backlash_release(robot, state, applied, contact, np, force) if backlash else None
+                derivs = (backlash_terms(robot, state, applied, sense_contact, np, force)[0] if backlash
                           else derivatives(robot, state, applied, np, force))
                 if noise is not None:
                     gyro = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)

@@ -117,7 +117,9 @@ def simulate(
             if sensor is None:
                 measured = state
             elif imu:   # accelerations at the sample: the drive in effect just before t, the push at t
-                derivs = dynamics.derivatives(state, applied, *push)
+                # Released contact (begin_step) for the sample only: the live state and contact are not touched.
+                sense_state = dynamics.begin_step(state, applied, *push) if backlash else state
+                derivs = dynamics.derivatives(sense_state, applied, *push)
                 measured = sensor.measure(state, (derivs[1], derivs[3]))
             else:
                 measured = sensor.measure(state)

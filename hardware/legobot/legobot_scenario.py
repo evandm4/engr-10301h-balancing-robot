@@ -171,18 +171,20 @@ def caught(R: BatchRobot, *, speed, impulse=0.0, start_pitch=0.0, push_duration=
     play = _Play(R, state, closed_side=-direction) if R.has_backlash else None   # worst position: see the docstring
     hold = (friction(R, speed / R.wheel_radius) if hold_cruise_torque else 0.0) * np.ones(n)
     alive, done = np.ones(n, bool), np.zeros(n, bool)
-    t = 0.0
-    while t < horizon and not done.all():
-        torque = hold if t < latency else direction * 1e6
-        f = force if t < push_duration else 0.0
+    step = 0    # integer step count: t = step * dt is exact, where a float t += dt drifts across the latency
+    while step * dt < horizon and not done.all():
+        t_before = step * dt
+        torque = hold if t_before < latency - 1e-12 else direction * 1e6
+        f = force if t_before < push_duration - 1e-12 else 0.0
         if play is not None:
             state = play.step(torque, dt, f)
         else:
             state = _step_with_force(R, state, drive(R, torque, state[1], state[3]), dt, f)
-        t += dt
+        step += 1
+        t = step * dt
         theta = state[2]
         fell = np.abs(theta) > fall_angle
-        back = (t > max(latency, push_duration)) & (direction * theta <= 0)
+        back = (t > max(latency, push_duration) + 1e-12) & (direction * theta <= 0)
         alive &= ~(fell & ~done)
         done |= fell | back
     return alive & done
@@ -190,8 +192,8 @@ def caught(R: BatchRobot, *, speed, impulse=0.0, start_pitch=0.0, push_duration=
 
 class _Play:
     """The play's extra state through a catch test, stepped as the engines step it (begin: release,
-    RK4 with each play open or closed, end: engagement). The robot code's drive takes the motor side's own
-    speed (measured exactly, as drive() takes the wheel's)."""
+    RK4 with each play open or closed, end: engagement). The robot code's drive takes the encoder output
+    shaft's speed (self.shaft, between gearbox and coupling play, as the engines do), not the motor side's."""
 
     def __init__(self, R, state, closed_side=0.0):
         n = size(R)
@@ -202,15 +204,20 @@ class _Play:
         side = np.broadcast_to(np.asarray(closed_side, float), (n,)).copy()   # +1 / -1 closed that way, 0 open
         self.state = (x, x_dot, theta, theta_dot, side * play, wheel.copy())
         self.contact = side
-        self.shaft = x / R.wheel_radius - theta
+        # With the play initially closed on `side` (gap = side * (gearbox + coupling)), both stops of the shaft's
+        # play operator meet at wheel_angle + side * coupling_backlash (and at wheel_angle when side == 0).
+        self.shaft = (x / R.wheel_radius - theta) + side * R.coupling_backlash
+        self.shaft_speed = wheel.copy()
 
     def step(self, torque, dt, force):
         R, s = self.R, self.state
-        motor_x_dot = R.wheel_radius * (s[5] + s[3])        # the x_dot at which the wheel would turn as the motor side
-        applied = drive(R, torque, motor_x_dot, s[3])
+        shaft_x_dot = R.wheel_radius * (self.shaft_speed + s[3])   # x_dot reconstructed from encoder shaft speed
+        applied = drive(R, torque, shaft_x_dot, s[3])
         contact = backlash_release(R, s, applied, self.contact, np, force)
         s = backlash_rk4_step(R, s, applied, contact, dt, np, force)
-        self.state, self.contact, self.shaft = backlash_end_step(R, s, contact, self.shaft, np)
+        prev_shaft = self.shaft
+        self.state, self.contact, self.shaft = backlash_end_step(R, s, contact, prev_shaft, np)
+        self.shaft_speed = (self.shaft - prev_shaft) / dt
         return self.state[:4]
 
 
@@ -293,16 +300,18 @@ def _tilt_batch(R, tilts, latency, dt=0.0005, horizon=3.0, fall_angle=math.radia
     state = (np.zeros(n), np.zeros(n), tilts.copy(), np.zeros(n))
     play = _Play(R, state, closed_side=-1.0) if R.has_backlash else None   # worst position: away from the recovery
     alive, done = np.ones(n, bool), np.zeros(n, bool)
-    t = 0.0
-    while t < horizon and not done.all():
-        torque = np.zeros(n) if t < latency else np.full(n, 1e6)
+    step = 0    # integer step count, as in caught()
+    while step * dt < horizon and not done.all():
+        t_before = step * dt
+        torque = np.zeros(n) if t_before < latency - 1e-12 else np.full(n, 1e6)
         if play is not None:
             state = play.step(torque, dt, 0.0)
         else:
             state = rk4_step(R, state, drive(R, torque, state[1], state[3]), dt)
-        t += dt
+        step += 1
+        t = step * dt
         fell = np.abs(state[2]) > fall_angle
-        back = (t > latency) & (state[2] <= 0)
+        back = (t > latency + 1e-12) & (state[2] <= 0)
         alive &= ~(fell & ~done)
         done |= fell | back
     return alive & done
@@ -369,13 +378,15 @@ POLOLU_PITCH_LIMIT_OF_CAP = 0.30 / math.radians(25.0)   # pitch_limit = 69% of t
 TOP_SPEED_CHOICE = 0.40
 LEAN_SOFTENING = 0.5
 POLOLU_PUSH_SHARE = 0.145 / 0.149             # push / largest catchable on every corner
-# What a full run of the catch simulations gives for legobot_config.py as of 2026-11-23 (measured robot, slow
+# What a full run of the catch simulations gives for legobot_config.py as of review round 2 (measured robot, slow
 # PWM with the tick phase free since bench B1, latency to 12.5 ms: push reaction 27.5 ms, tilt 22.5 ms; gearbox
-# and coupling play, B5, in its worst position), for --quick. Re-run without --quick after changing the config
+# +-1.1-1.6 deg and coupling +-0-3 deg play, B5, in its worst position), for --quick. Before the H3 play
+# re-reading (gearbox +-2.6-3 deg): forward 0.03420, backward 0.3009, tilt 0.412, nominal forward 0.081, nominal
+# tilt 0.548. Re-run without --quick after changing the config
 # (about 30 min). nominal_* are at the nominal 10 ms (push 25 ms, tilt 20 ms). With the ticks locked (push 25 ms,
 # tilt 15 ms): forward 0.03572, backward 0.3059, tilt 0.436, nominal forward 0.085, nominal tilt 0.589. Without
 # the play, locked: forward 0.0523, backward 0.3250, tilt 0.486, nominal forward 0.099, nominal tilt 0.628.
-RECORDED_CATCH = dict(forward=0.03420, backward=0.3009, tilt=0.412, nominal_forward=0.081, nominal_tilt=0.548)
+RECORDED_CATCH = dict(forward=0.03772, backward=0.3043, tilt=0.423, nominal_forward=0.085, nominal_tilt=0.559)
 
 
 def lean_cap_table(N, R, caps_deg):

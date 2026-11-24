@@ -237,9 +237,9 @@ def pdm_update(total, duty, xp=np):
     result is bit-identical to the reference for any backend."""
     total = total + xp.clip(duty, -1.0, 1.0)
     if xp is np:
-        out = (total >= 0.5).astype(total.dtype) - (total <= -0.5).astype(total.dtype)
+        out = (total > 0.5).astype(total.dtype) - (total < -0.5).astype(total.dtype)
     else:
-        out = (total >= 0.5).to(total.dtype) - (total <= -0.5).to(total.dtype)
+        out = (total > 0.5).to(total.dtype) - (total < -0.5).to(total.dtype)
     return total - out, out
 
 

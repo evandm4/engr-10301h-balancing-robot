@@ -220,6 +220,7 @@ comparison.
    |---|---|---|---|
    | Smoke | 5000-5009 (30; the first 10 dev seeds) | 20 s | unit tests, quick checks after each change |
    | Development | 5000-5049 (150) | 60 s, plus 20 s for the overfitting gap only | every hyperparameter, architecture and run-selection decision |
+   | Extended dev | 5050-5149 (300) | 60 s (or 20 s) | confirming dev selections on scenarios they weren't picked on; never for selection |
    | Validation | 3000-3099 (300), frozen | 60 s | headline typical-cost numbers, once, on final controllers |
    | Fall-rate | 6000-6999 (3,000), frozen | 60 s | fall rates and the latency sweep, once, at the end |
 
@@ -728,10 +729,12 @@ its robot (`compare_controllers.py` warns about a policy trained under another c
 **What is LEGO-specific** (`legobot_config.LEARNING`): the observation and output scales, measured
 from this robot's closed loop the way the Pololu ones were (hand-tuned PID and its PID-equivalent
 linear policy, the one-robot simulator with the LEGO models, 60 s, nominal robot, all 50 dev seeds
-x 3 tilts, no falls). Where the Pololu robot's Bryson limits don't fit this robot's ranges, the 99th
-percentile is used instead: velocity error 0.25 m/s (the 0.06 m/s limit would put typical inputs
-at 2.5 and peaks at 9) and commands and output 0.4 N m (the 0.09 N m limit is 10% of max_torque by
-design; typical commands are 3-10x it, the voltage-mode drive overcoming Coulomb friction). Table
+x 3 tilts, no falls; re-measured 2026-11-24 after the Round-2 backlash/PDM fixes, still with the
+hand-tuned reference, and to be re-measured again once E2 picks its reference PID). Where the Pololu
+robot's Bryson limits don't fit this robot's ranges, the 99th percentile is used instead: velocity
+error 0.3 m/s (p99 0.289; the 0.06 m/s limit would put p90 inputs at 3 and peaks at 11) and commands
+and output 0.6 N m (p99 0.574; the 0.09 N m limit is 10% of max_torque by design; typical commands
+are 4-10x it, the voltage-mode drive overcoming Coulomb friction plus pulse-density chatter). Table
 and the rest in `legobot_config.py`. Search settings (sizes, populations, budgets) are shared.
 
 **Provisional until E1/E2** (`hardware/legobot/SOFTWARE_PLAN.md`): there is no tuned LEGO PID yet,

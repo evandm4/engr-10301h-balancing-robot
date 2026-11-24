@@ -275,7 +275,7 @@ def pdm_update(total: float, duty: float):
     Returns (new running sum, this tick's duty: -1, 0 or +1). batch_sim.physics.pdm_update
     does the same arithmetic on arrays."""
     total = total + _clip(duty, -1.0, 1.0)
-    out = (1.0 if total >= 0.5 else 0.0) - (1.0 if total <= -0.5 else 0.0)
+    out = (1.0 if total > 0.5 else 0.0) - (1.0 if total < -0.5 else 0.0)
     return total - out, out
 
 

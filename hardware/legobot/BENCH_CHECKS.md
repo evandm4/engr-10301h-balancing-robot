@@ -9,18 +9,19 @@ spends GPU hours. Section C fills gaps in the measured spreads; it gates E2 (the
 ## A. The new robot code, on hardware (safety; before any floor test)
 
 The robot code changed: IMU-error handling, logs on a crash, coast before the watchdog stops, a watchdog
-that keeps coasting, a runaway trip, the vin cutoff now 6.8 V, and no arming or running without the line
-lock. Robot upside down on the stand, wheels clear. Use `--pitch-zero` set to the stand's tilt, as in the
-D1 bench runs.
+that keeps coasting, a voltage-scaled runaway trip (`0.85 * w_nl(vin)`, ~15.1–18.9 rad/s over 6.8–8.4 V;
+Round-2 `H6`), the vin cutoff now 6.8 V, and an optional line lock that falls back to the Pi's clock if lost
+(changed after Bench B1; see A3 and A6 below). Robot upside down on the stand, wheels clear. Use
+`--pitch-zero` set to the stand's tilt, as in the D1 bench runs.
 
 | # | Check | Command (add `--pitch-zero <stand tilt>` to each) | Pass |
 |---|---|---|---|
 | A1 | Deploy, then confirm the stamp | `bash hardware/legobot/deploy.sh`, then `cat ~/legobot/DEPLOYED` | Shows 5bac32a or later, without `-dirty` |
 | A2 | IMU error trip | `robot/run_safe.sh robot.balance --bench --seconds 5 --inject imu` | Stops with "IMU read failed 2 times in a row"; wheels at 0 deg/s 1 s later; logs written |
-| A3 | Loss of the line lock | `... --bench --seconds 5 --inject unlock` | Stops with "lost the lock to the HAT's line grid" |
+| A3 | Loss of the line lock | `... --bench --seconds 5 --inject unlock` | *Changed after B1:* the run keeps going on the Pi's clock and prints "line lock lost"; the summary records it. (It used to stop: passed in that form 2026-11-23.) |
 | A4 | Watchdog keeps coasting | `... --bench --seconds 5 --inject hang` | Watchdog fires within ~100 ms; wheels stay stopped for the whole 0.5 s hang |
-| A5 | Runaway trip (a lifted robot) | `... --duty-cap 0.6 --seconds 10` (the velocity loop runs away to the cap on the stand, as in D1) | Stops with "wheels running away" ~1.5 s after the wheels pass 17 rad/s. If duty 0.6 doesn't reach 17 rad/s, try 0.7 |
-| A6 | Arming waits for the lock | Watch the startup lines of any run above | Arms only after "locked to the HAT's lines" |
+| A5 | Runaway trip (a lifted robot) | `... --duty-cap 0.6 --seconds 10` (the velocity loop runs away to the cap on the stand, as in D1) | Stops with "wheels running away" ~1.5 s after the smoothed wheel speed passes `0.85 * w_nl(vin)` (~15.1 rad/s at 6.8 V, ~17.0 at 7.6 V, ~18.9 at 8.4 V; was fixed 17 rad/s). If duty 0.6 doesn't trip, try 0.7 |
+| A6 | ~~Arming waits for the lock~~ | Dropped after B1: arming no longer waits for the lock | The startup lines still say whether it locked |
 
 ## B. Checks that can change the simulation model
 

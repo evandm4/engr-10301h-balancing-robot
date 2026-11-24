@@ -1,0 +1,30 @@
+{
+  "method": "residual",
+  "search": "cma_es",
+  "run_seed": 0,
+  "profile": "quick",
+  "n_params": 513,
+  "stop_reason": "generation cap",
+  "generations": 30,
+  "n_evals": 39961,
+  "robot_seconds": 23976600.0,
+  "robot_seconds_total": 23976600.0,
+  "charged_before": 0.0,
+  "elapsed_s": 1201.5836446285248,
+  "selected": {
+    "robot_seconds": 2398200.0,
+    "generation": 3,
+    "which": "best",
+    "train_objective": 16.27803880368884,
+    "dev20_objective": 16.296141682586732,
+    "dev20_falls": 0,
+    "dev60_objective": "",
+    "dev60_falls": "",
+    "gap20": 0.0011121044197159868,
+    "file": "checkpoints/best_2.398e06.npz"
+  },
+  "train_objective_float32": 16.27803880368884,
+  "train_objective_float64": 16.27803880368884,
+  "float32_float64_disagree": false,
+  "best_train_objective": 13.865995992728733
+}

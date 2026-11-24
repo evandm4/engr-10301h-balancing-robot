@@ -99,9 +99,9 @@ measurement brings it down to. Values marked Est. are placeholders to replace wi
 
 | Field | Value | Spread until measured | Tag | Notes |
 |---|---|---|---|---|
-| `body_mass` | **0.362 kg** (was 0.55 Est.) | ±0.01 | Measured | Everything except the wheels: motors (their housings ride with the body), Pi, both HATs, battery, LEGO frame. 440 g total minus two 39 g wheels (section 1, as built). Not yet in `legobot_config.py` |
-| `body_com_height` | **0.060 m** (was 0.09 Est.) | ±0.08 | Measured (balance test) | Body only: the whole robot's 49 mm (wheels on) scaled by 440/362. ±5 mm measuring error. Not yet in `legobot_config.py` |
-| `body_inertia` | **8.8e-4 kg m²** (was 0.0035 Est.) | ±0.15 | Measured (compound pendulum, section 1) | Pitch inertia about the body's own COM. Most of the uncertainty is the COM height (±5 mm → ±9%); exact video frame counts would bring the timing share from ±5% to about ±1%. Not yet in `legobot_config.py` |
+| `body_mass` | **0.362 kg** (was 0.55 Est.) | ±0.01 | Measured | Everything except the wheels: motors (their housings ride with the body), Pi, both HATs, battery, LEGO frame. 440 g total minus two 39 g wheels (section 1, as built). In `legobot_config.py` |
+| `body_com_height` | **0.060 m** (was 0.09 Est.) | ±0.08 | Measured (balance test) | Body only: the whole robot's 49 mm (wheels on) scaled by 440/362. ±5 mm measuring error. In `legobot_config.py` |
+| `body_inertia` | **8.8e-4 kg m²** (was 0.0035 Est.) | ±0.15 | Measured (compound pendulum, section 1) | Pitch inertia about the body's own COM. Most of the uncertainty is the COM height (±5 mm → ±9%); exact video frame counts would bring the timing share from ±5% to about ±1%. In `legobot_config.py` |
 | `wheel_mass` | 0.078 kg | — | Measured | Pair: 39 g per wheel including its axle |
 | `wheel_radius` | 0.0345 m | — | From diameter | Half the 69 mm diameter (0.044 m for the 88 mm wheel). Approximation for now; the loaded rolling radius (roll ten turns, divide the distance by 20π) can replace it later |
 | `wheel_inertia` | 6.0e-5 kg m² | ±0.20 | Measured mass / Est. | Pair, 0.65 m r² each (tire at the rim), as in the main datasheet. Slightly high, since the axle's few grams sit at the centre. The motor's output-side inertia is separate (`rotor_inertia` below) |
@@ -110,11 +110,13 @@ measurement brings it down to. Values marked Est. are placeholders to replace wi
 | `coulomb_friction` | **0.042 N m** (was 0.046) | range 0.030–0.055 | Measured | Both motors: 0.022 / 0.027 (left / right) from the speeds, 0.016 / 0.019 from coast-downs (8.7) |
 | `gravity` | 9.81 m/s² | — | — | Unchanged |
 
-### 2.2 `ActuatorConfig` (model `"dc_motor"`)
+### 2.2 `ActuatorConfig` (model `"slow_pwm"`)
 
 The internal gear ratio of the SPIKE motors is not published, and nothing here needs it. Every published and
 measured number is at the **output shaft**, so the motor is described as a lumped output-side motor with
-`gear_ratio = 1`. `DCMotorActuator` then gives exactly the measured behaviour: torque = n η k i, back-EMF = k ω.
+`gear_ratio = 1`. In slow PWM (`SlowPwmActuator`, chosen in C3/B1b; replaces the earlier `"dc_motor"`
+placeholder), torque follows $\tau = |d|\,a\,(\operatorname{sgn}(d)\,V - k\omega)$ with $a = \eta k / R$,
+delivered as 10 ms full-voltage pulses (`pwm_tick_s = 0.01`).
 
 | Field | Value | Spread until measured | Tag | Notes |
 |---|---|---|---|---|
@@ -514,7 +516,7 @@ L/R ~3 ms (est.): about 9.7 ms typical, 12 ms worst (HAT parse, under 1 ms est.,
 (`pwm_tick_phase`; 0–7.5 ms in 2.5 ms steps, as the engine's ticks and arrivals fall on its steps). A sudden
 disturbance's first response can therefore come up to 20 ms after its sample in the sim, and about 22 ms on the
 robot. In closed loop, a new command arrives every 5 ms and each tick sends the newest one, so the feedback delay is
-the latency plus 0–5 ms on the robot (0 or 2.5 ms in the sim).
+the latency plus 0–5 ms on the robot (0 or 2.5 ms in the sim). The robot no longer requires the lock (`c85c4da`, on `legobot-config`): it paces on it when locked and falls back to the Pi's clock otherwise; a lost lock is logged, not a trip.
 
 ## 7. Where the current model doesn't match this robot
 
@@ -801,9 +803,19 @@ either model; stiction between pulses is the likely remainder.
 encoder on the output shaft moved 5–6° peak-to-peak, and the two ends of the play were 2.6° apart. That is
 the gearbox, matching LEGO's ±3° figure. By eye the beam tip moved 19 mm at 96 mm, or **11.3° in total**: the
 extra ~6° is play the encoder can't see, from the axle in the motor's cross-hole and the beam on the axle.
-The wheel's coupling has some of that. So the free play between motor and wheel is about ±3° (gearbox) plus
-up to ±3° (LEGO couplings), and well above the ±1.5° at which the B5 test raised costs 19–129%: **port the
-backlash model (B5)**. A wheel-on visual check would narrow the coupling share.
+The wheel's coupling has some of that. So the free play between motor and wheel is about ±3° (gearbox)
+[reconciled below to ±1.1–1.6° after excluding unbraked `set 0` rotor slip] plus up to ±3° (LEGO couplings),
+and well above the ±1.5° at which the B5 test raised costs 19–129%: **port the backlash model (B5)**. A
+wheel-on visual check would narrow the coupling share.
+*Round-2 reconciliation (2026-11-24, `docs/legobot-review/review-v2.md` H3/I1; audit L6):* Bench B2(b) later showed
+`set 0` in slow PWM coasts rather than brakes, so the reach to `+2°` at t = 1–2 s in `20261123_073624_backlash.csv`
+included unbraked rotor slip. Note that `2.58°` in `20261123_073624_backlash_fit.json` was computed over the whole
+15 s record (including the 1–2 s slip); `robot.measure.backlash.analyse` on the 3–15 s steady-rocking window alone
+gives **2.67°**, and that half-centroid estimate (`c_hi - c_lo`) is biased toward the middle by transitional samples
+— in 3–15 s the 1° counts span **−3…+1** (4° ptp, so a true continuous span over 3°, i.e. at least **±1.5°**).
+`legobot_config.py` currently retains the Round-2 ±1.3° nominal (±1.1–1.6° randomized) setting alongside ±0–3°
+coupling play; before E2, either widen gearbox play to ~±1.5° nominal (±1.2–2.0°) or re-measure during Bench C with
+the rotor braked/held.
 
 *Balance point* (`balance_point`, 8 free falls on the wheels with the motors coasting). The script's regression
 θ̈ = cθ + eθ̇ + h is **ill-conditioned for falls from rest**: an exponential fall keeps θ̇ proportional to
@@ -815,7 +827,126 @@ so **θ0 ≈ −0.010 ± 0.010 rad** in the IMU's frame. Saved as a provisional 
 `calibration.json`. That uncertainty matches `pitch_bias` = ±0.015 rad, which stays. (`robot.calibrate
 balance`, holding the robot at its balance point by feel, turned out impractical by hand.)
 
-**Still to measure:** `discharge` (about an hour on the stand), and optionally `stall` (R
+**Bench checks A1–A6 (2026-11-23, after the external review's robot-code changes).** Deployed 5b38606 (no
+`-dirty`); robot on the stand, wheels clear, vin 8.0 V, `--pitch-zero 1.53` (the stand's tilt: the IMU read
++1.513 rad against the `calibration.json` zero of −0.010, so the unarmed first try ended "not armed within 30 s").
+Logs: `bench_data/20261123_193041` (A2), `_193055` (A3), `_193103` (A4), `_193152` (A5), `_193021` (the unarmed try).
+
+| # | Result |
+|---|---|
+| A1 | `DEPLOYED` = `5b38606 2026-11-23 13:26`. Pass |
+| A2 `--inject imu` | "IMU read failed 2 times in a row: [Errno 121]" 1 s after arming; both wheels 0 deg/s 1 s later; `_run.csv`, `_raw.csv` and the summary written. Pass |
+| A3 `--inject unlock` | "lost the lock to the HAT's line grid (the tuned gains assume it)". Pass. Wheels read [−10, 0] deg/s 1 s after the stop (one encoder count of creep), not exactly 0 |
+| A4 `--inject hang` | "watchdog fired: loop silent 107 ms" (within ~100 ms). The first tick after the 0.5 s hang read both wheels at 0 deg/s, from about −900 deg/s before. The loop logs nothing during the hang, so "stopped for the whole 0.5 s" is inferred from that reading. Pass |
+| A5 `--duty-cap 0.6 --seconds 10` | "wheels running away (−19.2, −19.2 rad/s for 1.5 s)" at 4.7 s, wheels at 0 a second later. The trip works, but late: the wheels were above 17 rad/s from about 0.9 s (duty 0.6, 19.4 rad/s on average), and **4.4% of ticks dip below 17** (the per-tick speed is a 1° count difference, ±1–2 rad/s), which resets the 1.5 s counter. It fired only when a clean 1.5 s streak happened (300 ticks), about 4 s after the wheels passed 17. Partial pass (see triage G11) |
+| A6 | Every run printed "locked to the HAT's lines" before "armed". Pass |
+
+Line period at start: +28 to +165 ppm (it moved between runs; the lock tracks it). Every tick of every armed
+run was locked except one in A3 (the injected unlock).
+
+**B1: do the tick offsets survive a power cycle? (2026-11-23, 19:38 power-up #1 of 2; `lock_sweep --wheels-off`,
+duty 1.0, 8 trials per 1 ms offset, 80 per wheel; logs `bench_data/20261123_193851_lock_sweep*` (left) and
+`_194052_lock_sweep*` (right).)** Fitted by the same sawtooth, t_d = base + ((cliff − write phase) mod line
+period), least squares over every trial, 90% interval from 300 bootstrap resamples:
+
+| | Before (16:45–16:47, vin 7.4 V) | After the power cycle (vin 7.9–8.0 V) | Moved |
+|---|---|---|---|
+| Left cliff | 8.25 ms (7.2–8.45), base 13.9 | 8.55 ms (8.2–8.9), base 13.2 | +0.3 ms: holds |
+| Right cliff | 10.25 ms (0.2–1.15 past a line), base 13.2 | **7.15 ms (6.2–7.2)**, base 13.4 | **−3.1 ms** |
+
+**The left tick holds; the right tick moved by about 3 ms against the left port's line grid**, more than the
+~1 ms the model tolerates. The right-left offset was +2.0 ms and is now −1.4 ms. The model's wait from write
+to tick, at `LINE_WRITE_PHASE_S` = 6.5 ms, was 1.8 ms (left) and 3.8 ms (right); it is now 2.1 and **0.65 ms**.
+The right interval's low end (6.2 ms) is *before* the 6.5 ms write phase, so some right-wheel commands would miss
+their tick and wait a whole extra 10 ms. The sim's 7.5–15 ms latency range (which assumed a 1.8–3.8 ms wait)
+needs the right wheel's tick treated as drifting between sessions, or the robot must measure the offset at
+startup. Power-up #2 not run: B1's instruction is to stop and report on a move. (The vin difference, 7.4 against
+8.0 V, and the line period, 9.9970 against 9.9984 ms, are the other things that changed between the two sessions.)
+
+*Follow-up (Phase D session, same power-up, Pi booted 19:38; I refit both logs the same way and got the same
+numbers).* Two more right-wheel sweeps: `20261123_195424_lock_sweep*` (grid from the right port's own lines)
+gave a cliff of 1.2 ms (90% 1.2–2.2) with the right lines lagging the left by 4.1 ms at the start (5.9 ms by
+the Phase D session's estimate); `_195633_lock_sweep*` (left grid) gave **4.35 ms (4.2–6.3)**, with the right
+lines lagging the left by 7.65 ms. So on the left grid the right cliff read 7.15 ms at 19:40 and 4.35 ms 16
+minutes later, **with no power cycle between**: it is not fixed within a power-up, and the two ports' line
+streams sit on separate 10 ms grids whose gap resets on each `configure()` (1.5–8 ms across the day's balance
+logs). The right tick does not follow the right port's own lines either (that predicted 8.2–9.9 ms on the left
+grid). The left cliff stays at 8.3–8.8 ms. Caveat: the right sweeps are noisy (a sawtooth beats a flat line by
+only 3–5% in rms, 4.6 against 4.7 ms), so some of the spread is the measurement; more trials per offset would
+separate the two.
+
+*Cable-swap test (Phase D session, Evan swapped the motor cables between ports A and B; same power-up, Pi up
+since 19:38; 80 trials each, all timed on port A's lines; I refit both).* `20261123_201112_lock_sweep*`: port A
+with the right motor, cliff 3.2 ms (my bootstrap 2.6–4.1). `_201250_lock_sweep*`: port B with the left motor,
+cliff 3.15 ms (3.15–3.35). Before the swap port A (left motor) read 8.8 ms at 19:38 and port B (right motor)
+7.2 then 4.35 ms. Trial scatter was 4.1–4.8 ms in every run. So: **no port or motor fault** (the scatter
+follows neither the port nor the motor; the latency test also gave 4.4 ms for both wheels), **both ports' ticks
+landed at the same 3.2 ms after the swap, with no power cycle**, and "the left tick holds" above was premature:
+the one clean left run (19:38) was probably luck. Likely mechanism, not proven: the tick is fixed within a run,
+and re-plugging a motor makes the HAT re-detect it and restart its pulse timing; one swap doesn't prove that.
+**For B1: neither wheel's tick phase can be assumed, and a startup measurement isn't reliable either.** Proposed
+resolution (Phase D session): the sim draws the wait to tick uniformly over 0–10 ms per run for both wheels
+(possibly one shared draw). That needs all three engines and is a task for the engines session, after the B5
+backlash port commits, not this bench session. The motors are back on their normal ports (left A, right B).
+
+**B2(b): does duty 0 coast or brake? (2026-11-23, left wheel, wheels off the ground, vin 7.9 V, slow PWM
+`1 0.01`; `robot.measure.coast_vs_brake`, log `bench_data/20261123_195004_coast_vs_brake*`.)** The wheel was
+flicked by hand 8 times, alternating `port 0 ; coast` and `pwm ; set 0` (the mode hidden from the person
+flicking). Time for the speed to fall from 12 to 3 rad/s: **coast 0.212 s (sd 0.016, n = 4), `set 0` 0.228 s
+(sd 0.015, n = 4)**. No difference, and `set 0` is if anything 0.016 s slower. Both stops took 0.3–0.4 s from
+the release and were close to linear in speed (friction-dominated). A shorted winding would damp the wheel with
+a time constant J/(a k + b) = 5.84e-4 / (0.0597 × 0.352 + 7e-4) ≈ 27 ms, so 12 → 3 rad/s in about 40 ms, five
+times faster than seen. **So duty 0 coasts, as `SlowPwmActuator` assumes.** Caveats: the hand pushing sets the
+speed, and the person flicking couldn't get the wheel above about 12 rad/s once released (the logged "peaks" of
+15–27 rad/s include the hand's push), so the 12 → 3 rad/s window starts partly in the push; four trials per
+mode. The harder test (B2a: the load.py lowering run, with a mass sinking against the motor at duty 0) is not
+done; it would check the braking quadrant under load, not the zero-drive case.
+
+**Bench checks A1, A3, A5 re-verified (2026-11-24, after Round-2 robot-code fixes).** Deployed `8e3fe6e` (no
+`-dirty`; includes `Watchdog._halt`/`join()`, `calibrate_gyro` I²C bridge, optional line-lock fallback, and
+voltage-scaled smoothed runaway `0.85 * w_nl(vin)` seeded with `Safety.vin` at startup). Robot on the stand,
+wheels clear, `--pitch-zero 1.58` (stand read `+1.584 rad`), vin `7.85–7.94 V`. Logs:
+`bench_data/20261124_205924_balance_*` (A3), `bench_data/20261124_210041_balance_*` (A5).
+
+| # | Result |
+|---|---|
+| A1 | `DEPLOYED` = `8e3fe6e 2026-11-24 14:55` (no `-dirty`). Pass |
+| A3 `--bench --seconds 5 --inject unlock` | Armed at `0.50 s` (`vin 7.94 V`, locked at `+107 ppm`). Injected unlock at `1.01 s`: logged `"line lock lost at 1.01 s: ticking on the Pi's clock"` and kept running cleanly to `stopped: done` (`5.00 s`, `1001` ticks, `201/1001` locked, `0` overruns, period `5.000 ± 0.003 ms`). Summary recorded `line lock lost while armed: 1 times`; wheels `[0.0, 0.0]` deg/s 1 s after stop. Pass |
+| A5 `--duty-cap 0.6 --seconds 10` | Armed at `0.51 s` (`vin 7.85 V`, threshold `0.85 * w_nl(7.85) = 17.59 rad/s`). Both wheels crossed `17.59 rad/s` at `0.85 s` after arming (`t = 1.357 s`) and tripped at **`2.18 s`** after arming (`t = 2.692 s`, `1.34 s` after crossing, vs `4.7 s` before smoothing): `"wheels running away (mean +18.2, +17.6 rad/s over 1.5 s): lifted?"`. `438/438` ticks locked, `0` overruns, wheels `[0.0, 0.0]` deg/s 1 s after stop. Pass |
+
+**B3 (partial, 7.87 V vs 7.44 V): motor rail scaling (2026-11-24, left wheel, wheels off the ground, slow PWM
+`1 0.01`; `robot.measure.motor_steps --wheels-off --wheel on --side left --duties 1.0 0.5`, logs
+`bench_data/20261124_210715_motor_steps*`).** Idle `vin` read `7.88 -> 7.85 V` (mean `7.865 V`), vs
+`7.45 -> 7.43 V` (`7.440 V`) in the `20261123_061856` baseline:
+
+| Duty | `7.440 V` (`20261123`) | `7.865 V` (`20261124`) | Measured $\Delta\omega$ | Linear-rail prediction (`k = 0.352`) |
+|---|---|---|---|---|
+| `0.50` | `17.87 rad/s` (`+17.97 / -17.77`) | `18.61 rad/s` (`+18.72 / -18.50`) | `+0.74 rad/s` (`+4.1%`) | `18.99 rad/s` (`+1.13 rad/s`, `-2.0%` gap) |
+| `1.00` | `19.50 rad/s` (`+19.59 / -19.41`) | `20.24 rad/s` (`+20.31 / -20.17`) | `+0.74 rad/s` (`+3.8%`) | `20.61 rad/s` (`+1.17 rad/s`, `-1.8%` gap) |
+
+Speed rises cleanly above the `7.44 V` baseline (`+0.74 rad/s` at both duties), ruling out a `~7.2–7.5 V`
+regulated motor rail. The measured slope (`1.74 rad/s/V` vs `2.75` predicted) leaves a uniform `~1.8–2.0%`
+(`~0.14 V` equivalent) shortfall at `7.87 V` — within `torque_constant` spread / pack sag or session drift,
+but repeat once on a freshly charged `~8.4 V` pack (predicted `~22.1 rad/s` at duty `1.0`) to rule out any
+clamp above `7.9 V`.
+
+**C3: right drivetrain friction inspection and low-duty re-check (2026-11-24, wheels off the ground, tires on,
+slow PWM `1 0.01`, `vin = 7.83–7.85 V`; `robot.measure.motor_steps --wheels-off --wheel on --side both --duties 0.1 0.15 0.2`,
+logs `bench_data/20261124_211351_motor_steps*`).** Hand spin check confirmed no external beam rub or pinched
+axle — the extra drag on the right side is internal to the right motor.
+
+| Duty | Left (`+ / -`, mean) | Right (`+ / -`, mean) | Right vs Left | Implied $\tau_c$ (left / right, assuming $a = 0.0597$) |
+|---|---|---|---|---|
+| `0.10` | `+7.84 / -7.82` (`7.83 rad/s`) | `+6.29 / -6.31` (`6.30 rad/s`) | `-19.5%` | `0.0249 / 0.0297 N m` |
+| `0.15` | `+11.32 / -11.51` (`11.42 rad/s`) | `+10.26 / -10.45` (`10.36 rad/s`) | `-9.3%` | `0.0263 / 0.0315 N m` |
+| `0.20` | `+14.11 / -14.26` (`14.19 rad/s`) | `+13.48 / -13.35` (`13.42 rad/s`) | `-5.4%` | `0.0241 / 0.0296 N m` |
+
+Right is now symmetric forward vs backward (`+6.29 / -6.31` vs `+5.86 / -6.75` on 2026-11-23), and consistently
+slower than left across all three low duties. Assuming left's `a = 0.0597 N m/V` gives mean $\tau_c = 0.0251$
+(left) and `0.0303 N m` (right), pair sum `0.0554 N m` (right at the top of `legobot_config.ROBUSTNESS`'s
+`0.030–0.055 N m` range). Re-evaluate together with right-motor `a` after Bench C1.
+
+**Still to measure:** `B3` at `~8.4 V` (once a pack is fully charged), `discharge` (about an hour on the stand), and optionally `stall` (R
 with a multimeter) and `load` (the braking quadrant directly).
 
 ## 9. Sources

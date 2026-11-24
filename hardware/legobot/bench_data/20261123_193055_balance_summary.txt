@@ -1,0 +1,25 @@
+reason: lost the lock to the HAT's line grid (the tuned gains assume it)
+armed at: 0.5105636999999774
+vin at start: 8.04
+watchdog priority: SCHED_FIFO 51
+reader priority: SCHED_FIFO 49
+loop priority: SCHED_FIFO 50
+memory locked: True
+gyro bias: 0.046710206801752065
+gyro sd at rest: 0.002395586015030998
+accel |g| ratio: 1.006539585364461
+line period at start: 10.00070 ms (+70 ppm vs nominal)
+line lock: command write phase 6.50 ms, tick offset 0.30 ms
+wheels 1 s after stop (deg/s): [-10.0, 0.0]
+line period at end: 10.00119 ms (+119 ppm vs nominal)
+run: 1.01 s, 203 ticks
+period: mean 4.998  sd 0.043  p50 5.001  p99 5.021  max 5.038 ms (n=202)
+lateness: mean 0.000  sd 0.000  p50 0.000  p99 0.001  max 0.004 ms (n=203)
+overruns (> 7.5 ms late): 0
+compute (IMU read to command sent): mean 1.228  sd 0.201  p50 1.278  p99 1.711  max 1.765 ms (n=203)
+IMU read: mean 0.613  sd 0.079  p50 0.651  p99 0.742  max 0.755 ms (n=203)
+ticks locked to the HAT's lines: 202 of 203
+command write phase after the line grid, mod 5 ms: mean 1.274  sd 0.141  p50 1.329  p99 1.495  max 1.529 ms (n=202)
+motor data age at the tick, left: mean 2.710  sd 2.563  p50 4.476  p99 6.119  max 6.134 ms (n=203)
+motor data age at the tick, right: mean 4.953  sd 2.535  p50 3.182  p99 8.106  max 8.183 ms (n=203)
+pitch: mean -0.0282 sd 0.0008 rad; |duty| max 0.30

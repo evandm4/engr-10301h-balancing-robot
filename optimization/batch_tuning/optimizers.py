@@ -20,7 +20,7 @@ from scipy.optimize import differential_evolution
 
 from tuning import TuningResult
 
-from .evaluation import BatchEvaluator
+from .evaluation import BatchEvaluator, decode_units
 
 
 def _result(method, evaluator, best_unit, best_cost, n_evals, start, history) -> TuningResult:
@@ -257,4 +257,8 @@ def cma_es_search(evaluator: BatchEvaluator, max_iter: int = 50, popsize: Option
         if costs[i] < best_cost:
             best_unit, best_cost = np.clip(candidates[i], 0.0, 1.0), float(costs[i])
         history.append((n_evals, best_cost))
-    return _result("cma_es", evaluator, best_unit, best_cost, n_evals, start, history)
+    result = _result("cma_es", evaluator, best_unit, best_cost, n_evals, start, history)
+    # The distribution's mean (not scored here, so n_evals and history are unchanged): run_batch_tuning scores it.
+    mean_unit = np.clip(np.asarray(es.result.xfavorite, float), 0.0, 1.0)
+    result.mean_gains = decode_units(evaluator.space, mean_unit[None, :])[0]
+    return result

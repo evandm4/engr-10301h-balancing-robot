@@ -1,0 +1,5110 @@
+{
+  "reference": "PID, hand-tuned",
+  "runs": {
+    "PID, hand-tuned": {
+      "method": "PID, hand-tuned",
+      "run": "PID, hand-tuned",
+      "kind": "cascaded",
+      "source": "legobot baselines (config.py)",
+      "warnings": [],
+      "mean_cost": 217.90595373343865,
+      "objective": 217.90595373343865,
+      "sensitivity": 0.0,
+      "worst_cost": 1948.7806903819574,
+      "falls": 13,
+      "scenarios": 150,
+      "fall_rate": 0.08666666666666667,
+      "fall_rate_95ci": [
+        0.046955220239447176,
+        0.14364272328338715
+      ],
+      "median_ratio": 1.0,
+      "scenarios_better": 0,
+      "mcnemar_vs_reference": {
+        "only_this_fell": 0,
+        "only_reference_fell": 0,
+        "p_value": 1.0
+      },
+      "side_metrics": {
+        "torque_rms_change_per_tick_n_m": {
+          "median": 0.1715969583513873,
+          "worst": 0.3060847803536328
+        },
+        "torque_variation_per_s_n_m": {
+          "median": 17.539525702459663,
+          "worst": 36.02745067209369
+        },
+        "torque_rms_n_m": {
+          "median": 0.23200025406862046,
+          "worst": 0.4466488739987926
+        },
+        "time_at_torque_limit_fraction": {
+          "median": 8.333333333333333e-05,
+          "worst": 0.07134502923976609
+        },
+        "peak_pitch_deg": {
+          "median": 12.650492082587828,
+          "worst": 59.96429207237599
+        },
+        "velocity_rms_error_m_s": {
+          "median": 0.10763363514357538,
+          "worst": 0.28439547727378606
+        }
+      }
+    },
+    "PID, model-based": {
+      "method": "PID, model-based",
+      "run": "PID, model-based",
+      "kind": "cascaded",
+      "source": "legobot baselines (config.py)",
+      "warnings": [],
+      "mean_cost": 105.31355103605591,
+      "objective": 105.31355103605591,
+      "sensitivity": 0.0,
+      "worst_cost": 1998.7069680983138,
+      "falls": 6,
+      "scenarios": 150,
+      "fall_rate": 0.04,
+      "fall_rate_95ci": [
+        0.014818521114898016,
+        0.08502781471819877
+      ],
+      "median_ratio": 0.5425237879224829,
+      "scenarios_better": 146,
+      "mcnemar_vs_reference": {
+        "only_this_fell": 3,
+        "only_reference_fell": 10,
+        "p_value": 0.09228515625
+      },
+      "side_metrics": {
+        "torque_rms_change_per_tick_n_m": {
+          "median": 0.11349657167461882,
+          "worst": 0.164990603731225
+        },
+        "torque_variation_per_s_n_m": {
+          "median": 11.313178969792379,
+          "worst": 18.34138338339035
+        },
+        "torque_rms_n_m": {
+          "median": 0.1485252487706692,
+          "worst": 0.7087144182471234
+        },
+        "time_at_torque_limit_fraction": {
+          "median": 0.0,
+          "worst": 0.4519774011299435
+        },
+        "peak_pitch_deg": {
+          "median": 12.128098021065439,
+          "worst": 59.85434899281578
+        },
+        "velocity_rms_error_m_s": {
+          "median": 0.09454240140313146,
+          "worst": 0.6216727228683248
+        }
+      }
+    },
+    "PID, DE / seed0": {
+      "method": "PID, DE",
+      "run": "seed0",
+      "kind": "cascaded",
+      "source": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\comparison\\e1_staged_gains\\de\\seed0\\de.json",
+      "warnings": [],
+      "mean_cost": 117.73601737364753,
+      "objective": 117.73601737364753,
+      "sensitivity": 0.0,
+      "worst_cost": 1998.2315958559457,
+      "falls": 7,
+      "scenarios": 150,
+      "fall_rate": 0.04666666666666667,
+      "fall_rate_95ci": [
+        0.018965569634577503,
+        0.0937858649877965
+      ],
+      "median_ratio": 0.543873388451309,
+      "scenarios_better": 144,
+      "mcnemar_vs_reference": {
+        "only_this_fell": 5,
+        "only_reference_fell": 11,
+        "p_value": 0.210113525390625
+      },
+      "side_metrics": {
+        "torque_rms_change_per_tick_n_m": {
+          "median": 0.0986302449100328,
+          "worst": 0.1390518991794565
+        },
+        "torque_variation_per_s_n_m": {
+          "median": 10.211937776721049,
+          "worst": 14.443236257262175
+        },
+        "torque_rms_n_m": {
+          "median": 0.1348624357971469,
+          "worst": 0.6816859240386867
+        },
+        "time_at_torque_limit_fraction": {
+          "median": 0.0,
+          "worst": 0.4129032258064516
+        },
+        "peak_pitch_deg": {
+          "median": 11.459674477268004,
+          "worst": 59.9543463312544
+        },
+        "velocity_rms_error_m_s": {
+          "median": 0.10246452233239225,
+          "worst": 0.6161521267980323
+        }
+      }
+    },
+    "PID, DE / seed1": {
+      "method": "PID, DE",
+      "run": "seed1",
+      "kind": "cascaded",
+      "source": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\comparison\\e1_staged_gains\\de\\seed1\\de.json",
+      "warnings": [],
+      "mean_cost": 107.53785426237705,
+      "objective": 107.53785426237705,
+      "sensitivity": 0.0,
+      "worst_cost": 1998.4040147822254,
+      "falls": 6,
+      "scenarios": 150,
+      "fall_rate": 0.04,
+      "fall_rate_95ci": [
+        0.014818521114898016,
+        0.08502781471819877
+      ],
+      "median_ratio": 0.5682145319438103,
+      "scenarios_better": 144,
+      "mcnemar_vs_reference": {
+        "only_this_fell": 4,
+        "only_reference_fell": 11,
+        "p_value": 0.11846923828124999
+      },
+      "side_metrics": {
+        "torque_rms_change_per_tick_n_m": {
+          "median": 0.10061093292036738,
+          "worst": 0.13188091191105253
+        },
+        "torque_variation_per_s_n_m": {
+          "median": 9.889694364123528,
+          "worst": 13.335284326684057
+        },
+        "torque_rms_n_m": {
+          "median": 0.14196214237656835,
+          "worst": 0.7172256736600108
+        },
+        "time_at_torque_limit_fraction": {
+          "median": 0.0,
+          "worst": 0.46747967479674796
+        },
+        "peak_pitch_deg": {
+          "median": 11.272757760862799,
+          "worst": 59.78388838215768
+        },
+        "velocity_rms_error_m_s": {
+          "median": 0.10313404586960981,
+          "worst": 0.617593269421632
+        }
+      }
+    },
+    "PID, CMA-mid / seed0": {
+      "method": "PID, CMA-mid",
+      "run": "seed0",
+      "kind": "cascaded",
+      "source": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\comparison\\e1_staged_gains\\cma_mid\\seed0\\cma.json",
+      "warnings": [],
+      "mean_cost": 92.8266687640139,
+      "objective": 92.8266687640139,
+      "sensitivity": 0.0,
+      "worst_cost": 1998.6760177109222,
+      "falls": 5,
+      "scenarios": 150,
+      "fall_rate": 0.03333333333333333,
+      "fall_rate_95ci": [
+        0.01091018646891129,
+        0.07607232253734687
+      ],
+      "median_ratio": 0.5257504479687514,
+      "scenarios_better": 146,
+      "mcnemar_vs_reference": {
+        "only_this_fell": 3,
+        "only_reference_fell": 11,
+        "p_value": 0.057373046875
+      },
+      "side_metrics": {
+        "torque_rms_change_per_tick_n_m": {
+          "median": 0.10112442311058009,
+          "worst": 0.13927149572720293
+        },
+        "torque_variation_per_s_n_m": {
+          "median": 10.03100554238981,
+          "worst": 14.365450528881166
+        },
+        "torque_rms_n_m": {
+          "median": 0.13852247979147148,
+          "worst": 0.7309687546511987
+        },
+        "time_at_torque_limit_fraction": {
+          "median": 0.0,
+          "worst": 0.4959349593495935
+        },
+        "peak_pitch_deg": {
+          "median": 11.487837920254526,
+          "worst": 59.54468030065892
+        },
+        "velocity_rms_error_m_s": {
+          "median": 0.09855597316269168,
+          "worst": 0.617593269421632
+        }
+      }
+    },
+    "PID, CMA-mid / seed1": {
+      "method": "PID, CMA-mid",
+      "run": "seed1",
+      "kind": "cascaded",
+      "source": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\comparison\\e1_staged_gains\\cma_mid\\seed1\\cma.json",
+      "warnings": [],
+      "mean_cost": 104.48691584373539,
+      "objective": 104.48691584373539,
+      "sensitivity": 0.0,
+      "worst_cost": 1998.6448341117632,
+      "falls": 6,
+      "scenarios": 150,
+      "fall_rate": 0.04,
+      "fall_rate_95ci": [
+        0.014818521114898016,
+        0.08502781471819877
+      ],
+      "median_ratio": 0.5117657982052679,
+      "scenarios_better": 144,
+      "mcnemar_vs_reference": {
+        "only_this_fell": 5,
+        "only_reference_fell": 12,
+        "p_value": 0.143463134765625
+      },
+      "side_metrics": {
+        "torque_rms_change_per_tick_n_m": {
+          "median": 0.1021745929425652,
+          "worst": 0.143558610207485
+        },
+        "torque_variation_per_s_n_m": {
+          "median": 10.247612722529794,
+          "worst": 15.23228827193053
+        },
+        "torque_rms_n_m": {
+          "median": 0.13747448363088124,
+          "worst": 0.7294063294958387
+        },
+        "time_at_torque_limit_fraction": {
+          "median": 0.0,
+          "worst": 0.483739837398374
+        },
+        "peak_pitch_deg": {
+          "median": 11.562403660221339,
+          "worst": 59.8752940173343
+        },
+        "velocity_rms_error_m_s": {
+          "median": 0.09681619611883285,
+          "worst": 0.617593269421632
+        }
+      }
+    },
+    "PID, CMA-mid (mean) / seed0": {
+      "method": "PID, CMA-mid (mean)",
+      "run": "seed0",
+      "kind": "cascaded",
+      "source": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\comparison\\e1_staged_gains\\cma_mid_mean\\seed0\\cma_es_mean.json",
+      "warnings": [],
+      "mean_cost": 93.92910755786643,
+      "objective": 93.92910755786643,
+      "sensitivity": 0.0,
+      "worst_cost": 1998.7211074036632,
+      "falls": 5,
+      "scenarios": 150,
+      "fall_rate": 0.03333333333333333,
+      "fall_rate_95ci": [
+        0.01091018646891129,
+        0.07607232253734687
+      ],
+      "median_ratio": 0.5475746919884938,
+      "scenarios_better": 145,
+      "mcnemar_vs_reference": {
+        "only_this_fell": 4,
+        "only_reference_fell": 12,
+        "p_value": 0.076812744140625
+      },
+      "side_metrics": {
+        "torque_rms_change_per_tick_n_m": {
+          "median": 0.10716100562085422,
+          "worst": 0.14725978243548485
+        },
+        "torque_variation_per_s_n_m": {
+          "median": 10.516366927212406,
+          "worst": 15.157078537967088
+        },
+        "torque_rms_n_m": {
+          "median": 0.14461485794455176,
+          "worst": 0.7332220441903228
+        },
+        "time_at_torque_limit_fraction": {
+          "median": 0.0,
+          "worst": 0.5
+        },
+        "peak_pitch_deg": {
+          "median": 11.55755261763786,
+          "worst": 59.8752940173343
+        },
+        "velocity_rms_error_m_s": {
+          "median": 0.0988072904098192,
+          "worst": 0.617593269421632
+        }
+      }
+    },
+    "PID, CMA-mid (mean) / seed1": {
+      "method": "PID, CMA-mid (mean)",
+      "run": "seed1",
+      "kind": "cascaded",
+      "source": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\comparison\\e1_staged_gains\\cma_mid_mean\\seed1\\cma_es_mean.json",
+      "warnings": [],
+      "mean_cost": 93.44973141361382,
+      "objective": 93.44973141361382,
+      "sensitivity": 0.0,
+      "worst_cost": 1998.6986650822505,
+      "falls": 5,
+      "scenarios": 150,
+      "fall_rate": 0.03333333333333333,
+      "fall_rate_95ci": [
+        0.01091018646891129,
+        0.07607232253734687
+      ],
+      "median_ratio": 0.5294580780257232,
+      "scenarios_better": 145,
+      "mcnemar_vs_reference": {
+        "only_this_fell": 4,
+        "only_reference_fell": 12,
+        "p_value": 0.076812744140625
+      },
+      "side_metrics": {
+        "torque_rms_change_per_tick_n_m": {
+          "median": 0.10461851408262177,
+          "worst": 0.14510722246567145
+        },
+        "torque_variation_per_s_n_m": {
+          "median": 10.386133864617847,
+          "worst": 15.032215709050746
+        },
+        "torque_rms_n_m": {
+          "median": 0.14237893897753248,
+          "worst": 0.7321013898413733
+        },
+        "time_at_torque_limit_fraction": {
+          "median": 0.0,
+          "worst": 0.4959349593495935
+        },
+        "peak_pitch_deg": {
+          "median": 11.313569386055041,
+          "worst": 59.96883957951155
+        },
+        "velocity_rms_error_m_s": {
+          "median": 0.09853188263496046,
+          "worst": 0.617593269421632
+        }
+      }
+    },
+    "PID, CMA-warm / seed0": {
+      "method": "PID, CMA-warm",
+      "run": "seed0",
+      "kind": "cascaded",
+      "source": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\comparison\\e1_staged_gains\\cma_warm\\seed0\\cma.json",
+      "warnings": [],
+      "mean_cost": 117.34634035971263,
+      "objective": 117.34634035971263,
+      "sensitivity": 0.0,
+      "worst_cost": 1998.5276176631326,
+      "falls": 7,
+      "scenarios": 150,
+      "fall_rate": 0.04666666666666667,
+      "fall_rate_95ci": [
+        0.018965569634577503,
+        0.0937858649877965
+      ],
+      "median_ratio": 0.538770566521007,
+      "scenarios_better": 146,
+      "mcnemar_vs_reference": {
+        "only_this_fell": 3,
+        "only_reference_fell": 9,
+        "p_value": 0.14599609375
+      },
+      "side_metrics": {
+        "torque_rms_change_per_tick_n_m": {
+          "median": 0.09797747254062025,
+          "worst": 0.13230508976390973
+        },
+        "torque_variation_per_s_n_m": {
+          "median": 10.049151001032186,
+          "worst": 13.76740359063941
+        },
+        "torque_rms_n_m": {
+          "median": 0.13480342486042857,
+          "worst": 0.693046809321671
+        },
+        "time_at_torque_limit_fraction": {
+          "median": 0.0,
+          "worst": 0.43790849673202614
+        },
+        "peak_pitch_deg": {
+          "median": 11.904884051688764,
+          "worst": 59.8752940173343
+        },
+        "velocity_rms_error_m_s": {
+          "median": 0.1021003754275944,
+          "worst": 0.6132578363287073
+        }
+      }
+    },
+    "PID, CMA-warm / seed1": {
+      "method": "PID, CMA-warm",
+      "run": "seed1",
+      "kind": "cascaded",
+      "source": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\comparison\\e1_staged_gains\\cma_warm\\seed1\\cma.json",
+      "warnings": [],
+      "mean_cost": 93.26072033631269,
+      "objective": 93.26072033631269,
+      "sensitivity": 0.0,
+      "worst_cost": 1998.0340285351606,
+      "falls": 5,
+      "scenarios": 150,
+      "fall_rate": 0.03333333333333333,
+      "fall_rate_95ci": [
+        0.01091018646891129,
+        0.07607232253734687
+      ],
+      "median_ratio": 0.5392392291923975,
+      "scenarios_better": 145,
+      "mcnemar_vs_reference": {
+        "only_this_fell": 4,
+        "only_reference_fell": 12,
+        "p_value": 0.076812744140625
+      },
+      "side_metrics": {
+        "torque_rms_change_per_tick_n_m": {
+          "median": 0.11204866543016828,
+          "worst": 0.15860233208020888
+        },
+        "torque_variation_per_s_n_m": {
+          "median": 11.174727057506345,
+          "worst": 17.243903422365417
+        },
+        "torque_rms_n_m": {
+          "median": 0.14738534747201315,
+          "worst": 0.6705372082814689
+        },
+        "time_at_torque_limit_fraction": {
+          "median": 0.0,
+          "worst": 0.4013605442176871
+        },
+        "peak_pitch_deg": {
+          "median": 11.445136867694842,
+          "worst": 59.93722798759606
+        },
+        "velocity_rms_error_m_s": {
+          "median": 0.09549654559126958,
+          "worst": 0.6216727228683248
+        }
+      }
+    },
+    "PID, CMA-warm (mean) / seed0": {
+      "method": "PID, CMA-warm (mean)",
+      "run": "seed0",
+      "kind": "cascaded",
+      "source": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\comparison\\e1_staged_gains\\cma_warm_mean\\seed0\\cma_es_mean.json",
+      "warnings": [],
+      "mean_cost": 93.7502894818135,
+      "objective": 93.7502894818135,
+      "sensitivity": 0.0,
+      "worst_cost": 1998.6333983452205,
+      "falls": 5,
+      "scenarios": 150,
+      "fall_rate": 0.03333333333333333,
+      "fall_rate_95ci": [
+        0.01091018646891129,
+        0.07607232253734687
+      ],
+      "median_ratio": 0.5532693480037496,
+      "scenarios_better": 146,
+      "mcnemar_vs_reference": {
+        "only_this_fell": 3,
+        "only_reference_fell": 11,
+        "p_value": 0.057373046875
+      },
+      "side_metrics": {
+        "torque_rms_change_per_tick_n_m": {
+          "median": 0.1048334905159807,
+          "worst": 0.1497887308617904
+        },
+        "torque_variation_per_s_n_m": {
+          "median": 10.45297027178271,
+          "worst": 15.728165262576512
+        },
+        "torque_rms_n_m": {
+          "median": 0.1433600679685136,
+          "worst": 0.7288325116945826
+        },
+        "time_at_torque_limit_fraction": {
+          "median": 0.0,
+          "worst": 0.483739837398374
+        },
+        "peak_pitch_deg": {
+          "median": 11.291150590166287,
+          "worst": 59.8752940173343
+        },
+        "velocity_rms_error_m_s": {
+          "median": 0.09990363595058487,
+          "worst": 0.617593269421632
+        }
+      }
+    },
+    "PID, CMA-warm (mean) / seed1": {
+      "method": "PID, CMA-warm (mean)",
+      "run": "seed1",
+      "kind": "cascaded",
+      "source": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\comparison\\e1_staged_gains\\cma_warm_mean\\seed1\\cma_es_mean.json",
+      "warnings": [],
+      "mean_cost": 83.91127467573997,
+      "objective": 83.91127467573997,
+      "sensitivity": 0.0,
+      "worst_cost": 1997.9333838808318,
+      "falls": 4,
+      "scenarios": 150,
+      "fall_rate": 0.02666666666666667,
+      "fall_rate_95ci": [
+        0.007312546398008252,
+        0.06686787667748939
+      ],
+      "median_ratio": 0.6188370220620147,
+      "scenarios_better": 147,
+      "mcnemar_vs_reference": {
+        "only_this_fell": 2,
+        "only_reference_fell": 11,
+        "p_value": 0.0224609375
+      },
+      "side_metrics": {
+        "torque_rms_change_per_tick_n_m": {
+          "median": 0.12985367017750163,
+          "worst": 0.19788754742651413
+        },
+        "torque_variation_per_s_n_m": {
+          "median": 12.952577722260223,
+          "worst": 22.7076311773319
+        },
+        "torque_rms_n_m": {
+          "median": 0.1662737676593854,
+          "worst": 0.6981092496932227
+        },
+        "time_at_torque_limit_fraction": {
+          "median": 0.0,
+          "worst": 0.43386243386243384
+        },
+        "peak_pitch_deg": {
+          "median": 12.133389145641683,
+          "worst": 59.89254358609954
+        },
+        "velocity_rms_error_m_s": {
+          "median": 0.09525678986853177,
+          "worst": 0.598363505693333
+        }
+      }
+    },
+    "PID, Random / seed0": {
+      "method": "PID, Random",
+      "run": "seed0",
+      "kind": "cascaded",
+      "source": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\comparison\\e1_staged_gains\\random\\seed0\\rs.json",
+      "warnings": [],
+      "mean_cost": 79.7412452920559,
+      "objective": 79.7412452920559,
+      "sensitivity": 0.0,
+      "worst_cost": 1935.0219388312685,
+      "falls": 3,
+      "scenarios": 150,
+      "fall_rate": 0.02,
+      "fall_rate_95ci": [
+        0.004143625281220548,
+        0.05733422228820578
+      ],
+      "median_ratio": 0.7974540292712449,
+      "scenarios_better": 142,
+      "mcnemar_vs_reference": {
+        "only_this_fell": 3,
+        "only_reference_fell": 13,
+        "p_value": 0.021270751953125
+      },
+      "side_metrics": {
+        "torque_rms_change_per_tick_n_m": {
+          "median": 0.13825885714540434,
+          "worst": 0.22419475328457053
+        },
+        "torque_variation_per_s_n_m": {
+          "median": 14.139465939350982,
+          "worst": 26.472342726075556
+        },
+        "torque_rms_n_m": {
+          "median": 0.1897511488382725,
+          "worst": 0.33036460127685413
+        },
+        "time_at_torque_limit_fraction": {
+          "median": 0.0,
+          "worst": 0.07568807339449542
+        },
+        "peak_pitch_deg": {
+          "median": 11.112408704256556,
+          "worst": 59.50717933828064
+        },
+        "velocity_rms_error_m_s": {
+          "median": 0.10959435021803023,
+          "worst": 0.2059446788067633
+        }
+      }
+    },
+    "PID, Random / seed1": {
+      "method": "PID, Random",
+      "run": "seed1",
+      "kind": "cascaded",
+      "source": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\comparison\\e1_staged_gains\\random\\seed1\\rs.json",
+      "warnings": [],
+      "mean_cost": 107.17325171183344,
+      "objective": 107.17325171183344,
+      "sensitivity": 0.0,
+      "worst_cost": 1997.7252550681283,
+      "falls": 6,
+      "scenarios": 150,
+      "fall_rate": 0.04,
+      "fall_rate_95ci": [
+        0.014818521114898016,
+        0.08502781471819877
+      ],
+      "median_ratio": 0.5642210558727344,
+      "scenarios_better": 145,
+      "mcnemar_vs_reference": {
+        "only_this_fell": 3,
+        "only_reference_fell": 10,
+        "p_value": 0.09228515625
+      },
+      "side_metrics": {
+        "torque_rms_change_per_tick_n_m": {
+          "median": 0.099656935513106,
+          "worst": 0.13923797408073763
+        },
+        "torque_variation_per_s_n_m": {
+          "median": 10.18244253464863,
+          "worst": 14.6315573301816
+        },
+        "torque_rms_n_m": {
+          "median": 0.13847464468149417,
+          "worst": 0.6389656972872826
+        },
+        "time_at_torque_limit_fraction": {
+          "median": 0.0,
+          "worst": 0.3660130718954248
+        },
+        "peak_pitch_deg": {
+          "median": 11.211817073335082,
+          "worst": 59.8752940173343
+        },
+        "velocity_rms_error_m_s": {
+          "median": 0.10479772296914511,
+          "worst": 0.617593269421632
+        }
+      }
+    },
+    "PID, CMA-lat10-15 / seed0": {
+      "method": "PID, CMA-lat10-15",
+      "run": "seed0",
+      "kind": "cascaded",
+      "source": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\comparison\\e1_staged_gains\\cma_lat10_15\\seed0\\cma.json",
+      "warnings": [],
+      "mean_cost": 31.56910983670423,
+      "objective": 31.56910983670423,
+      "sensitivity": 0.0,
+      "worst_cost": 47.61360139859708,
+      "falls": 0,
+      "scenarios": 150,
+      "fall_rate": 0.0,
+      "fall_rate_95ci": [
+        0.0,
+        0.02429259716610854
+      ],
+      "median_ratio": 0.5890349974649518,
+      "scenarios_better": 150,
+      "mcnemar_vs_reference": {
+        "only_this_fell": 0,
+        "only_reference_fell": 13,
+        "p_value": 0.000244140625
+      },
+      "side_metrics": {
+        "torque_rms_change_per_tick_n_m": {
+          "median": 0.12006361899844464,
+          "worst": 0.17300439116859925
+        },
+        "torque_variation_per_s_n_m": {
+          "median": 12.194727749056408,
+          "worst": 18.69087511451925
+        },
+        "torque_rms_n_m": {
+          "median": 0.15571342734098326,
+          "worst": 0.211390789070216
+        },
+        "time_at_torque_limit_fraction": {
+          "median": 0.0,
+          "worst": 0.00016666666666666666
+        },
+        "peak_pitch_deg": {
+          "median": 11.418678044413404,
+          "worst": 31.183167848286583
+        },
+        "velocity_rms_error_m_s": {
+          "median": 0.09837852851871931,
+          "worst": 0.11984902468813378
+        }
+      }
+    }
+  },
+  "methods": {
+    "PID, hand-tuned": {
+      "runs": [
+        "PID, hand-tuned"
+      ],
+      "headline_median_ratio": 1.0,
+      "bootstrap_95ci": null,
+      "order_statistic_interval": {
+        "low": null,
+        "high": null,
+        "coverage": null,
+        "k": null
+      },
+      "run_median_ratios": [
+        1.0
+      ],
+      "falls": {
+        "median": 13.0,
+        "min": 13,
+        "max": 13
+      },
+      "mcnemar_p": {
+        "median": 1.0,
+        "min": 1.0,
+        "max": 1.0
+      }
+    },
+    "PID, model-based": {
+      "runs": [
+        "PID, model-based"
+      ],
+      "headline_median_ratio": 0.5425237879224829,
+      "bootstrap_95ci": null,
+      "order_statistic_interval": {
+        "low": null,
+        "high": null,
+        "coverage": null,
+        "k": null
+      },
+      "run_median_ratios": [
+        0.5425237879224829
+      ],
+      "falls": {
+        "median": 6.0,
+        "min": 6,
+        "max": 6
+      },
+      "mcnemar_p": {
+        "median": 0.09228515625,
+        "min": 0.09228515625,
+        "max": 0.09228515625
+      }
+    },
+    "PID, DE": {
+      "runs": [
+        "seed0",
+        "seed1"
+      ],
+      "headline_median_ratio": 0.5560439601975596,
+      "bootstrap_95ci": {
+        "low": 0.5232073390560585,
+        "high": 0.5895033790534746,
+        "n_boot": 10000
+      },
+      "order_statistic_interval": {
+        "low": null,
+        "high": null,
+        "coverage": null,
+        "k": null
+      },
+      "run_median_ratios": [
+        0.543873388451309,
+        0.5682145319438103
+      ],
+      "falls": {
+        "median": 6.5,
+        "min": 6,
+        "max": 7
+      },
+      "mcnemar_p": {
+        "median": 0.1642913818359375,
+        "min": 0.11846923828124999,
+        "max": 0.210113525390625
+      }
+    },
+    "PID, CMA-mid": {
+      "runs": [
+        "seed0",
+        "seed1"
+      ],
+      "headline_median_ratio": 0.5187581230870096,
+      "bootstrap_95ci": {
+        "low": 0.4955044107524137,
+        "high": 0.5463278951065605,
+        "n_boot": 10000
+      },
+      "order_statistic_interval": {
+        "low": null,
+        "high": null,
+        "coverage": null,
+        "k": null
+      },
+      "run_median_ratios": [
+        0.5257504479687514,
+        0.5117657982052679
+      ],
+      "falls": {
+        "median": 5.5,
+        "min": 5,
+        "max": 6
+      },
+      "mcnemar_p": {
+        "median": 0.1004180908203125,
+        "min": 0.057373046875,
+        "max": 0.143463134765625
+      }
+    },
+    "PID, CMA-mid (mean)": {
+      "runs": [
+        "seed0",
+        "seed1"
+      ],
+      "headline_median_ratio": 0.5385163850071085,
+      "bootstrap_95ci": {
+        "low": 0.5164654650152746,
+        "high": 0.5669256905737262,
+        "n_boot": 10000
+      },
+      "order_statistic_interval": {
+        "low": null,
+        "high": null,
+        "coverage": null,
+        "k": null
+      },
+      "run_median_ratios": [
+        0.5475746919884938,
+        0.5294580780257232
+      ],
+      "falls": {
+        "median": 5.0,
+        "min": 5,
+        "max": 5
+      },
+      "mcnemar_p": {
+        "median": 0.076812744140625,
+        "min": 0.076812744140625,
+        "max": 0.076812744140625
+      }
+    },
+    "PID, CMA-warm": {
+      "runs": [
+        "seed0",
+        "seed1"
+      ],
+      "headline_median_ratio": 0.5390048978567022,
+      "bootstrap_95ci": {
+        "low": 0.5151847227032667,
+        "high": 0.56729764700524,
+        "n_boot": 10000
+      },
+      "order_statistic_interval": {
+        "low": null,
+        "high": null,
+        "coverage": null,
+        "k": null
+      },
+      "run_median_ratios": [
+        0.538770566521007,
+        0.5392392291923975
+      ],
+      "falls": {
+        "median": 6.0,
+        "min": 5,
+        "max": 7
+      },
+      "mcnemar_p": {
+        "median": 0.1114044189453125,
+        "min": 0.076812744140625,
+        "max": 0.14599609375
+      }
+    },
+    "PID, CMA-warm (mean)": {
+      "runs": [
+        "seed0",
+        "seed1"
+      ],
+      "headline_median_ratio": 0.5860531850328822,
+      "bootstrap_95ci": {
+        "low": 0.534347403765651,
+        "high": 0.6274895922213362,
+        "n_boot": 10000
+      },
+      "order_statistic_interval": {
+        "low": null,
+        "high": null,
+        "coverage": null,
+        "k": null
+      },
+      "run_median_ratios": [
+        0.5532693480037496,
+        0.6188370220620147
+      ],
+      "falls": {
+        "median": 4.5,
+        "min": 4,
+        "max": 5
+      },
+      "mcnemar_p": {
+        "median": 0.0399169921875,
+        "min": 0.0224609375,
+        "max": 0.057373046875
+      }
+    },
+    "PID, Random": {
+      "runs": [
+        "seed0",
+        "seed1"
+      ],
+      "headline_median_ratio": 0.6808375425719897,
+      "bootstrap_95ci": {
+        "low": 0.5485713463336509,
+        "high": 0.8097355736299778,
+        "n_boot": 10000
+      },
+      "order_statistic_interval": {
+        "low": null,
+        "high": null,
+        "coverage": null,
+        "k": null
+      },
+      "run_median_ratios": [
+        0.7974540292712449,
+        0.5642210558727344
+      ],
+      "falls": {
+        "median": 4.5,
+        "min": 3,
+        "max": 6
+      },
+      "mcnemar_p": {
+        "median": 0.0567779541015625,
+        "min": 0.021270751953125,
+        "max": 0.09228515625
+      }
+    },
+    "PID, CMA-lat10-15": {
+      "runs": [
+        "seed0"
+      ],
+      "headline_median_ratio": 0.5890349974649518,
+      "bootstrap_95ci": null,
+      "order_statistic_interval": {
+        "low": null,
+        "high": null,
+        "coverage": null,
+        "k": null
+      },
+      "run_median_ratios": [
+        0.5890349974649518
+      ],
+      "falls": {
+        "median": 0.0,
+        "min": 0,
+        "max": 0
+      },
+      "mcnemar_p": {
+        "median": 0.000244140625,
+        "min": 0.000244140625,
+        "max": 0.000244140625
+      }
+    }
+  },
+  "method_pairs": {
+    "PID, hand-tuned vs PID, DE": {
+      "ratio": 1.7984189588979709,
+      "low": 1.6952298723809804,
+      "high": 1.9109058261903276,
+      "n_boot": 10000
+    },
+    "PID, hand-tuned vs PID, CMA-mid": {
+      "ratio": 1.9276806578935695,
+      "low": 1.8307065258807487,
+      "high": 2.018145506477974,
+      "n_boot": 10000
+    },
+    "PID, hand-tuned vs PID, CMA-mid (mean)": {
+      "ratio": 1.856953711792446,
+      "low": 1.763454780750755,
+      "high": 1.936237885664678,
+      "n_boot": 10000
+    },
+    "PID, hand-tuned vs PID, CMA-warm": {
+      "ratio": 1.8552707108532733,
+      "low": 1.7636391249595262,
+      "high": 1.9431799221370625,
+      "n_boot": 10000
+    },
+    "PID, hand-tuned vs PID, CMA-warm (mean)": {
+      "ratio": 1.7063297761002565,
+      "low": 1.5936519304805732,
+      "high": 1.871441674372896,
+      "n_boot": 10000
+    },
+    "PID, hand-tuned vs PID, Random": {
+      "ratio": 1.4687791689957566,
+      "low": 1.2355813362135306,
+      "high": 1.8227225012338852,
+      "n_boot": 10000
+    },
+    "PID, model-based vs PID, DE": {
+      "ratio": 0.9756850658529352,
+      "low": 0.9311079412698997,
+      "high": 1.0259102087037524,
+      "n_boot": 10000
+    },
+    "PID, model-based vs PID, CMA-mid": {
+      "ratio": 1.045812612425323,
+      "low": 1.0058676641670528,
+      "high": 1.0837563417092384,
+      "n_boot": 10000
+    },
+    "PID, model-based vs PID, CMA-mid (mean)": {
+      "ratio": 1.0074415617183523,
+      "low": 0.9638581826269601,
+      "high": 1.042101973656857,
+      "n_boot": 10000
+    },
+    "PID, model-based vs PID, CMA-warm": {
+      "ratio": 1.0065284936737553,
+      "low": 0.9703598086702696,
+      "high": 1.0408287829070042,
+      "n_boot": 10000
+    },
+    "PID, model-based vs PID, CMA-warm (mean)": {
+      "ratio": 0.9257244935748332,
+      "low": 0.8622753130600772,
+      "high": 1.005887057097884,
+      "n_boot": 10000
+    },
+    "PID, model-based vs PID, Random": {
+      "ratio": 0.7968476383852144,
+      "low": 0.6693649381335115,
+      "high": 0.9769196238663198,
+      "n_boot": 10000
+    },
+    "PID, DE vs PID, CMA-mid": {
+      "ratio": 1.0718751870113774,
+      "low": 1.0160510886873722,
+      "high": 1.1234114399580981,
+      "n_boot": 10000
+    },
+    "PID, DE vs PID, CMA-mid (mean)": {
+      "ratio": 1.0325478958086294,
+      "low": 0.9762563695950364,
+      "high": 1.0763698267962143,
+      "n_boot": 10000
+    },
+    "PID, DE vs PID, CMA-warm": {
+      "ratio": 1.0316120733013958,
+      "low": 0.9854313919504918,
+      "high": 1.077033979860155,
+      "n_boot": 10000
+    },
+    "PID, DE vs PID, CMA-warm (mean)": {
+      "ratio": 0.9487943661058018,
+      "low": 0.869947830785844,
+      "high": 1.0420757549815614,
+      "n_boot": 10000
+    },
+    "PID, DE vs PID, Random": {
+      "ratio": 0.8167057857840812,
+      "low": 0.6780041095623791,
+      "high": 1.0098303770171728,
+      "n_boot": 10000
+    },
+    "PID, DE vs PID, CMA-lat10-15": {
+      "ratio": 0.9439913801227826,
+      "low": 0.899294009496931,
+      "high": 0.9850935007642405,
+      "n_boot": 10000
+    },
+    "PID, CMA-mid vs PID, CMA-mid (mean)": {
+      "ratio": 0.963309822188905,
+      "low": 0.9210905760188821,
+      "high": 0.9987354615530107,
+      "n_boot": 10000
+    },
+    "PID, CMA-mid vs PID, CMA-warm": {
+      "ratio": 0.9624367517805462,
+      "low": 0.9257386376192919,
+      "high": 1.0009366004183857,
+      "n_boot": 10000
+    },
+    "PID, CMA-mid vs PID, CMA-warm (mean)": {
+      "ratio": 0.8851724320172464,
+      "low": 0.8179650011023482,
+      "high": 0.9657637972176853,
+      "n_boot": 10000
+    },
+    "PID, CMA-mid vs PID, Random": {
+      "ratio": 0.7619411249375364,
+      "low": 0.6378065842927151,
+      "high": 0.9381901891032537,
+      "n_boot": 10000
+    },
+    "PID, CMA-mid vs PID, CMA-lat10-15": {
+      "ratio": 0.8806915129314983,
+      "low": 0.8495655576534238,
+      "high": 0.91048490417299,
+      "n_boot": 10000
+    },
+    "PID, CMA-mid (mean) vs PID, CMA-warm": {
+      "ratio": 0.9990936764182733,
+      "low": 0.9672884842399081,
+      "high": 1.0412618432018932,
+      "n_boot": 10000
+    },
+    "PID, CMA-mid (mean) vs PID, CMA-warm (mean)": {
+      "ratio": 0.918886542655499,
+      "low": 0.8525367936747968,
+      "high": 1.0048128806481256,
+      "n_boot": 10000
+    },
+    "PID, CMA-mid (mean) vs PID, Random": {
+      "ratio": 0.7909616484613398,
+      "low": 0.6640623744381768,
+      "high": 0.9751297131428668,
+      "n_boot": 10000
+    },
+    "PID, CMA-mid (mean) vs PID, CMA-lat10-15": {
+      "ratio": 0.914234956029333,
+      "low": 0.8862460388163557,
+      "high": 0.9494911645108165,
+      "n_boot": 10000
+    },
+    "PID, CMA-warm vs PID, CMA-warm (mean)": {
+      "ratio": 0.9197201066767683,
+      "low": 0.8505261781827226,
+      "high": 1.0014660350017914,
+      "n_boot": 10000
+    },
+    "PID, CMA-warm vs PID, Random": {
+      "ratio": 0.7916791659586098,
+      "low": 0.6625054008068744,
+      "high": 0.9718225479435075,
+      "n_boot": 10000
+    },
+    "PID, CMA-warm vs PID, CMA-lat10-15": {
+      "ratio": 0.9150643003835669,
+      "low": 0.8875902958190512,
+      "high": 0.9428094141010922,
+      "n_boot": 10000
+    },
+    "PID, CMA-warm (mean) vs PID, Random": {
+      "ratio": 0.860782710099913,
+      "low": 0.6909973758365959,
+      "high": 1.0968012307517836,
+      "n_boot": 10000
+    },
+    "PID, CMA-warm (mean) vs PID, CMA-lat10-15": {
+      "ratio": 0.9949378009033376,
+      "low": 0.9171169339193452,
+      "high": 1.0694744928388276,
+      "n_boot": 10000
+    },
+    "PID, Random vs PID, CMA-lat10-15": {
+      "ratio": 1.1558524459533497,
+      "low": 0.944307400195148,
+      "high": 1.3694977916117719,
+      "n_boot": 10000
+    }
+  },
+  "weight_sensitivity": {
+    "configured": {
+      "limits": {
+        "pitch_rad": 0.3,
+        "velocity_m_s": 0.06,
+        "torque_n_m": 0.09
+      },
+      "headline_median_ratio": {
+        "PID, hand-tuned": 1.0,
+        "PID, model-based": 0.5425237879224829,
+        "PID, DE": 0.5560439601975595,
+        "PID, CMA-mid": 0.5187581230870096,
+        "PID, CMA-mid (mean)": 0.5385163850071085,
+        "PID, CMA-warm": 0.5390048978567022,
+        "PID, CMA-warm (mean)": 0.5860531850328823,
+        "PID, Random": 0.6808375425719896,
+        "PID, CMA-lat10-15": 0.5890349974649519
+      },
+      "max_non_fall_cost": 139.59351266603903,
+      "falls_rank_below_every_non_fall": true
+    },
+    "pitch limit x0.5": {
+      "limits": {
+        "pitch_rad": 0.15,
+        "velocity_m_s": 0.06,
+        "torque_n_m": 0.09
+      },
+      "headline_median_ratio": {
+        "PID, hand-tuned": 1.0,
+        "PID, model-based": 0.5444500719979505,
+        "PID, DE": 0.5576204082467291,
+        "PID, CMA-mid": 0.5205439538693413,
+        "PID, CMA-mid (mean)": 0.539775855655253,
+        "PID, CMA-warm": 0.5411747776476084,
+        "PID, CMA-warm (mean)": 0.5875596697919505,
+        "PID, Random": 0.6818661814236722,
+        "PID, CMA-lat10-15": 0.5902235788825215
+      },
+      "max_non_fall_cost": 34.985539550533346,
+      "falls_rank_below_every_non_fall": true
+    },
+    "pitch limit x2": {
+      "limits": {
+        "pitch_rad": 0.6,
+        "velocity_m_s": 0.06,
+        "torque_n_m": 0.09
+      },
+      "headline_median_ratio": {
+        "PID, hand-tuned": 1.0,
+        "PID, model-based": 0.5420394985408492,
+        "PID, DE": 0.5556477901996089,
+        "PID, CMA-mid": 0.5183191259583999,
+        "PID, CMA-mid (mean)": 0.5381998681194149,
+        "PID, CMA-warm": 0.538459464030515,
+        "PID, CMA-warm (mean)": 0.5856427289681991,
+        "PID, Random": 0.6805788803854609,
+        "PID, CMA-lat10-15": 0.5887188917195899
+      },
+      "max_non_fall_cost": 558.0254051280618,
+      "falls_rank_below_every_non_fall": true
+    },
+    "velocity limit x0.5": {
+      "limits": {
+        "pitch_rad": 0.3,
+        "velocity_m_s": 0.03,
+        "torque_n_m": 0.09
+      },
+      "headline_median_ratio": {
+        "PID, hand-tuned": 1.0,
+        "PID, model-based": 0.6621199483937942,
+        "PID, DE": 0.7423835525104887,
+        "PID, CMA-mid": 0.6759313752083806,
+        "PID, CMA-mid (mean)": 0.6963233150418168,
+        "PID, CMA-warm": 0.6991455759255614,
+        "PID, CMA-warm (mean)": 0.7042499405782159,
+        "PID, Random": 0.836180210918373,
+        "PID, CMA-lat10-15": 0.7164036531505759
+      },
+      "max_non_fall_cost": 235.29850124360667,
+      "falls_rank_below_every_non_fall": true
+    },
+    "velocity limit x2": {
+      "limits": {
+        "pitch_rad": 0.3,
+        "velocity_m_s": 0.12,
+        "torque_n_m": 0.09
+      },
+      "headline_median_ratio": {
+        "PID, hand-tuned": 1.0,
+        "PID, model-based": 0.4630495573676039,
+        "PID, DE": 0.4412987030328456,
+        "PID, CMA-mid": 0.4203089008111005,
+        "PID, CMA-mid (mean)": 0.4479884526638019,
+        "PID, CMA-warm": 0.4381355699042683,
+        "PID, CMA-warm (mean)": 0.4998988466635956,
+        "PID, Random": 0.5758113128864546,
+        "PID, CMA-lat10-15": 0.501348715376615
+      },
+      "max_non_fall_cost": 115.66726552164714,
+      "falls_rank_below_every_non_fall": true
+    },
+    "torque limit x0.5": {
+      "limits": {
+        "pitch_rad": 0.3,
+        "velocity_m_s": 0.06,
+        "torque_n_m": 0.045
+      },
+      "headline_median_ratio": {
+        "PID, hand-tuned": 1.0,
+        "PID, model-based": 0.4619216118980181,
+        "PID, DE": 0.44044880169793194,
+        "PID, CMA-mid": 0.4195260890221927,
+        "PID, CMA-mid (mean)": 0.4472417453620046,
+        "PID, CMA-warm": 0.4373905320404565,
+        "PID, CMA-warm (mean)": 0.49917129186125425,
+        "PID, Random": 0.5752413024944254,
+        "PID, CMA-lat10-15": 0.5006948956949699
+      },
+      "max_non_fall_cost": 462.32041655049426,
+      "falls_rank_below_every_non_fall": true
+    },
+    "torque limit x2": {
+      "limits": {
+        "pitch_rad": 0.3,
+        "velocity_m_s": 0.06,
+        "torque_n_m": 0.18
+      },
+      "headline_median_ratio": {
+        "PID, hand-tuned": 1.0,
+        "PID, model-based": 0.6630724188296553,
+        "PID, DE": 0.7427615694685534,
+        "PID, CMA-mid": 0.676681159715798,
+        "PID, CMA-mid (mean)": 0.6968368329285552,
+        "PID, CMA-warm": 0.6998855403569879,
+        "PID, CMA-warm (mean)": 0.7049228215076052,
+        "PID, Random": 0.8361814269805563,
+        "PID, CMA-lat10-15": 0.7169617767516431
+      },
+      "max_non_fall_cost": 58.91178669492525,
+      "falls_rank_below_every_non_fall": true
+    },
+    "effort off": {
+      "limits": {
+        "pitch_rad": 0.3,
+        "velocity_m_s": 0.06,
+        "torque_n_m": Infinity
+      },
+      "headline_median_ratio": {
+        "PID, hand-tuned": 1.0,
+        "PID, model-based": 0.7724762614364405,
+        "PID, DE": 0.920971364213687,
+        "PID, CMA-mid": 0.8267965129603062,
+        "PID, CMA-mid (mean)": 0.838598629687406,
+        "PID, CMA-warm": 0.8443359753324299,
+        "PID, CMA-warm (mean)": 0.824999039024264,
+        "PID, Random": 0.9695799578003108,
+        "PID, CMA-lat10-15": 0.8340222083181711
+      },
+      "max_non_fall_cost": 32.017878037887314,
+      "falls_rank_below_every_non_fall": true
+    },
+    "torque limit 0.788 (thermal)": {
+      "limits": {
+        "pitch_rad": 0.3,
+        "velocity_m_s": 0.06,
+        "torque_n_m": 0.78822
+      },
+      "headline_median_ratio": {
+        "PID, hand-tuned": 1.0,
+        "PID, model-based": 0.7644427737449234,
+        "PID, DE": 0.9065484313225827,
+        "PID, CMA-mid": 0.8159978110893972,
+        "PID, CMA-mid (mean)": 0.8289912866978031,
+        "PID, CMA-warm": 0.8334069194024809,
+        "PID, CMA-warm (mean)": 0.8167165223892787,
+        "PID, Random": 0.9607048882459789,
+        "PID, CMA-lat10-15": 0.8240403777473109
+      },
+      "max_non_fall_cost": 33.42038180071005,
+      "falls_rank_below_every_non_fall": true
+    }
+  },
+  "robot": "legobot",
+  "reference_provisional": true,
+  "tier": "dev",
+  "seeds": [
+    5000,
+    5049
+  ],
+  "n_seeds": 50,
+  "duration_s": 60.0,
+  "backend": "numpy",
+  "provenance": {
+    "git_commit": "59065a3487bd6b4567d3665295d118efb5aa23ad",
+    "git_dirty": true,
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1"
+  },
+  "config": {
+    "name": "legobot",
+    "robot": {
+      "body_mass": 0.362,
+      "body_com_height": 0.06,
+      "body_inertia": 0.00088,
+      "wheel_mass": 0.078,
+      "wheel_radius": 0.0345,
+      "wheel_inertia": 6e-05,
+      "max_torque": 0.9,
+      "wheel_friction": 0.0017,
+      "coulomb_friction": 0.042,
+      "coulomb_friction_speed": 1.0,
+      "gravity": 9.81,
+      "gearbox_backlash": 0.022689280275926284,
+      "coupling_backlash": 0.026179938779914945
+    },
+    "actuator": {
+      "model": "slow_pwm",
+      "voltage_feedforward": true,
+      "voltage_feedforward_gain": 1.0,
+      "pwm_tick_s": 0.01,
+      "pwm_tick_phase": 0.25,
+      "pwm_tick_locked": false,
+      "gear_ratio": 1.0,
+      "torque_constant": 0.348,
+      "resistance": 4.4,
+      "supply_voltage": 7.6,
+      "current_limit": 2.5,
+      "n_motors": 2,
+      "gear_efficiency": 0.755,
+      "rotor_inertia": 0.000545
+    },
+    "sensor": {
+      "pitch_std": 0.016,
+      "pitch_bias": 0.015,
+      "pitch_rate_std": 0.017,
+      "pitch_rate_bias": 0.003,
+      "position_std": 0.001,
+      "velocity_std": 0.025,
+      "model": "imu",
+      "imu_height": 0.1,
+      "filter_time_constant": 0.5,
+      "encoder_counts": 360,
+      "encoder_period_s": 0.01,
+      "encoder_delay_s": 0.005
+    },
+    "timing": {
+      "latency_s": 0.01,
+      "dt_s": 0.0025,
+      "demo_dt_s": 0.001,
+      "control_dt_s": 0.005,
+      "fall_angle_deg": 60.0
+    },
+    "controller": {
+      "max_lean_deg": 25.0,
+      "pitch_integral_limit": 1.0,
+      "velocity_integral_limit": 0.5,
+      "hand_tuned_gains": [
+        2.5,
+        1.5,
+        0.2,
+        0.5
+      ],
+      "design_inner_speed": 2.0,
+      "design_inner_damping": 1.0,
+      "design_integral_ratio": 0.3,
+      "design_outer_fraction": 0.3333333333333333
+    },
+    "cost": {
+      "pitch_limit_rad": 0.3,
+      "velocity_limit": 0.06,
+      "torque_limit": 0.09,
+      "fall_penalty": 1000.0,
+      "pitch_reference": "upright",
+      "velocity_weight": 25.0,
+      "effort_weight": 11.11111111111111
+    },
+    "scenario": {
+      "duration_s": 20.0,
+      "goal_steps": [
+        [
+          2.0,
+          0.4,
+          1.25
+        ],
+        [
+          9.5,
+          -0.15,
+          2.4
+        ],
+        [
+          14.0,
+          0.0,
+          2.0
+        ]
+      ],
+      "goal_transition_s": 2.5,
+      "pushes": [
+        [
+          5.5,
+          0.05,
+          0.73
+        ],
+        [
+          7.5,
+          0.05,
+          -0.73
+        ]
+      ],
+      "validation_duration_s": 60.0,
+      "start_pitches_deg": [
+        2.8648,
+        -8.5944,
+        17.1887
+      ],
+      "train_seeds": [
+        1,
+        2,
+        3
+      ],
+      "validation_seeds": [
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109
+      ]
+    },
+    "search": {
+      "kp_min_factor": 1.1,
+      "kp_max": 30.0,
+      "ki_max": 10.0,
+      "kd_max": 1.0,
+      "kv_p_max": 2.0
+    },
+    "lqr": {
+      "w_pitch_bounds": [
+        1e-06,
+        100.0
+      ],
+      "w_velocity_bounds": [
+        1e-06,
+        100.0
+      ],
+      "w_pitch_rate_bounds": [
+        1e-08,
+        1.0
+      ],
+      "w_integral_bounds": [
+        0.001,
+        1000.0
+      ],
+      "direct_gain_scale": 100.0,
+      "w_pitch_fixed": 0.0,
+      "w_velocity_fixed": 0.0,
+      "w_pitch_rate_fixed": 0.0,
+      "direct_commands_scale": 0.0,
+      "direct_integral_bounds": [
+        0.001,
+        10.0
+      ],
+      "direct_max_spectral_radius": 0.999
+    },
+    "robustness": {
+      "n_train_seeds": 50,
+      "validation_seeds": [
+        3000,
+        3001,
+        3002,
+        3003,
+        3004,
+        3005,
+        3006,
+        3007,
+        3008,
+        3009,
+        3010,
+        3011,
+        3012,
+        3013,
+        3014,
+        3015,
+        3016,
+        3017,
+        3018,
+        3019,
+        3020,
+        3021,
+        3022,
+        3023,
+        3024,
+        3025,
+        3026,
+        3027,
+        3028,
+        3029,
+        3030,
+        3031,
+        3032,
+        3033,
+        3034,
+        3035,
+        3036,
+        3037,
+        3038,
+        3039,
+        3040,
+        3041,
+        3042,
+        3043,
+        3044,
+        3045,
+        3046,
+        3047,
+        3048,
+        3049,
+        3050,
+        3051,
+        3052,
+        3053,
+        3054,
+        3055,
+        3056,
+        3057,
+        3058,
+        3059,
+        3060,
+        3061,
+        3062,
+        3063,
+        3064,
+        3065,
+        3066,
+        3067,
+        3068,
+        3069,
+        3070,
+        3071,
+        3072,
+        3073,
+        3074,
+        3075,
+        3076,
+        3077,
+        3078,
+        3079,
+        3080,
+        3081,
+        3082,
+        3083,
+        3084,
+        3085,
+        3086,
+        3087,
+        3088,
+        3089,
+        3090,
+        3091,
+        3092,
+        3093,
+        3094,
+        3095,
+        3096,
+        3097,
+        3098,
+        3099
+      ],
+      "smoke_seeds": [
+        5000,
+        5001,
+        5002,
+        5003,
+        5004,
+        5005,
+        5006,
+        5007,
+        5008,
+        5009
+      ],
+      "dev_seeds": [
+        5000,
+        5001,
+        5002,
+        5003,
+        5004,
+        5005,
+        5006,
+        5007,
+        5008,
+        5009,
+        5010,
+        5011,
+        5012,
+        5013,
+        5014,
+        5015,
+        5016,
+        5017,
+        5018,
+        5019,
+        5020,
+        5021,
+        5022,
+        5023,
+        5024,
+        5025,
+        5026,
+        5027,
+        5028,
+        5029,
+        5030,
+        5031,
+        5032,
+        5033,
+        5034,
+        5035,
+        5036,
+        5037,
+        5038,
+        5039,
+        5040,
+        5041,
+        5042,
+        5043,
+        5044,
+        5045,
+        5046,
+        5047,
+        5048,
+        5049
+      ],
+      "fall_rate_seeds": [
+        6000,
+        6001,
+        6002,
+        6003,
+        6004,
+        6005,
+        6006,
+        6007,
+        6008,
+        6009,
+        6010,
+        6011,
+        6012,
+        6013,
+        6014,
+        6015,
+        6016,
+        6017,
+        6018,
+        6019,
+        6020,
+        6021,
+        6022,
+        6023,
+        6024,
+        6025,
+        6026,
+        6027,
+        6028,
+        6029,
+        6030,
+        6031,
+        6032,
+        6033,
+        6034,
+        6035,
+        6036,
+        6037,
+        6038,
+        6039,
+        6040,
+        6041,
+        6042,
+        6043,
+        6044,
+        6045,
+        6046,
+        6047,
+        6048,
+        6049,
+        6050,
+        6051,
+        6052,
+        6053,
+        6054,
+        6055,
+        6056,
+        6057,
+        6058,
+        6059,
+        6060,
+        6061,
+        6062,
+        6063,
+        6064,
+        6065,
+        6066,
+        6067,
+        6068,
+        6069,
+        6070,
+        6071,
+        6072,
+        6073,
+        6074,
+        6075,
+        6076,
+        6077,
+        6078,
+        6079,
+        6080,
+        6081,
+        6082,
+        6083,
+        6084,
+        6085,
+        6086,
+        6087,
+        6088,
+        6089,
+        6090,
+        6091,
+        6092,
+        6093,
+        6094,
+        6095,
+        6096,
+        6097,
+        6098,
+        6099,
+        6100,
+        6101,
+        6102,
+        6103,
+        6104,
+        6105,
+        6106,
+        6107,
+        6108,
+        6109,
+        6110,
+        6111,
+        6112,
+        6113,
+        6114,
+        6115,
+        6116,
+        6117,
+        6118,
+        6119,
+        6120,
+        6121,
+        6122,
+        6123,
+        6124,
+        6125,
+        6126,
+        6127,
+        6128,
+        6129,
+        6130,
+        6131,
+        6132,
+        6133,
+        6134,
+        6135,
+        6136,
+        6137,
+        6138,
+        6139,
+        6140,
+        6141,
+        6142,
+        6143,
+        6144,
+        6145,
+        6146,
+        6147,
+        6148,
+        6149,
+        6150,
+        6151,
+        6152,
+        6153,
+        6154,
+        6155,
+        6156,
+        6157,
+        6158,
+        6159,
+        6160,
+        6161,
+        6162,
+        6163,
+        6164,
+        6165,
+        6166,
+        6167,
+        6168,
+        6169,
+        6170,
+        6171,
+        6172,
+        6173,
+        6174,
+        6175,
+        6176,
+        6177,
+        6178,
+        6179,
+        6180,
+        6181,
+        6182,
+        6183,
+        6184,
+        6185,
+        6186,
+        6187,
+        6188,
+        6189,
+        6190,
+        6191,
+        6192,
+        6193,
+        6194,
+        6195,
+        6196,
+        6197,
+        6198,
+        6199,
+        6200,
+        6201,
+        6202,
+        6203,
+        6204,
+        6205,
+        6206,
+        6207,
+        6208,
+        6209,
+        6210,
+        6211,
+        6212,
+        6213,
+        6214,
+        6215,
+        6216,
+        6217,
+        6218,
+        6219,
+        6220,
+        6221,
+        6222,
+        6223,
+        6224,
+        6225,
+        6226,
+        6227,
+        6228,
+        6229,
+        6230,
+        6231,
+        6232,
+        6233,
+        6234,
+        6235,
+        6236,
+        6237,
+        6238,
+        6239,
+        6240,
+        6241,
+        6242,
+        6243,
+        6244,
+        6245,
+        6246,
+        6247,
+        6248,
+        6249,
+        6250,
+        6251,
+        6252,
+        6253,
+        6254,
+        6255,
+        6256,
+        6257,
+        6258,
+        6259,
+        6260,
+        6261,
+        6262,
+        6263,
+        6264,
+        6265,
+        6266,
+        6267,
+        6268,
+        6269,
+        6270,
+        6271,
+        6272,
+        6273,
+        6274,
+        6275,
+        6276,
+        6277,
+        6278,
+        6279,
+        6280,
+        6281,
+        6282,
+        6283,
+        6284,
+        6285,
+        6286,
+        6287,
+        6288,
+        6289,
+        6290,
+        6291,
+        6292,
+        6293,
+        6294,
+        6295,
+        6296,
+        6297,
+        6298,
+        6299,
+        6300,
+        6301,
+        6302,
+        6303,
+        6304,
+        6305,
+        6306,
+        6307,
+        6308,
+        6309,
+        6310,
+        6311,
+        6312,
+        6313,
+        6314,
+        6315,
+        6316,
+        6317,
+        6318,
+        6319,
+        6320,
+        6321,
+        6322,
+        6323,
+        6324,
+        6325,
+        6326,
+        6327,
+        6328,
+        6329,
+        6330,
+        6331,
+        6332,
+        6333,
+        6334,
+        6335,
+        6336,
+        6337,
+        6338,
+        6339,
+        6340,
+        6341,
+        6342,
+        6343,
+        6344,
+        6345,
+        6346,
+        6347,
+        6348,
+        6349,
+        6350,
+        6351,
+        6352,
+        6353,
+        6354,
+        6355,
+        6356,
+        6357,
+        6358,
+        6359,
+        6360,
+        6361,
+        6362,
+        6363,
+        6364,
+        6365,
+        6366,
+        6367,
+        6368,
+        6369,
+        6370,
+        6371,
+        6372,
+        6373,
+        6374,
+        6375,
+        6376,
+        6377,
+        6378,
+        6379,
+        6380,
+        6381,
+        6382,
+        6383,
+        6384,
+        6385,
+        6386,
+        6387,
+        6388,
+        6389,
+        6390,
+        6391,
+        6392,
+        6393,
+        6394,
+        6395,
+        6396,
+        6397,
+        6398,
+        6399,
+        6400,
+        6401,
+        6402,
+        6403,
+        6404,
+        6405,
+        6406,
+        6407,
+        6408,
+        6409,
+        6410,
+        6411,
+        6412,
+        6413,
+        6414,
+        6415,
+        6416,
+        6417,
+        6418,
+        6419,
+        6420,
+        6421,
+        6422,
+        6423,
+        6424,
+        6425,
+        6426,
+        6427,
+        6428,
+        6429,
+        6430,
+        6431,
+        6432,
+        6433,
+        6434,
+        6435,
+        6436,
+        6437,
+        6438,
+        6439,
+        6440,
+        6441,
+        6442,
+        6443,
+        6444,
+        6445,
+        6446,
+        6447,
+        6448,
+        6449,
+        6450,
+        6451,
+        6452,
+        6453,
+        6454,
+        6455,
+        6456,
+        6457,
+        6458,
+        6459,
+        6460,
+        6461,
+        6462,
+        6463,
+        6464,
+        6465,
+        6466,
+        6467,
+        6468,
+        6469,
+        6470,
+        6471,
+        6472,
+        6473,
+        6474,
+        6475,
+        6476,
+        6477,
+        6478,
+        6479,
+        6480,
+        6481,
+        6482,
+        6483,
+        6484,
+        6485,
+        6486,
+        6487,
+        6488,
+        6489,
+        6490,
+        6491,
+        6492,
+        6493,
+        6494,
+        6495,
+        6496,
+        6497,
+        6498,
+        6499,
+        6500,
+        6501,
+        6502,
+        6503,
+        6504,
+        6505,
+        6506,
+        6507,
+        6508,
+        6509,
+        6510,
+        6511,
+        6512,
+        6513,
+        6514,
+        6515,
+        6516,
+        6517,
+        6518,
+        6519,
+        6520,
+        6521,
+        6522,
+        6523,
+        6524,
+        6525,
+        6526,
+        6527,
+        6528,
+        6529,
+        6530,
+        6531,
+        6532,
+        6533,
+        6534,
+        6535,
+        6536,
+        6537,
+        6538,
+        6539,
+        6540,
+        6541,
+        6542,
+        6543,
+        6544,
+        6545,
+        6546,
+        6547,
+        6548,
+        6549,
+        6550,
+        6551,
+        6552,
+        6553,
+        6554,
+        6555,
+        6556,
+        6557,
+        6558,
+        6559,
+        6560,
+        6561,
+        6562,
+        6563,
+        6564,
+        6565,
+        6566,
+        6567,
+        6568,
+        6569,
+        6570,
+        6571,
+        6572,
+        6573,
+        6574,
+        6575,
+        6576,
+        6577,
+        6578,
+        6579,
+        6580,
+        6581,
+        6582,
+        6583,
+        6584,
+        6585,
+        6586,
+        6587,
+        6588,
+        6589,
+        6590,
+        6591,
+        6592,
+        6593,
+        6594,
+        6595,
+        6596,
+        6597,
+        6598,
+        6599,
+        6600,
+        6601,
+        6602,
+        6603,
+        6604,
+        6605,
+        6606,
+        6607,
+        6608,
+        6609,
+        6610,
+        6611,
+        6612,
+        6613,
+        6614,
+        6615,
+        6616,
+        6617,
+        6618,
+        6619,
+        6620,
+        6621,
+        6622,
+        6623,
+        6624,
+        6625,
+        6626,
+        6627,
+        6628,
+        6629,
+        6630,
+        6631,
+        6632,
+        6633,
+        6634,
+        6635,
+        6636,
+        6637,
+        6638,
+        6639,
+        6640,
+        6641,
+        6642,
+        6643,
+        6644,
+        6645,
+        6646,
+        6647,
+        6648,
+        6649,
+        6650,
+        6651,
+        6652,
+        6653,
+        6654,
+        6655,
+        6656,
+        6657,
+        6658,
+        6659,
+        6660,
+        6661,
+        6662,
+        6663,
+        6664,
+        6665,
+        6666,
+        6667,
+        6668,
+        6669,
+        6670,
+        6671,
+        6672,
+        6673,
+        6674,
+        6675,
+        6676,
+        6677,
+        6678,
+        6679,
+        6680,
+        6681,
+        6682,
+        6683,
+        6684,
+        6685,
+        6686,
+        6687,
+        6688,
+        6689,
+        6690,
+        6691,
+        6692,
+        6693,
+        6694,
+        6695,
+        6696,
+        6697,
+        6698,
+        6699,
+        6700,
+        6701,
+        6702,
+        6703,
+        6704,
+        6705,
+        6706,
+        6707,
+        6708,
+        6709,
+        6710,
+        6711,
+        6712,
+        6713,
+        6714,
+        6715,
+        6716,
+        6717,
+        6718,
+        6719,
+        6720,
+        6721,
+        6722,
+        6723,
+        6724,
+        6725,
+        6726,
+        6727,
+        6728,
+        6729,
+        6730,
+        6731,
+        6732,
+        6733,
+        6734,
+        6735,
+        6736,
+        6737,
+        6738,
+        6739,
+        6740,
+        6741,
+        6742,
+        6743,
+        6744,
+        6745,
+        6746,
+        6747,
+        6748,
+        6749,
+        6750,
+        6751,
+        6752,
+        6753,
+        6754,
+        6755,
+        6756,
+        6757,
+        6758,
+        6759,
+        6760,
+        6761,
+        6762,
+        6763,
+        6764,
+        6765,
+        6766,
+        6767,
+        6768,
+        6769,
+        6770,
+        6771,
+        6772,
+        6773,
+        6774,
+        6775,
+        6776,
+        6777,
+        6778,
+        6779,
+        6780,
+        6781,
+        6782,
+        6783,
+        6784,
+        6785,
+        6786,
+        6787,
+        6788,
+        6789,
+        6790,
+        6791,
+        6792,
+        6793,
+        6794,
+        6795,
+        6796,
+        6797,
+        6798,
+        6799,
+        6800,
+        6801,
+        6802,
+        6803,
+        6804,
+        6805,
+        6806,
+        6807,
+        6808,
+        6809,
+        6810,
+        6811,
+        6812,
+        6813,
+        6814,
+        6815,
+        6816,
+        6817,
+        6818,
+        6819,
+        6820,
+        6821,
+        6822,
+        6823,
+        6824,
+        6825,
+        6826,
+        6827,
+        6828,
+        6829,
+        6830,
+        6831,
+        6832,
+        6833,
+        6834,
+        6835,
+        6836,
+        6837,
+        6838,
+        6839,
+        6840,
+        6841,
+        6842,
+        6843,
+        6844,
+        6845,
+        6846,
+        6847,
+        6848,
+        6849,
+        6850,
+        6851,
+        6852,
+        6853,
+        6854,
+        6855,
+        6856,
+        6857,
+        6858,
+        6859,
+        6860,
+        6861,
+        6862,
+        6863,
+        6864,
+        6865,
+        6866,
+        6867,
+        6868,
+        6869,
+        6870,
+        6871,
+        6872,
+        6873,
+        6874,
+        6875,
+        6876,
+        6877,
+        6878,
+        6879,
+        6880,
+        6881,
+        6882,
+        6883,
+        6884,
+        6885,
+        6886,
+        6887,
+        6888,
+        6889,
+        6890,
+        6891,
+        6892,
+        6893,
+        6894,
+        6895,
+        6896,
+        6897,
+        6898,
+        6899,
+        6900,
+        6901,
+        6902,
+        6903,
+        6904,
+        6905,
+        6906,
+        6907,
+        6908,
+        6909,
+        6910,
+        6911,
+        6912,
+        6913,
+        6914,
+        6915,
+        6916,
+        6917,
+        6918,
+        6919,
+        6920,
+        6921,
+        6922,
+        6923,
+        6924,
+        6925,
+        6926,
+        6927,
+        6928,
+        6929,
+        6930,
+        6931,
+        6932,
+        6933,
+        6934,
+        6935,
+        6936,
+        6937,
+        6938,
+        6939,
+        6940,
+        6941,
+        6942,
+        6943,
+        6944,
+        6945,
+        6946,
+        6947,
+        6948,
+        6949,
+        6950,
+        6951,
+        6952,
+        6953,
+        6954,
+        6955,
+        6956,
+        6957,
+        6958,
+        6959,
+        6960,
+        6961,
+        6962,
+        6963,
+        6964,
+        6965,
+        6966,
+        6967,
+        6968,
+        6969,
+        6970,
+        6971,
+        6972,
+        6973,
+        6974,
+        6975,
+        6976,
+        6977,
+        6978,
+        6979,
+        6980,
+        6981,
+        6982,
+        6983,
+        6984,
+        6985,
+        6986,
+        6987,
+        6988,
+        6989,
+        6990,
+        6991,
+        6992,
+        6993,
+        6994,
+        6995,
+        6996,
+        6997,
+        6998,
+        6999
+      ],
+      "retired_seeds": [
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        1000,
+        1001,
+        1002,
+        1003,
+        1004,
+        1005,
+        1006,
+        1007,
+        1008,
+        1009,
+        1010,
+        1011,
+        1012,
+        1013,
+        1014,
+        1015,
+        1016,
+        1017,
+        1018,
+        1019,
+        1020,
+        1021,
+        1022,
+        1023,
+        1024,
+        1025,
+        1026,
+        1027,
+        1028,
+        1029,
+        1030,
+        1031,
+        1032,
+        1033,
+        1034,
+        1035,
+        1036,
+        1037,
+        1038,
+        1039,
+        1040,
+        1041,
+        1042,
+        1043,
+        1044,
+        1045,
+        1046,
+        1047,
+        1048,
+        1049,
+        1050,
+        1051,
+        1052,
+        1053,
+        1054,
+        1055,
+        1056,
+        1057,
+        1058,
+        1059,
+        1060,
+        1061,
+        1062,
+        1063,
+        1064,
+        1065,
+        1066,
+        1067,
+        1068,
+        1069,
+        1070,
+        1071,
+        1072,
+        1073,
+        1074,
+        1075,
+        1076,
+        1077,
+        1078,
+        1079,
+        1080,
+        1081,
+        1082,
+        1083,
+        1084,
+        1085,
+        1086,
+        1087,
+        1088,
+        1089,
+        1090,
+        1091,
+        1092,
+        1093,
+        1094,
+        1095,
+        1096,
+        1097,
+        1098,
+        1099,
+        2000,
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008,
+        2009,
+        2010,
+        2011,
+        2012,
+        2013,
+        2014,
+        2015,
+        2016,
+        2017,
+        2018,
+        2019,
+        2020,
+        2021,
+        2022,
+        2023,
+        2024,
+        2025,
+        2026,
+        2027,
+        2028,
+        2029,
+        2030,
+        2031,
+        2032,
+        2033,
+        2034,
+        2035,
+        2036,
+        2037,
+        2038,
+        2039,
+        2040,
+        2041,
+        2042,
+        2043,
+        2044,
+        2045,
+        2046,
+        2047,
+        2048,
+        2049,
+        2050,
+        2051,
+        2052,
+        2053,
+        2054,
+        2055,
+        2056,
+        2057,
+        2058,
+        2059,
+        2060,
+        2061,
+        2062,
+        2063,
+        2064,
+        2065,
+        2066,
+        2067,
+        2068,
+        2069,
+        2070,
+        2071,
+        2072,
+        2073,
+        2074,
+        2075,
+        2076,
+        2077,
+        2078,
+        2079,
+        2080,
+        2081,
+        2082,
+        2083,
+        2084,
+        2085,
+        2086,
+        2087,
+        2088,
+        2089,
+        2090,
+        2091,
+        2092,
+        2093,
+        2094,
+        2095,
+        2096,
+        2097,
+        2098,
+        2099
+      ],
+      "fresh_seed_start": 1000000,
+      "randomize": [
+        [
+          "body_mass",
+          0.01
+        ],
+        [
+          "body_com_height",
+          0.08
+        ],
+        [
+          "body_inertia",
+          0.15
+        ],
+        [
+          "wheel_inertia",
+          0.2
+        ],
+        [
+          "rotor_inertia",
+          0.08
+        ],
+        [
+          "torque_constant",
+          0.03
+        ],
+        [
+          "resistance",
+          0.05
+        ],
+        [
+          "supply_voltage",
+          0.105
+        ],
+        [
+          "gear_efficiency",
+          0.02
+        ]
+      ],
+      "randomize_range": [
+        [
+          "wheel_friction",
+          0.0012,
+          0.0022
+        ],
+        [
+          "coulomb_friction",
+          0.03,
+          0.055
+        ],
+        [
+          "pitch_bias",
+          -0.015,
+          0.015
+        ],
+        [
+          "gearbox_backlash",
+          0.019198621771937627,
+          0.027925268031909273
+        ],
+        [
+          "coupling_backlash",
+          0.0,
+          0.05235987755982989
+        ],
+        [
+          "pwm_tick_phase",
+          0.0,
+          1.0
+        ]
+      ],
+      "latency_range_s": [
+        0.0075,
+        0.0125
+      ],
+      "robot_seed": 0,
+      "sensitivity_weight": 0.0,
+      "sensitivity_nudge_deg": 0.0057
+    },
+    "learning": {
+      "speed_scale": 0.4,
+      "velocity_error_scale": 0.25,
+      "pitch_scale": 0.3,
+      "pitch_rate_scale": 3.4,
+      "int_v_scale": 0.4,
+      "int_theta_scale": 0.2,
+      "command_scale": 0.4,
+      "output_scale": 0.4,
+      "t_leak_s": 10.0,
+      "integral_limits": [
+        1.0,
+        1.0
+      ],
+      "hidden": [
+        16,
+        16
+      ],
+      "full_cma_max_params": 600,
+      "linear_popsize": 256,
+      "mlp_popsize": 1332,
+      "residual_authority": 0.25,
+      "residual_setpoint_scale": 0.25,
+      "residual_int_theta_scale": 0.06,
+      "reference_pid_file": null,
+      "reference_pid_entry": "PID, hand-tuned",
+      "output_dir": "C:/balancebot_training",
+      "sigma0": [
+        [
+          "linear",
+          2.0
+        ],
+        [
+          "mlp",
+          0.5
+        ],
+        [
+          "warm",
+          0.5
+        ],
+        [
+          "residual",
+          0.5
+        ]
+      ],
+      "warm_linear_std": 0.1,
+      "init_output_std": 0.01,
+      "budget_robot_seconds": [
+        [
+          "linear",
+          1500000000.0
+        ],
+        [
+          "mlp",
+          6000000000.0
+        ],
+        [
+          "warm",
+          6000000000.0
+        ],
+        [
+          "residual",
+          6000000000.0
+        ]
+      ],
+      "checkpoints_robot_seconds": [
+        1000000.0,
+        3000000.0,
+        10000000.0,
+        30000000.0,
+        100000000.0,
+        300000000.0,
+        1000000000.0,
+        3000000000.0,
+        6000000000.0
+      ],
+      "pid_reference_evaluations": 9720,
+      "profiles": [
+        {
+          "name": "quick",
+          "n_train_seeds": 10,
+          "dev_tier": "smoke",
+          "dev_60s": false,
+          "max_generations": 30,
+          "stagnation_checkpoints": 0,
+          "float32": true
+        },
+        {
+          "name": "full",
+          "n_train_seeds": 50,
+          "dev_tier": "dev",
+          "dev_60s": true,
+          "max_generations": 100000,
+          "stagnation_checkpoints": 3,
+          "float32": true
+        }
+      ]
+    },
+    "derived": {
+      "fall_angle_rad": 1.0471975511965976,
+      "max_lean_rad": 0.4363323129985824,
+      "start_pitches_rad": [
+        0.05000019241113355,
+        -0.15000057723340066,
+        0.29999940913754936
+      ],
+      "critical_pitch_gain": 0.26752390800945197,
+      "critical_pitch_gain_kp_floor_robot": 0.2924385541424254,
+      "search_bounds": {
+        "kp": {
+          "low": 0.321682409556668,
+          "high": 30.0,
+          "log_scale": true
+        },
+        "ki": {
+          "low": 0.0,
+          "high": 10.0,
+          "log_scale": false
+        },
+        "kd": {
+          "low": 0.0,
+          "high": 1.0,
+          "log_scale": false
+        },
+        "kv_p": {
+          "low": 0.0,
+          "high": 2.0,
+          "log_scale": false
+        }
+      },
+      "motor_stall_torque_limit": 0.9076472727272725,
+      "motor_no_load_speed_rad_s": 21.839080459770116,
+      "reflected_rotor_inertia": 0.00109,
+      "cost_matched_lqr_gain": [
+        -3.409762183552403,
+        -3.408862151095044,
+        -0.3546224986805136,
+        0.0,
+        0.11900250109557009,
+        0.11928036764329404
+      ]
+    }
+  },
+  "latency_sweep": {
+    "seeds": [
+      5000,
+      5049
+    ],
+    "baseline_ms": 7.5,
+    "threshold_falls": 4,
+    "cost_factor": 1.5,
+    "curves": {
+      "PID, hand-tuned": {
+        "latency_ms": [
+          7.5,
+          10.0,
+          12.5,
+          15.0,
+          17.5,
+          20.0,
+          25.0,
+          30.0,
+          35.0,
+          40.0
+        ],
+        "falls": [
+          8,
+          14,
+          14,
+          9,
+          11,
+          18,
+          34,
+          37,
+          39,
+          68
+        ],
+        "mean_cost": [
+          155.3127054812937,
+          230.9714746760055,
+          233.45912356406848,
+          171.20723306304134,
+          193.47765927628416,
+          280.3131098015519,
+          483.06241460103996,
+          522.9518621121318,
+          551.3065097404914,
+          916.7042685587448
+        ],
+        "median_cost": [
+          51.27141925350204,
+          54.325936725305084,
+          56.42396381832664,
+          54.64299589173214,
+          51.39193804644218,
+          52.148214458750644,
+          58.69554040245306,
+          63.04285369049226,
+          66.01093796931993,
+          94.48890639533943
+        ],
+        "median_ratio_vs_reference": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "fall_rate_95ci": [
+          [
+            0.02330381019647,
+            0.10238189602332377
+          ],
+          [
+            0.05197017229447824,
+            0.15163853130364813
+          ],
+          [
+            0.05197017229447824,
+            0.15163853130364813
+          ],
+          [
+            0.02779997779445594,
+            0.1108415200136255
+          ],
+          [
+            0.03717461478190552,
+            0.12742416212603871
+          ],
+          [
+            0.07269346669676446,
+            0.1830088770247613
+          ],
+          [
+            0.16236927195059325,
+            0.3020774325061646
+          ],
+          [
+            0.18000648527084243,
+            0.3236100200889078
+          ],
+          [
+            0.19187581776695778,
+            0.33785672065266165
+          ],
+          [
+            0.3719742109510012,
+            0.536572414418704
+          ]
+        ],
+        "first_latency_with_falls": 7.5,
+        "falls_at_or_below_baseline": true,
+        "falls_at_baseline": 8,
+        "first_latency_with_cost": 40.0,
+        "first_latency_losing_to_reference": null,
+        "scenarios": 150
+      },
+      "PID, model-based": {
+        "latency_ms": [
+          7.5,
+          10.0,
+          12.5,
+          15.0,
+          17.5,
+          20.0,
+          25.0,
+          30.0,
+          35.0,
+          40.0
+        ],
+        "falls": [
+          4,
+          6,
+          8,
+          6,
+          7,
+          15,
+          27,
+          67,
+          108,
+          143
+        ],
+        "mean_cost": [
+          80.68859193927665,
+          105.35322002187912,
+          130.30184164474693,
+          105.5753620368392,
+          119.88921067345916,
+          221.37532187139112,
+          374.8525449024364,
+          880.980165458499,
+          1405.285594435582,
+          1860.3349694333124
+        ],
+        "median_cost": [
+          27.879514614230324,
+          27.68549054075007,
+          28.24620355529805,
+          28.44670831329737,
+          29.08549363550996,
+          29.703539332703834,
+          33.09201864564612,
+          46.93932627986564,
+          1912.4011733897723,
+          1940.8081611182129
+        ],
+        "median_ratio_vs_reference": [
+          0.5518648605935261,
+          0.5417394583889534,
+          0.5231365611404057,
+          0.550197962378508,
+          0.5710997045400805,
+          0.5779825867129569,
+          0.5719427224885032,
+          0.7597824928625045,
+          11.298598136633377,
+          19.9123476340392
+        ],
+        "fall_rate_95ci": [
+          [
+            0.007312546398008252,
+            0.06686787667748939
+          ],
+          [
+            0.014818521114898016,
+            0.08502781471819877
+          ],
+          [
+            0.02330381019647,
+            0.10238189602332377
+          ],
+          [
+            0.014818521114898016,
+            0.08502781471819877
+          ],
+          [
+            0.018965569634577503,
+            0.0937858649877965
+          ],
+          [
+            0.05705743483624696,
+            0.15956788512757702
+          ],
+          [
+            0.12209962757762026,
+            0.25097789500601614
+          ],
+          [
+            0.3655473468907509,
+            0.5299346538729368
+          ],
+          [
+            0.6409251499512538,
+            0.7901647311422533
+          ],
+          [
+            0.9062141350122035,
+            0.9810344303654225
+          ]
+        ],
+        "first_latency_with_falls": 7.5,
+        "falls_at_or_below_baseline": true,
+        "falls_at_baseline": 4,
+        "first_latency_with_cost": 30.0,
+        "first_latency_losing_to_reference": 35.0,
+        "scenarios": 150
+      },
+      "PID, DE / seed0": {
+        "latency_ms": [
+          7.5,
+          10.0,
+          12.5,
+          15.0,
+          17.5,
+          20.0,
+          25.0,
+          30.0,
+          35.0,
+          40.0
+        ],
+        "falls": [
+          4,
+          5,
+          9,
+          12,
+          18,
+          22,
+          37,
+          97,
+          134,
+          150
+        ],
+        "mean_cost": [
+          79.93634430007025,
+          92.53448391304673,
+          143.43092279745292,
+          181.91656432503214,
+          259.4907052788904,
+          312.0600567073057,
+          506.9021668068541,
+          1266.9807460837337,
+          1753.4984002042763,
+          1967.6691239182737
+        ],
+        "median_cost": [
+          27.603293764707672,
+          27.897332254179137,
+          28.504237913530154,
+          29.988169049705327,
+          31.818651873520242,
+          33.90615125583385,
+          40.9858064999804,
+          1910.1705804753321,
+          1949.576713621871,
+          1969.610969186786
+        ],
+        "median_ratio_vs_reference": [
+          0.5478476258089442,
+          0.5384739531840297,
+          0.5329093152722928,
+          0.5597143586472173,
+          0.6266462795106411,
+          0.6558521437232334,
+          0.7344351742782174,
+          1.0602778173826,
+          28.150626076523785,
+          20.897961774529485
+        ],
+        "fall_rate_95ci": [
+          [
+            0.007312546398008252,
+            0.06686787667748939
+          ],
+          [
+            0.01091018646891129,
+            0.07607232253734687
+          ],
+          [
+            0.02779997779445594,
+            0.1108415200136255
+          ],
+          [
+            0.04202026470017238,
+            0.1355738902126391
+          ],
+          [
+            0.07269346669676446,
+            0.1830088770247613
+          ],
+          [
+            0.0942550848625745,
+            0.21359421872617906
+          ],
+          [
+            0.18000648527084243,
+            0.3236100200889078
+          ],
+          [
+            0.5645247450850535,
+            0.7228880546887881
+          ],
+          [
+            0.8325636609592538,
+            0.9377894259935293
+          ],
+          [
+            0.9757074028338915,
+            1.0
+          ]
+        ],
+        "first_latency_with_falls": 7.5,
+        "falls_at_or_below_baseline": true,
+        "falls_at_baseline": 4,
+        "first_latency_with_cost": 30.0,
+        "first_latency_losing_to_reference": 30.0,
+        "scenarios": 150
+      },
+      "PID, DE / seed1": {
+        "latency_ms": [
+          7.5,
+          10.0,
+          12.5,
+          15.0,
+          17.5,
+          20.0,
+          25.0,
+          30.0,
+          35.0,
+          40.0
+        ],
+        "falls": [
+          4,
+          6,
+          7,
+          7,
+          8,
+          13,
+          24,
+          45,
+          82,
+          138
+        ],
+        "mean_cost": [
+          81.76395498458167,
+          106.9516701218385,
+          120.38106773945316,
+          120.79082509189641,
+          134.79843921458698,
+          198.80039744271411,
+          342.2437754734312,
+          608.5831925021045,
+          1078.5310168714368,
+          1792.6236715841162
+        ],
+        "median_cost": [
+          29.404522957107837,
+          29.818975456068337,
+          29.932248495472276,
+          30.456136495687137,
+          31.473953868590748,
+          32.686883920416285,
+          36.815658912196454,
+          44.68768961583111,
+          1875.5699799272609,
+          1938.0320273029001
+        ],
+        "median_ratio_vs_reference": [
+          0.5718669829122347,
+          0.5593984016511353,
+          0.550966045154536,
+          0.5786446212678809,
+          0.6339761878159984,
+          0.6350045153482727,
+          0.653396985672914,
+          0.7894468908381481,
+          0.9970621926048133,
+          1.114789938199683
+        ],
+        "fall_rate_95ci": [
+          [
+            0.007312546398008252,
+            0.06686787667748939
+          ],
+          [
+            0.014818521114898016,
+            0.08502781471819877
+          ],
+          [
+            0.018965569634577503,
+            0.0937858649877965
+          ],
+          [
+            0.018965569634577503,
+            0.0937858649877965
+          ],
+          [
+            0.02330381019647,
+            0.10238189602332377
+          ],
+          [
+            0.046955220239447176,
+            0.14364272328338715
+          ],
+          [
+            0.1052866778395638,
+            0.22864918353310765
+          ],
+          [
+            0.2279700158023344,
+            0.38012123362421896
+          ],
+          [
+            0.46342758558129604,
+            0.6280257890489989
+          ],
+          [
+            0.8644261097873609,
+            0.9579797352998276
+          ]
+        ],
+        "first_latency_with_falls": 7.5,
+        "falls_at_or_below_baseline": true,
+        "falls_at_baseline": 4,
+        "first_latency_with_cost": 30.0,
+        "first_latency_losing_to_reference": 40.0,
+        "scenarios": 150
+      },
+      "PID, CMA-mid / seed0": {
+        "latency_ms": [
+          7.5,
+          10.0,
+          12.5,
+          15.0,
+          17.5,
+          20.0,
+          25.0,
+          30.0,
+          35.0,
+          40.0
+        ],
+        "falls": [
+          4,
+          4,
+          6,
+          9,
+          11,
+          12,
+          25,
+          73,
+          120,
+          147
+        ],
+        "mean_cost": [
+          80.03324122273291,
+          79.75744004611211,
+          105.63588186655186,
+          144.0557087473477,
+          170.4140285353631,
+          184.23793491543347,
+          351.94880934577753,
+          957.395652560901,
+          1553.7748514003908,
+          1917.70428750833
+        ],
+        "median_cost": [
+          27.068898814218336,
+          27.48303904059106,
+          27.593776725969068,
+          28.722479334026595,
+          29.682682987916305,
+          30.58455873993988,
+          34.651623377868226,
+          55.446515990420465,
+          1916.723238453696,
+          1944.4004952489881
+        ],
+        "median_ratio_vs_reference": [
+          0.5406106406589073,
+          0.525362482901857,
+          0.516924148241257,
+          0.5531856296430724,
+          0.5874581288568888,
+          0.5891075463720884,
+          0.6146210616684789,
+          0.9682205557038702,
+          24.826060541811913,
+          20.91363181873418
+        ],
+        "fall_rate_95ci": [
+          [
+            0.007312546398008252,
+            0.06686787667748939
+          ],
+          [
+            0.007312546398008252,
+            0.06686787667748939
+          ],
+          [
+            0.014818521114898016,
+            0.08502781471819877
+          ],
+          [
+            0.02779997779445594,
+            0.1108415200136255
+          ],
+          [
+            0.03717461478190552,
+            0.12742416212603871
+          ],
+          [
+            0.04202026470017238,
+            0.1355738902126391
+          ],
+          [
+            0.11085733201757471,
+            0.23612432654043203
+          ],
+          [
+            0.40432057330630283,
+            0.5695497845258533
+          ],
+          [
+            0.7269637822090724,
+            0.8608060007763415
+          ],
+          [
+            0.9426657777117942,
+            0.9958563747187794
+          ]
+        ],
+        "first_latency_with_falls": 7.5,
+        "falls_at_or_below_baseline": true,
+        "falls_at_baseline": 4,
+        "first_latency_with_cost": 30.0,
+        "first_latency_losing_to_reference": 35.0,
+        "scenarios": 150
+      },
+      "PID, CMA-mid / seed1": {
+        "latency_ms": [
+          7.5,
+          10.0,
+          12.5,
+          15.0,
+          17.5,
+          20.0,
+          25.0,
+          30.0,
+          35.0,
+          40.0
+        ],
+        "falls": [
+          3,
+          4,
+          6,
+          9,
+          11,
+          13,
+          36,
+          92,
+          133,
+          149
+        ],
+        "mean_cost": [
+          66.2832994828999,
+          78.87579346542462,
+          104.92099768012623,
+          143.08961174677145,
+          169.6420581247688,
+          195.55418236456245,
+          491.8433574586862,
+          1198.3648796042983,
+          1724.277145622794,
+          1945.1107635842905
+        ],
+        "median_cost": [
+          26.259140593571413,
+          26.567074194812747,
+          27.15303078378453,
+          27.44187129631495,
+          28.920795369690733,
+          29.98258277975134,
+          35.914516999887844,
+          1906.3732286014642,
+          1934.9507327631836,
+          1963.447083578493
+        ],
+        "median_ratio_vs_reference": [
+          0.5136865078922725,
+          0.5003734810143701,
+          0.49971068301693466,
+          0.5370926398907955,
+          0.582579389722921,
+          0.5662331067670169,
+          0.6316911453362417,
+          1.0013823287279031,
+          27.563773225695876,
+          20.903318801828696
+        ],
+        "fall_rate_95ci": [
+          [
+            0.004143625281220548,
+            0.05733422228820578
+          ],
+          [
+            0.007312546398008252,
+            0.06686787667748939
+          ],
+          [
+            0.014818521114898016,
+            0.08502781471819877
+          ],
+          [
+            0.02779997779445594,
+            0.1108415200136255
+          ],
+          [
+            0.03717461478190552,
+            0.12742416212603871
+          ],
+          [
+            0.046955220239447176,
+            0.14364272328338715
+          ],
+          [
+            0.17410454730033276,
+            0.3164547505468185
+          ],
+          [
+            0.5304533422065143,
+            0.6916426928331264
+          ],
+          [
+            0.8247513613344629,
+            0.9325758603520913
+          ],
+          [
+            0.9634168322594198,
+            0.99983122885689
+          ]
+        ],
+        "first_latency_with_falls": 10.0,
+        "falls_at_or_below_baseline": false,
+        "falls_at_baseline": 3,
+        "first_latency_with_cost": 30.0,
+        "first_latency_losing_to_reference": 30.0,
+        "scenarios": 150
+      },
+      "PID, CMA-mid (mean) / seed0": {
+        "latency_ms": [
+          7.5,
+          10.0,
+          12.5,
+          15.0,
+          17.5,
+          20.0,
+          25.0,
+          30.0,
+          35.0,
+          40.0
+        ],
+        "falls": [
+          4,
+          4,
+          5,
+          6,
+          10,
+          15,
+          25,
+          48,
+          103,
+          138
+        ],
+        "mean_cost": [
+          80.97778475084614,
+          80.82080824331516,
+          94.09341858392172,
+          107.10209826891642,
+          158.59288557571074,
+          221.81219883645448,
+          352.6521610805644,
+          645.8277989632804,
+          1340.3385267679985,
+          1792.3957377797715
+        ],
+        "median_cost": [
+          28.59034450052625,
+          28.62649885357687,
+          28.76714911219376,
+          29.199100750267903,
+          30.532481078376566,
+          31.013965949631277,
+          35.046269885871354,
+          43.806809205358746,
+          1910.6666666774895,
+          1935.3203635859086
+        ],
+        "median_ratio_vs_reference": [
+          0.5550044470206889,
+          0.5469440790810912,
+          0.5303604546966693,
+          0.5636106327867854,
+          0.6055466568405395,
+          0.6045212207412438,
+          0.6143837013681919,
+          0.699327734260373,
+          1.0286766780183383,
+          18.01972920881649
+        ],
+        "fall_rate_95ci": [
+          [
+            0.007312546398008252,
+            0.06686787667748939
+          ],
+          [
+            0.007312546398008252,
+            0.06686787667748939
+          ],
+          [
+            0.01091018646891129,
+            0.07607232253734687
+          ],
+          [
+            0.014818521114898016,
+            0.08502781471819877
+          ],
+          [
+            0.03242972815867642,
+            0.11918397706692581
+          ],
+          [
+            0.05705743483624696,
+            0.15956788512757702
+          ],
+          [
+            0.11085733201757471,
+            0.23612432654043203
+          ],
+          [
+            0.24626951571242767,
+            0.40100578566330813
+          ],
+          [
+            0.605938286402949,
+            0.7598480539030887
+          ],
+          [
+            0.8644261097873609,
+            0.9579797352998276
+          ]
+        ],
+        "first_latency_with_falls": 7.5,
+        "falls_at_or_below_baseline": true,
+        "falls_at_baseline": 4,
+        "first_latency_with_cost": 30.0,
+        "first_latency_losing_to_reference": 35.0,
+        "scenarios": 150
+      },
+      "PID, CMA-mid (mean) / seed1": {
+        "latency_ms": [
+          7.5,
+          10.0,
+          12.5,
+          15.0,
+          17.5,
+          20.0,
+          25.0,
+          30.0,
+          35.0,
+          40.0
+        ],
+        "falls": [
+          5,
+          5,
+          5,
+          6,
+          9,
+          15,
+          28,
+          56,
+          116,
+          143
+        ],
+        "mean_cost": [
+          92.79280408700177,
+          92.9254270241302,
+          93.76452752828038,
+          106.85438109683845,
+          145.75513687632917,
+          222.14666978062394,
+          390.46625921599156,
+          746.617727357702,
+          1506.043110955639,
+          1863.6814469191509
+        ],
+        "median_cost": [
+          27.700769405541337,
+          28.118184779954845,
+          28.35785005130994,
+          29.01694090530867,
+          29.769990048594327,
+          30.9712287607092,
+          35.40312535754877,
+          46.37139387423544,
+          1917.208859646477,
+          1943.089453050647
+        ],
+        "median_ratio_vs_reference": [
+          0.5484137219730616,
+          0.5294624525412344,
+          0.5185506059576834,
+          0.5630775037329234,
+          0.591757395512085,
+          0.5964835967376438,
+          0.6178036083306881,
+          0.7625410780466165,
+          24.648109791236468,
+          19.210876189602445
+        ],
+        "fall_rate_95ci": [
+          [
+            0.01091018646891129,
+            0.07607232253734687
+          ],
+          [
+            0.01091018646891129,
+            0.07607232253734687
+          ],
+          [
+            0.01091018646891129,
+            0.07607232253734687
+          ],
+          [
+            0.014818521114898016,
+            0.08502781471819877
+          ],
+          [
+            0.02779997779445594,
+            0.1108415200136255
+          ],
+          [
+            0.05705743483624696,
+            0.15956788512757702
+          ],
+          [
+            0.12776826559889087,
+            0.25835907285346305
+          ],
+          [
+            0.2958124152263864,
+            0.45596435920558026
+          ],
+          [
+            0.6979225674938354,
+            0.8376307280494067
+          ],
+          [
+            0.9062141350122035,
+            0.9810344303654225
+          ]
+        ],
+        "first_latency_with_falls": 7.5,
+        "falls_at_or_below_baseline": true,
+        "falls_at_baseline": 5,
+        "first_latency_with_cost": 30.0,
+        "first_latency_losing_to_reference": 35.0,
+        "scenarios": 150
+      },
+      "PID, CMA-warm / seed0": {
+        "latency_ms": [
+          7.5,
+          10.0,
+          12.5,
+          15.0,
+          17.5,
+          20.0,
+          25.0,
+          30.0,
+          35.0,
+          40.0
+        ],
+        "falls": [
+          4,
+          8,
+          8,
+          9,
+          14,
+          15,
+          40,
+          100,
+          140,
+          150
+        ],
+        "mean_cost": [
+          79.41164251226834,
+          129.69115550345057,
+          130.3547956796998,
+          143.47807213588274,
+          208.65938054138275,
+          223.96573121521797,
+          545.0048140930948,
+          1301.7362062775387,
+          1824.470187196558,
+          1970.255957707737
+        ],
+        "median_cost": [
+          27.124071492704537,
+          27.692363764505334,
+          28.73849485097483,
+          29.3542286867103,
+          31.236493664460234,
+          32.506590591802514,
+          41.13301618656496,
+          1910.7160708291417,
+          1946.763466798726,
+          1974.6778553406707
+        ],
+        "median_ratio_vs_reference": [
+          0.5335002126465584,
+          0.5290053845835977,
+          0.5279663158656844,
+          0.5598286748592365,
+          0.616401210236359,
+          0.6275410908754752,
+          0.7511568322374407,
+          10.469150851588052,
+          28.206325957374965,
+          20.936977024782887
+        ],
+        "fall_rate_95ci": [
+          [
+            0.007312546398008252,
+            0.06686787667748939
+          ],
+          [
+            0.02330381019647,
+            0.10238189602332377
+          ],
+          [
+            0.02330381019647,
+            0.10238189602332377
+          ],
+          [
+            0.02779997779445594,
+            0.1108415200136255
+          ],
+          [
+            0.05197017229447824,
+            0.15163853130364813
+          ],
+          [
+            0.05705743483624696,
+            0.15956788512757702
+          ],
+          [
+            0.19784208320951066,
+            0.3449492094077142
+          ],
+          [
+            0.5851569937344411,
+            0.7414436366064876
+          ],
+          [
+            0.8808160229330741,
+            0.9675702718413236
+          ],
+          [
+            0.9757074028338915,
+            1.0
+          ]
+        ],
+        "first_latency_with_falls": 7.5,
+        "falls_at_or_below_baseline": true,
+        "falls_at_baseline": 4,
+        "first_latency_with_cost": 25.0,
+        "first_latency_losing_to_reference": 30.0,
+        "scenarios": 150
+      },
+      "PID, CMA-warm / seed1": {
+        "latency_ms": [
+          7.5,
+          10.0,
+          12.5,
+          15.0,
+          17.5,
+          20.0,
+          25.0,
+          30.0,
+          35.0,
+          40.0
+        ],
+        "falls": [
+          4,
+          4,
+          7,
+          7,
+          10,
+          13,
+          20,
+          27,
+          57,
+          104
+        ],
+        "mean_cost": [
+          80.60372543401168,
+          80.30055766857103,
+          118.82378035012695,
+          118.84720088634842,
+          157.00340591290455,
+          195.09187643908828,
+          288.9888800747605,
+          380.5188399082041,
+          763.1858303501836,
+          1359.9525871147273
+        ],
+        "median_cost": [
+          28.211140570712892,
+          27.919192212968518,
+          27.820910553342404,
+          27.758031039270946,
+          27.860769165532098,
+          28.227359797293143,
+          30.804720324382558,
+          34.568327865395325,
+          44.56519859279736,
+          1914.1126623662049
+        ],
+        "median_ratio_vs_reference": [
+          0.5546438055543055,
+          0.5392236574690503,
+          0.5255917181311938,
+          0.5383393494058146,
+          0.563682755652695,
+          0.5671247389086229,
+          0.5501932090429916,
+          0.5848137327456446,
+          0.6744503818075986,
+          1.0002998635601035
+        ],
+        "fall_rate_95ci": [
+          [
+            0.007312546398008252,
+            0.06686787667748939
+          ],
+          [
+            0.007312546398008252,
+            0.06686787667748939
+          ],
+          [
+            0.018965569634577503,
+            0.0937858649877965
+          ],
+          [
+            0.018965569634577503,
+            0.0937858649877965
+          ],
+          [
+            0.03242972815867642,
+            0.11918397706692581
+          ],
+          [
+            0.046955220239447176,
+            0.14364272328338715
+          ],
+          [
+            0.08338380663952641,
+            0.19838696759904956
+          ],
+          [
+            0.12209962757762026,
+            0.25097789500601614
+          ],
+          [
+            0.30207718425429364,
+            0.4627631120547151
+          ],
+          [
+            0.6128997034181229,
+            0.7659479938008387
+          ]
+        ],
+        "first_latency_with_falls": 7.5,
+        "falls_at_or_below_baseline": true,
+        "falls_at_baseline": 4,
+        "first_latency_with_cost": 35.0,
+        "first_latency_losing_to_reference": 40.0,
+        "scenarios": 150
+      },
+      "PID, CMA-warm (mean) / seed0": {
+        "latency_ms": [
+          7.5,
+          10.0,
+          12.5,
+          15.0,
+          17.5,
+          20.0,
+          25.0,
+          30.0,
+          35.0,
+          40.0
+        ],
+        "falls": [
+          3,
+          4,
+          5,
+          7,
+          8,
+          9,
+          29,
+          65,
+          114,
+          144
+        ],
+        "mean_cost": [
+          68.17447545928276,
+          80.64555053833486,
+          93.85349887633417,
+          119.43299024444437,
+          133.29144239788553,
+          147.31656500582628,
+          402.2325820017635,
+          857.06884108872,
+          1481.2833963815647,
+          1876.0959618205197
+        ],
+        "median_cost": [
+          28.185243361339783,
+          28.727227855916453,
+          28.836030803856865,
+          29.31252559503067,
+          30.082016628695197,
+          31.146764029444064,
+          37.45456234831796,
+          49.73493953375075,
+          1917.0228119973208,
+          1943.0934855547785
+        ],
+        "median_ratio_vs_reference": [
+          0.5540975022465131,
+          0.5408477817827663,
+          0.5245221547113392,
+          0.5596720703228757,
+          0.6014800265438973,
+          0.605763728651733,
+          0.6410649451067958,
+          0.8955283119247739,
+          24.600524412378633,
+          18.145343543313203
+        ],
+        "fall_rate_95ci": [
+          [
+            0.004143625281220548,
+            0.05733422228820578
+          ],
+          [
+            0.007312546398008252,
+            0.06686787667748939
+          ],
+          [
+            0.01091018646891129,
+            0.07607232253734687
+          ],
+          [
+            0.018965569634577503,
+            0.0937858649877965
+          ],
+          [
+            0.02330381019647,
+            0.10238189602332377
+          ],
+          [
+            0.02779997779445594,
+            0.1108415200136255
+          ],
+          [
+            0.13346678584650756,
+            0.26571148145734896
+          ],
+          [
+            0.3527364656974904,
+            0.5166164677468426
+          ],
+          [
+            0.6835452494531815,
+            0.8258954526996672
+          ],
+          [
+            0.9149721852818012,
+            0.985181478885102
+          ]
+        ],
+        "first_latency_with_falls": 10.0,
+        "falls_at_or_below_baseline": false,
+        "falls_at_baseline": 3,
+        "first_latency_with_cost": 30.0,
+        "first_latency_losing_to_reference": 35.0,
+        "scenarios": 150
+      },
+      "PID, CMA-warm (mean) / seed1": {
+        "latency_ms": [
+          7.5,
+          10.0,
+          12.5,
+          15.0,
+          17.5,
+          20.0,
+          25.0,
+          30.0,
+          35.0,
+          40.0
+        ],
+        "falls": [
+          4,
+          4,
+          6,
+          6,
+          9,
+          13,
+          18,
+          31,
+          53,
+          75
+        ],
+        "mean_cost": [
+          84.64205722227378,
+          84.14578439224042,
+          109.67113039683885,
+          109.33881795569202,
+          146.5238335901687,
+          197.0759020408389,
+          264.46287351965447,
+          430.15401811700093,
+          711.1637293534088,
+          993.5086568495251
+        ],
+        "median_cost": [
+          31.907803340390025,
+          31.74071724218095,
+          31.962813118566913,
+          31.768999794246742,
+          31.39466114670676,
+          31.621327084479333,
+          34.12718863862058,
+          38.267363314446655,
+          46.670022392077044,
+          944.9788728218238
+        ],
+        "median_ratio_vs_reference": [
+          0.634340099950962,
+          0.6259779379083525,
+          0.5976558723113572,
+          0.600393741542679,
+          0.6214088591151322,
+          0.6196116294675675,
+          0.6141221968813178,
+          0.6379992448882512,
+          0.6769878868396777,
+          0.9680077356169641
+        ],
+        "fall_rate_95ci": [
+          [
+            0.007312546398008252,
+            0.06686787667748939
+          ],
+          [
+            0.007312546398008252,
+            0.06686787667748939
+          ],
+          [
+            0.014818521114898016,
+            0.08502781471819877
+          ],
+          [
+            0.014818521114898016,
+            0.08502781471819877
+          ],
+          [
+            0.02779997779445594,
+            0.1108415200136255
+          ],
+          [
+            0.046955220239447176,
+            0.14364272328338715
+          ],
+          [
+            0.07269346669676446,
+            0.1830088770247613
+          ],
+          [
+            0.14494881633006737,
+            0.2803342891271908
+          ],
+          [
+            0.2771119453112119,
+            0.4354752549149465
+          ],
+          [
+            0.41735741029573414,
+            0.5826425897042659
+          ]
+        ],
+        "first_latency_with_falls": 7.5,
+        "falls_at_or_below_baseline": true,
+        "falls_at_baseline": 4,
+        "first_latency_with_cost": 40.0,
+        "first_latency_losing_to_reference": null,
+        "scenarios": 150
+      },
+      "PID, Random / seed0": {
+        "latency_ms": [
+          7.5,
+          10.0,
+          12.5,
+          15.0,
+          17.5,
+          20.0,
+          25.0,
+          30.0,
+          35.0,
+          40.0
+        ],
+        "falls": [
+          3,
+          3,
+          4,
+          6,
+          8,
+          11,
+          15,
+          22,
+          44,
+          97
+        ],
+        "mean_cost": [
+          79.4640724133193,
+          79.81863382341969,
+          93.4878250222309,
+          119.89672659418184,
+          146.2098141926218,
+          184.29871692296948,
+          238.86899479735663,
+          333.03408274142663,
+          624.4487536783354,
+          1307.4687139337766
+        ],
+        "median_cost": [
+          40.90613555133494,
+          42.10068572465178,
+          42.38852917084611,
+          42.4917646465408,
+          43.00382669308403,
+          44.98210552147387,
+          50.69251648529867,
+          57.12739013649805,
+          81.26461011123251,
+          1917.4722234890573
+        ],
+        "median_ratio_vs_reference": [
+          0.7965924392287018,
+          0.7908774842356614,
+          0.7718264802119701,
+          0.8035434770987941,
+          0.8643460970283101,
+          0.8731645850156688,
+          0.8873732047839135,
+          0.9898746562091891,
+          1.0276927291425517,
+          1.055772071568163
+        ],
+        "fall_rate_95ci": [
+          [
+            0.004143625281220548,
+            0.05733422228820578
+          ],
+          [
+            0.004143625281220548,
+            0.05733422228820578
+          ],
+          [
+            0.007312546398008252,
+            0.06686787667748939
+          ],
+          [
+            0.014818521114898016,
+            0.08502781471819877
+          ],
+          [
+            0.02330381019647,
+            0.10238189602332377
+          ],
+          [
+            0.03717461478190552,
+            0.12742416212603871
+          ],
+          [
+            0.05705743483624696,
+            0.15956788512757702
+          ],
+          [
+            0.0942550848625745,
+            0.21359421872617906
+          ],
+          [
+            0.22190631602233873,
+            0.3731242036952663
+          ],
+          [
+            0.5645247450850535,
+            0.7228880546887881
+          ]
+        ],
+        "first_latency_with_falls": 12.5,
+        "falls_at_or_below_baseline": false,
+        "falls_at_baseline": 3,
+        "first_latency_with_cost": 35.0,
+        "first_latency_losing_to_reference": 35.0,
+        "scenarios": 150
+      },
+      "PID, Random / seed1": {
+        "latency_ms": [
+          7.5,
+          10.0,
+          12.5,
+          15.0,
+          17.5,
+          20.0,
+          25.0,
+          30.0,
+          35.0,
+          40.0
+        ],
+        "falls": [
+          5,
+          6,
+          9,
+          11,
+          16,
+          18,
+          28,
+          36,
+          82,
+          115
+        ],
+        "mean_cost": [
+          94.16570471882297,
+          106.74345340407281,
+          145.1700573509921,
+          171.1067973924142,
+          235.58714100856693,
+          262.2330206201103,
+          392.79953637383034,
+          499.46774188013717,
+          1085.6296456298223,
+          1513.8036042146998
+        ],
+        "median_cost": [
+          28.772344503593523,
+          29.248287298688723,
+          29.648096462409203,
+          30.49014765844945,
+          31.8228153796728,
+          32.509943458069905,
+          36.63787516252509,
+          42.49481441399924,
+          1908.7758161808972,
+          1943.3855932191866
+        ],
+        "median_ratio_vs_reference": [
+          0.5717190259798104,
+          0.5658126273278963,
+          0.5513574639237271,
+          0.5878495294062733,
+          0.6286102254474264,
+          0.632822034638461,
+          0.6436575496738706,
+          0.7373856703987829,
+          1.0008548289332795,
+          1.0271562003284458
+        ],
+        "fall_rate_95ci": [
+          [
+            0.01091018646891129,
+            0.07607232253734687
+          ],
+          [
+            0.014818521114898016,
+            0.08502781471819877
+          ],
+          [
+            0.02779997779445594,
+            0.1108415200136255
+          ],
+          [
+            0.03717461478190552,
+            0.12742416212603871
+          ],
+          [
+            0.062210574006470704,
+            0.16743633904074617
+          ],
+          [
+            0.07269346669676446,
+            0.1830088770247613
+          ],
+          [
+            0.12776826559889087,
+            0.25835907285346305
+          ],
+          [
+            0.17410454730033276,
+            0.3164547505468185
+          ],
+          [
+            0.46342758558129604,
+            0.6280257890489989
+          ],
+          [
+            0.6907225682517097,
+            0.8317747490369354
+          ]
+        ],
+        "first_latency_with_falls": 7.5,
+        "falls_at_or_below_baseline": true,
+        "falls_at_baseline": 5,
+        "first_latency_with_cost": 35.0,
+        "first_latency_losing_to_reference": 35.0,
+        "scenarios": 150
+      },
+      "PID, CMA-lat10-15 / seed0": {
+        "latency_ms": [
+          7.5,
+          10.0,
+          12.5,
+          15.0,
+          17.5,
+          20.0,
+          25.0,
+          30.0,
+          35.0,
+          40.0
+        ],
+        "falls": [
+          2,
+          1,
+          2,
+          7,
+          10,
+          12,
+          25,
+          56,
+          125,
+          148
+        ],
+        "mean_cost": [
+          57.40589518482217,
+          44.635880444221264,
+          57.48916693284555,
+          121.18162011641854,
+          160.7737957741503,
+          187.0298322590898,
+          354.9849217532389,
+          748.7739689557981,
+          1623.6458524801978,
+          1933.6258411923593
+        ],
+        "median_cost": [
+          31.299011729773113,
+          30.800311205670045,
+          31.10691723644044,
+          31.566812859385053,
+          32.795003924187036,
+          33.78556997693159,
+          38.84355791563978,
+          55.768065707119305,
+          1928.7299082565748,
+          1966.0854527364977
+        ],
+        "median_ratio_vs_reference": [
+          0.6030445028421272,
+          0.5909486743608837,
+          0.5748887688675939,
+          0.6105710267493127,
+          0.6458634877537504,
+          0.6490335196284522,
+          0.6781089420803096,
+          0.9735972676516546,
+          26.428883041909472,
+          20.30222428111943
+        ],
+        "fall_rate_95ci": [
+          [
+            0.0016188270298397504,
+            0.04733301949633556
+          ],
+          [
+            0.00016877114310994754,
+            0.03658316774058025
+          ],
+          [
+            0.0016188270298397504,
+            0.04733301949633556
+          ],
+          [
+            0.018965569634577503,
+            0.0937858649877965
+          ],
+          [
+            0.03242972815867642,
+            0.11918397706692581
+          ],
+          [
+            0.04202026470017238,
+            0.1355738902126391
+          ],
+          [
+            0.11085733201757471,
+            0.23612432654043203
+          ],
+          [
+            0.2958124152263864,
+            0.45596435920558026
+          ],
+          [
+            0.763875673459568,
+            0.8891426679824252
+          ],
+          [
+            0.9526669805036644,
+            0.9983811729701603
+          ]
+        ],
+        "first_latency_with_falls": 15.0,
+        "falls_at_or_below_baseline": false,
+        "falls_at_baseline": 2,
+        "first_latency_with_cost": 30.0,
+        "first_latency_losing_to_reference": 35.0,
+        "scenarios": 150
+      }
+    },
+    "by_method": {
+      "PID, hand-tuned": {
+        "first_latency_with_falls": {
+          "per_run": [
+            7.5
+          ],
+          "median": 7.5
+        },
+        "first_latency_with_cost": {
+          "per_run": [
+            40.0
+          ],
+          "median": 40.0
+        },
+        "first_latency_losing_to_reference": {
+          "per_run": [
+            null
+          ],
+          "median": null
+        },
+        "falls_at_or_below_baseline": [
+          true
+        ]
+      },
+      "PID, model-based": {
+        "first_latency_with_falls": {
+          "per_run": [
+            7.5
+          ],
+          "median": 7.5
+        },
+        "first_latency_with_cost": {
+          "per_run": [
+            30.0
+          ],
+          "median": 30.0
+        },
+        "first_latency_losing_to_reference": {
+          "per_run": [
+            35.0
+          ],
+          "median": 35.0
+        },
+        "falls_at_or_below_baseline": [
+          true
+        ]
+      },
+      "PID, DE": {
+        "first_latency_with_falls": {
+          "per_run": [
+            7.5,
+            7.5
+          ],
+          "median": 7.5
+        },
+        "first_latency_with_cost": {
+          "per_run": [
+            30.0,
+            30.0
+          ],
+          "median": 30.0
+        },
+        "first_latency_losing_to_reference": {
+          "per_run": [
+            30.0,
+            40.0
+          ],
+          "median": 35.0
+        },
+        "falls_at_or_below_baseline": [
+          true,
+          true
+        ]
+      },
+      "PID, CMA-mid": {
+        "first_latency_with_falls": {
+          "per_run": [
+            7.5,
+            10.0
+          ],
+          "median": 8.75
+        },
+        "first_latency_with_cost": {
+          "per_run": [
+            30.0,
+            30.0
+          ],
+          "median": 30.0
+        },
+        "first_latency_losing_to_reference": {
+          "per_run": [
+            35.0,
+            30.0
+          ],
+          "median": 32.5
+        },
+        "falls_at_or_below_baseline": [
+          true,
+          false
+        ]
+      },
+      "PID, CMA-mid (mean)": {
+        "first_latency_with_falls": {
+          "per_run": [
+            7.5,
+            7.5
+          ],
+          "median": 7.5
+        },
+        "first_latency_with_cost": {
+          "per_run": [
+            30.0,
+            30.0
+          ],
+          "median": 30.0
+        },
+        "first_latency_losing_to_reference": {
+          "per_run": [
+            35.0,
+            35.0
+          ],
+          "median": 35.0
+        },
+        "falls_at_or_below_baseline": [
+          true,
+          true
+        ]
+      },
+      "PID, CMA-warm": {
+        "first_latency_with_falls": {
+          "per_run": [
+            7.5,
+            7.5
+          ],
+          "median": 7.5
+        },
+        "first_latency_with_cost": {
+          "per_run": [
+            25.0,
+            35.0
+          ],
+          "median": 30.0
+        },
+        "first_latency_losing_to_reference": {
+          "per_run": [
+            30.0,
+            40.0
+          ],
+          "median": 35.0
+        },
+        "falls_at_or_below_baseline": [
+          true,
+          true
+        ]
+      },
+      "PID, CMA-warm (mean)": {
+        "first_latency_with_falls": {
+          "per_run": [
+            10.0,
+            7.5
+          ],
+          "median": 8.75
+        },
+        "first_latency_with_cost": {
+          "per_run": [
+            30.0,
+            40.0
+          ],
+          "median": 35.0
+        },
+        "first_latency_losing_to_reference": {
+          "per_run": [
+            35.0,
+            null
+          ],
+          "median": null
+        },
+        "falls_at_or_below_baseline": [
+          false,
+          true
+        ]
+      },
+      "PID, Random": {
+        "first_latency_with_falls": {
+          "per_run": [
+            12.5,
+            7.5
+          ],
+          "median": 10.0
+        },
+        "first_latency_with_cost": {
+          "per_run": [
+            35.0,
+            35.0
+          ],
+          "median": 35.0
+        },
+        "first_latency_losing_to_reference": {
+          "per_run": [
+            35.0,
+            35.0
+          ],
+          "median": 35.0
+        },
+        "falls_at_or_below_baseline": [
+          false,
+          true
+        ]
+      },
+      "PID, CMA-lat10-15": {
+        "first_latency_with_falls": {
+          "per_run": [
+            15.0
+          ],
+          "median": 15.0
+        },
+        "first_latency_with_cost": {
+          "per_run": [
+            30.0
+          ],
+          "median": 30.0
+        },
+        "first_latency_losing_to_reference": {
+          "per_run": [
+            35.0
+          ],
+          "median": 35.0
+        },
+        "falls_at_or_below_baseline": [
+          false
+        ]
+      }
+    }
+  },
+  "elapsed_s": 262.9598515033722
+}

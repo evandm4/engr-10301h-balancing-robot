@@ -2,12 +2,14 @@
 
     cd ~/legobot && robot/run_safe.sh robot.measure.backlash --side left --seconds 10
 
-The motor is put in pwm mode at duty 0 (set_pwm(0, 0), NOT coast), so the output is as stiff as the winding
-makes it. Rock the wheel gently by hand back and forth between the two soft stops of the free play for
---seconds, not hard enough to back-drive the gearbox. The script logs POS and APOS and reports the
+The script sends pwm duty 0 (set_pwm(0, 0)). In slow PWM (pwmparams 1 0.01) duty 0 coasts the driver rather than
+braking the winding (confirmed in Bench B2b, DATASHEET 8.7), so only gearbox and brush friction hold the rotor:
+rock the wheel gently by hand back and forth between the two soft stops of the free play for --seconds, never hard
+enough to back-drive the gearbox and turn the rotor (rotor slip is not free play). The script logs POS and APOS and reports the
 peak-to-peak position, and from the time spent at each position the separation of the two dwell clusters
 (the two ends of the free play) in degrees. It then asks for the free play you saw at the tire tread in mm
-(blank to skip) and converts it to degrees of wheel rotation, 360 mm / (pi 69), for a 69 mm tire.
+(blank to skip) and converts it to degrees of wheel rotation, 360 mm / (pi D), for the tire diameter D
+(--diameter-mm, default 69; for a lever arm of length l measured instead, pass 2 l).
 
 WHY THE VISUAL READING MATTERS. If the encoder sits before the gearbox's last stage, the HAT reports about
 0 degrees of free play while the wheel visibly moves, because the play is downstream of the encoder. The
@@ -50,6 +52,8 @@ def main():
     ap.add_argument("--seconds", type=float, default=10.0)
     ap.add_argument("--pwmparams", type=float, nargs=2, default=list(cfg.PWMPARAMS))
     ap.add_argument("--outdir", default="logs")
+    ap.add_argument("--diameter-mm", type=float, default=WHEEL_DIAMETER_MM,
+                    help="diameter of the circle the visual reading is taken on (tire, or 2 x lever arm)")
     a = ap.parse_args()
 
     hat, vin = cm.open_hat(a.pwmparams)
@@ -87,9 +91,9 @@ def main():
             consts[cm.key("backlash_cluster_deg", side)] = cm.const(res["cluster_sep_deg"], None, "deg", 1, "none")
             mm = cm.ask_float("  free play seen at the tire tread, mm (blank to skip): ")
             if mm is not None:
-                deg = 360.0 * mm / (np.pi * WHEEL_DIAMETER_MM)
+                deg = 360.0 * mm / (np.pi * a.diameter_mm)
                 consts[cm.key("backlash_visual_deg", side)] = cm.const(deg, None, "deg", 1, "none")
-                print(f"  = {deg:.1f} deg of wheel rotation (for a {WHEEL_DIAMETER_MM:g} mm tire)")
+                print(f"  = {deg:.1f} deg of wheel rotation (for a {a.diameter_mm:g} mm diameter)")
                 if res["ptp_deg"] < 0.3 * deg:
                     print("  the encoder saw much less than the eye did: the encoder probably sits before the last gear stage")
     finally:
@@ -102,7 +106,7 @@ def main():
             w.writerow(["side", "t", "pos_deg_fwd", "apos_deg_fwd"])
             w.writerows(out_rows)
     meta = {"pwmparams": a.pwmparams, "vin": vin, "side": a.side, "wheel": "as built", "args": vars(a),
-            "wheel_diameter_mm": WHEEL_DIAMETER_MM, "firmware": hat.version}
+            "wheel_diameter_mm": a.diameter_mm, "firmware": hat.version}
     print("wrote", base + ".csv", cm.write_fit_json(base, "backlash", consts, meta))
     hat.close()
 

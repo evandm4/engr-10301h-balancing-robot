@@ -17,7 +17,7 @@ already works with any function of that shape.
 
 import time
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 from scipy.optimize import differential_evolution
@@ -44,6 +44,9 @@ class TuningResult:
     n_evals: int                       # number of times the objective was evaluated
     elapsed_s: float
     history: List[Tuple[int, float]] = field(default_factory=list)  # (evals so far, best cost so far)
+    # The search distribution's mean at the end, where the search keeps one (CMA-ES: its xfavorite). Often
+    # smoother than the best single sample, which on a chaotic objective is partly selection luck.
+    mean_gains: Optional[np.ndarray] = None
 
     def gains_dict(self):
         return {n: float(g) for n, g in zip(self.gain_names, self.gains)}

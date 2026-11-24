@@ -10,6 +10,7 @@
   },
   "include": [
     "README.md",
+    "CLAUDE.md",
     "ARCHITECTURE.md",
     "PHYSICS.md",
     "simulation/CONDITIONS.md",
@@ -17,12 +18,15 @@
     "config.py",
     "legobot_config.py",
 
+    "docs/legobot-review/triage.md",
+
     "hardware/legobot/*.md",
     "hardware/legobot/*.py",
     "hardware/legobot/*.sh",
     "hardware/legobot/robot/**/*.py",
     "hardware/legobot/robot/**/*.sh",
     "hardware/legobot/bench_data/*_fit.json",
+    "hardware/legobot/bench_data/*_summary.txt",
 
     "simulation/balance_sim/*.py",
     "simulation/batch_sim/*.py",
@@ -30,6 +34,7 @@
     "simulation/examples/datasheet_numbers.py",
 
     "simulation/tests/test_slow_pwm.py",
+    "simulation/tests/test_backlash.py",
     "simulation/tests/test_imu.py",
     "simulation/tests/test_encoder.py",
     "simulation/tests/test_voltage_mode.py",
@@ -37,6 +42,9 @@
     "simulation/tests/test_torch.py",
     "simulation/tests/test_friction_latency.py",
     "simulation/tests/test_linear_stability.py",
+    "simulation/tests/test_pid_design.py",
+    "simulation/tests/test_push.py",
+    "simulation/tests/test_report_metrics.py",
     "simulation/tests/test_conditions.py",
 
     "optimization/batch_tuning/*.py",
@@ -45,7 +53,8 @@
     "optimization/tuning/search_space.py",
     "optimization/tests/test_config.py",
     "optimization/tests/test_robust.py",
-    "optimization/tests/test_batch_tuning.py"
+    "optimization/tests/test_batch_tuning.py",
+    "optimization/tests/test_legobot_pipeline.py"
   ],
   "ignore": {
     "useGitignore": true,

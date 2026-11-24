@@ -68,7 +68,7 @@ class PulsedSlowPwmActuator(SlowPwmActuator):
 class PdmSlowPwmActuator(SlowPwmActuator):
     """Pulse-density modulation, the pattern pulse_imu found (DATASHEET 8.7): time is cut into ticks of
     `period` (10 ms, the HAT's 100 Hz loop); at each tick a running sum adds the duty in effect, and the
-    tick is a full-voltage pulse of the sum's sign when |sum| >= 0.5 (the sum then moves 1 toward zero),
+    tick is a full-voltage pulse of the sum's sign when |sum| > 0.5 (the sum then moves 1 toward zero),
     coasting otherwise. Small duties become sparse pulses (one per 200 ms at 0.05) but the delivered
     impulse tracks the command to within one pulse. The sum persists across commands (pwm_probe)."""
 
@@ -82,7 +82,7 @@ class PdmSlowPwmActuator(SlowPwmActuator):
         if tick != self.tick:                     # first call in a new tick: decide this tick's output
             self.tick = tick
             self.acc += max(-1.0, min(1.0, command))
-            self.out = 1.0 if self.acc >= 0.5 else -1.0 if self.acc <= -0.5 else 0.0
+            self.out = 1.0 if self.acc > 0.5 else -1.0 if self.acc < -0.5 else 0.0
             self.acc -= self.out
         return super().torque(self.out, relative_wheel_speed) if self.out else 0.0
 

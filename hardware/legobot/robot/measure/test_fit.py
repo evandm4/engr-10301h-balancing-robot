@@ -180,3 +180,16 @@ def test_allan_white_noise():
         m = round(tau * 200)
         assert abs(a - 0.01 / math.sqrt(m)) < 0.1 * 0.01 / math.sqrt(m)
     assert math.isnan(fit.allan_dev(x[:100], 200.0, [5.0])[1][0])
+
+
+def test_backlash_analysis_two_dwell_clusters():
+    """H3: cluster_sep_deg is the gap between the two dwell clusters (the full free play, +-half-width about the
+    middle), ptp_deg the whole excursion, so a rocking wheel with a slip spike has ptp > cluster_sep."""
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # hardware/legobot
+    from robot.measure.backlash import analyse
+    t = np.arange(0.0, 12.0, 0.01)
+    pos = np.where((t // 1.5) % 2 == 0, -1.29, 1.29)              # dwells 2.58 deg apart
+    pos[:30] = 2.0 + 0.0 * pos[:30]                                # a short rotor-slip excursion
+    res = analyse(t, pos)
+    assert res["cluster_sep_deg"] == pytest.approx(2.58, abs=0.1)
+    assert res["ptp_deg"] == pytest.approx(3.29, abs=1e-9)

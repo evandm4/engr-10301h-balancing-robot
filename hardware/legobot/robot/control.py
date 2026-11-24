@@ -265,6 +265,19 @@ class LineClock:
         return (t - self.t_ref) % self.period
 
 
+def port_lag(ref_times, other_times, nominal_period):
+    """How far the other port's line grid lags the reference port's, in [0, period) s; None if too few lines.
+
+    Each port streams on its own grid, started by configure(), so the lag changes from run to run (1.5-8 ms
+    in the 2026-11-23 logs). Logged as a diagnostic only: the pulse ticks don't follow their own port's grid,
+    and neither port's tick holds a fixed phase between runs (B1 follow-up and cable-swap sweeps, 2026-11-23:
+    port A 8.8 ms, port B 7.2 / 4.3 ms, then both 3.2 ms after re-plugging the motors, one power-up)."""
+    a, b = LineClock(nominal_period), LineClock(nominal_period)
+    if not (a.update(ref_times) and b.update(other_times)):
+        return None
+    return (b.t_ref - a.t_ref) % a.period
+
+
 class Pacer:
     """The loop's tick times. Locked: two ticks per HAT line period, at `offset` s after each half-period
     point of the LineClock grid, so every command lands at the same phase of the HAT's pulse ticks.
@@ -284,11 +297,23 @@ class Pacer:
 
 
 # --------------------------------------------------------------------------------------- safety ---
+def runaway_speed_for_vin(vin):
+    """Wheel speed (rad/s) at which the runaway trip fires: RUNAWAY_FRACTION of the no-load speed at this
+    supply. In slow PWM at duty 1 the no-load speed is (a V - tau_c) / (a k + b) with a = 0.0597 N m/V,
+    k = 0.348 V s/rad, b = 0.00085 N m s/rad and the Coulomb term 0.021 N m per motor (DATASHEET 8.7): 17.8 rad/s
+    at 6.8 V, 20.0 at 7.6, 22.2 at 8.4. A fixed threshold is too high on a sagging battery and too low on a
+    full one (review H6). Falls back to lc.RUNAWAY_SPEED when vin is unknown."""
+    if vin is None:
+        return lc.RUNAWAY_SPEED
+    vin = max(float(vin), lc.VIN_CUTOFF)    # a glitched low reading (0 V) must not push the threshold to zero or below
+    return lc.RUNAWAY_FRACTION * (0.0597 * vin - 0.021) / (0.0597 * 0.348 + 0.00085)
+
+
 class Safety:
     """The per-tick trips of D3 that need no clock of their own. check() returns a reason string or None.
     The loop itself handles the loop-stall trip and the watchdog thread (balance.py)."""
 
-    def __init__(self, dt, tilt_limit=lc.TILT_LIMIT, vin_cutoff=lc.VIN_CUTOFF, stall_duty=lc.STALL_DUTY):
+    def __init__(self, dt, tilt_limit=lc.TILT_LIMIT, vin_cutoff=lc.VIN_CUTOFF, stall_duty=lc.STALL_DUTY, vin=None):
         self.dt = dt
         self.stall_duty = stall_duty
         self.tilt_limit = tilt_limit
@@ -296,8 +321,10 @@ class Safety:
         n = max(1, int(round(lc.STALL_S / dt)))
         self._stall = [deque(maxlen=n), deque(maxlen=n)]   # speed in the duty's direction, while |duty| is high
         self.wrong_way_ticks = [0, 0]
-        self.runaway_ticks = 0
+        m = max(1, int(round(lc.RUNAWAY_S / dt)))
+        self._runaway = [deque(maxlen=m), deque(maxlen=m)]  # each wheel's signed speed over the last RUNAWAY_S
         self.vin_low = 0
+        self.vin = float(vin) if vin is not None and 5.0 <= vin <= 10.0 else None   # latest vin, for runaway threshold
         self._last_vin_t = None
         self.first_vin_t = None
 
@@ -309,6 +336,8 @@ class Safety:
         for side, age in zip(("left", "right"), motor_ages):
             if age is None or age > lc.MOTOR_STALE_S:
                 return f"{side} motor data stale ({'none' if age is None else f'{age * 1e3:.0f} ms'})"
+        if vin_reading is not None and 5.0 <= vin_reading[1] <= 10.0:   # ignore an implausible reading here
+            self.vin = vin_reading[1]
         if vin_reading is not None and vin_reading[0] != self._last_vin_t:
             self._last_vin_t = vin_reading[0]
             self.vin_low = self.vin_low + 1 if vin_reading[1] < self.vin_cutoff else 0
@@ -344,14 +373,19 @@ class Safety:
                                        if abs(d) >= self.stall_duty and d * w < 0 and abs(w) > 5.0 else 0)
             if self.wrong_way_ticks[i] * self.dt >= 0.2:
                 return f"{side} wheel turns against its duty (duty {d:+.2f}, {w:+.2f} rad/s): sign error?"
-        # Runaway: both wheels near the no-load speed the same way for RUNAWAY_S. On the floor that is past
-        # 0.59 m/s for 1.5 s, beyond anything the scenario asks; lifted while armed (held upright, so no tilt
-        # trip) the free wheels spin up to the no-load speed and the stall trip can't see it (review G11).
-        wl, wr = speeds
-        fast = min(abs(wl), abs(wr)) >= lc.RUNAWAY_SPEED and wl * wr > 0
-        self.runaway_ticks = self.runaway_ticks + 1 if fast else 0
-        if self.runaway_ticks * self.dt >= lc.RUNAWAY_S:
-            return f"wheels running away ({wl:+.1f}, {wr:+.1f} rad/s for {lc.RUNAWAY_S} s): lifted?"
+        # Runaway: both wheels' MEAN speed over the last RUNAWAY_S near the no-load speed, the same way. On the
+        # floor that is past 0.59 m/s for 1.5 s, beyond anything the scenario asks; lifted while armed (held
+        # upright, so no tilt trip) the free wheels spin up to the no-load speed and the stall trip can't see it
+        # (review G11). A mean, because one encoder count per tick is 3.5 rad/s: at 19.4 rad/s, 4.4% of ticks read
+        # under 17 and reset a per-tick counter, which delayed the trip to ~4 s (bench A5, 2026-11-23). The speed is
+        # 0.85 of the no-load speed at the measured vin (runaway_speed_for_vin), not a fixed 17 rad/s.
+        for q, w in zip(self._runaway, speeds):
+            q.append(w)
+        ql, qr = self._runaway
+        if len(ql) == ql.maxlen:
+            ml, mr = sum(ql) / len(ql), sum(qr) / len(qr)
+            if min(abs(ml), abs(mr)) >= runaway_speed_for_vin(self.vin) and ml * mr > 0:
+                return f"wheels running away (mean {ml:+.1f}, {mr:+.1f} rad/s over {lc.RUNAWAY_S} s): lifted?"
         return None
 
 

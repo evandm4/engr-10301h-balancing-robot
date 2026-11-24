@@ -77,6 +77,7 @@ class RobustnessConfig:
     # the retired seeds.
     smoke_seeds: Tuple[int, ...] = ()
     dev_seeds: Tuple[int, ...] = ()
+    dev_extended_seeds: Tuple[int, ...] = ()
     fall_rate_seeds: Tuple[int, ...] = ()
     retired_seeds: Tuple[int, ...] = ()
 
@@ -102,7 +103,7 @@ class RobustnessConfig:
             # "unseen" robots that training already saw (e.g. --seeds 1000 or more).
             raise ValueError(f"train_seeds and validation_seeds overlap: {sorted(overlap)[:5]}...")
         tiers = {"train": self.train_seeds, "validation": self.validation_seeds, "dev": self.dev_seeds,
-                 "fall_rate": self.fall_rate_seeds}
+                 "dev_extended": self.dev_extended_seeds, "fall_rate": self.fall_rate_seeds}
         names = list(tiers)
         for i, a in enumerate(names):
             for b in names[i + 1:]:
@@ -111,7 +112,7 @@ class RobustnessConfig:
                     raise ValueError(f"{a} and {b} seeds overlap: {sorted(both)[:5]}...")
         if not set(self.smoke_seeds) <= set(self.dev_seeds):
             raise ValueError("smoke_seeds must be a subset of dev_seeds")
-        for name in ("validation", "dev", "fall_rate"):
+        for name in ("validation", "dev", "dev_extended", "fall_rate"):
             reused = set(tiers[name]) & set(self.retired_seeds)
             if reused:
                 raise ValueError(f"{name} seeds include retired seeds: {sorted(reused)[:5]}...")

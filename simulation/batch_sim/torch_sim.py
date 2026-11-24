@@ -217,7 +217,10 @@ class TorchSimulator:
         if spec.imu:
             # Accelerations at the sample: the drive in effect just before this tick, the push now.
             force = self.force_per_step[self.step][0] if self.has_push else 0.0
-            derivs = (backlash_terms(self.robot, self.state, self.applied, self.contact, xp, force)[0]
+            # Released contact for the sample only (as begin_step); the live contact is not touched.
+            sense_contact = (backlash_release(self.robot, self.state, self.applied, self.contact, xp, force)
+                             if self.backlash else None)
+            derivs = (backlash_terms(self.robot, self.state, self.applied, sense_contact, xp, force)[0]
                       if self.backlash else derivatives(self.robot, self.state, self.applied, xp, force))
             if self.noise is not None:
                 gyro = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)

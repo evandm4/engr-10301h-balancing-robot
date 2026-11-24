@@ -1,0 +1,1397 @@
+{
+  "timestamp": "2026-11-24 05:09:49",
+  "ghelper": {},
+  "step1_best_label": "full_seed0_midpoint:random search",
+  "ablation_budget": {
+    "method": "cma_es",
+    "max_iter": 25,
+    "popsize": 96,
+    "n_evals": 2400,
+    "x0": "model-based",
+    "dtype": "float64"
+  },
+  "ablations": [
+    {
+      "key": "full_model",
+      "description": "Full LEGO model (control)",
+      "tune_elapsed_s": 274.38,
+      "total_elapsed_s": 279.97,
+      "gpu_power": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 8.57,
+        "gpu_sm_clock_mhz": 457.0
+      },
+      "rescore_on_variant_dev150_20s": {
+        "hand-tuned": {
+          "dev20_mean_cost": 172.8078795747571,
+          "dev20_falls": 13,
+          "dev20_median_cost": 19.733535715377403
+        },
+        "model-based": {
+          "dev20_mean_cost": 83.34609253801123,
+          "dev20_falls": 6,
+          "dev20_median_cost": 10.623278184224198
+        },
+        "step1_best": {
+          "dev20_mean_cost": 50.628895234636296,
+          "dev20_falls": 3,
+          "dev20_median_cost": 16.289248248095532
+        }
+      },
+      "tuned_best_sample_gains": {
+        "kp": 2.149220239116823,
+        "ki": 6.516415837809212,
+        "kd": 0.13555103889052203,
+        "kv_p": 0.42374337454970334
+      },
+      "tuned_mean_gains": {
+        "kp": 2.1565553051210062,
+        "ki": 6.994459712688527,
+        "kd": 0.1444163300575543,
+        "kv_p": 0.4320787350129265
+      },
+      "picked_source": "mean",
+      "picked_gains": {
+        "kp": 2.1565553051210062,
+        "ki": 6.994459712688527,
+        "kd": 0.1444163300575543,
+        "kv_p": 0.4320787350129265
+      },
+      "picked_gains_vec": [
+        2.1565553051210062,
+        6.994459712688527,
+        0.1444163300575543,
+        0.4320787350129265
+      ],
+      "own_dev150_20s_cost": 74.77363439936566,
+      "own_dev150_20s_falls": 5
+    },
+    {
+      "key": "no_backlash",
+      "description": "Rigid drivetrain (gearbox_backlash=0, coupling_backlash=0)",
+      "tune_elapsed_s": 165.79,
+      "total_elapsed_s": 169.44,
+      "gpu_power": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 10.34,
+        "gpu_sm_clock_mhz": 450.0
+      },
+      "rescore_on_variant_dev150_20s": {
+        "hand-tuned": {
+          "dev20_mean_cost": 9.744094125570967,
+          "dev20_falls": 0,
+          "dev20_median_cost": 9.542521297365425
+        },
+        "model-based": {
+          "dev20_mean_cost": 6.602857641050287,
+          "dev20_falls": 0,
+          "dev20_median_cost": 6.459619453157899
+        },
+        "step1_best": {
+          "dev20_mean_cost": 8.374893102494768,
+          "dev20_falls": 0,
+          "dev20_median_cost": 8.060959694493903
+        }
+      },
+      "tuned_best_sample_gains": {
+        "kp": 1.4029404297893313,
+        "ki": 3.9646095285404837,
+        "kd": 0.11466073537399143,
+        "kv_p": 0.43774909253977823
+      },
+      "tuned_mean_gains": {
+        "kp": 1.405806115136023,
+        "ki": 4.032108625776598,
+        "kd": 0.11471587710906261,
+        "kv_p": 0.43492708559998683
+      },
+      "picked_source": "mean",
+      "picked_gains": {
+        "kp": 1.405806115136023,
+        "ki": 4.032108625776598,
+        "kd": 0.11471587710906261,
+        "kv_p": 0.43492708559998683
+      },
+      "picked_gains_vec": [
+        1.405806115136023,
+        4.032108625776598,
+        0.11471587710906261,
+        0.43492708559998683
+      ],
+      "own_dev150_20s_cost": 5.223012084260098,
+      "own_dev150_20s_falls": 0
+    },
+    {
+      "key": "gearbox_play_only",
+      "description": "Unseen gearbox play only (+-1.1..1.6 deg, coupling=0)",
+      "tune_elapsed_s": 255.43,
+      "total_elapsed_s": 260.99,
+      "gpu_power": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 6.06,
+        "gpu_sm_clock_mhz": 412.0
+      },
+      "rescore_on_variant_dev150_20s": {
+        "hand-tuned": {
+          "dev20_mean_cost": 65.80449182839378,
+          "dev20_falls": 4,
+          "dev20_median_cost": 18.543569457025775
+        },
+        "model-based": {
+          "dev20_mean_cost": 85.02532984603613,
+          "dev20_falls": 6,
+          "dev20_median_cost": 10.674251481623148
+        },
+        "step1_best": {
+          "dev20_mean_cost": 15.425468355247189,
+          "dev20_falls": 0,
+          "dev20_median_cost": 14.965958913984236
+        }
+      },
+      "tuned_best_sample_gains": {
+        "kp": 2.201752995538483,
+        "ki": 4.96439659579817,
+        "kd": 0.13936703828299213,
+        "kv_p": 0.40957104667634964
+      },
+      "tuned_mean_gains": {
+        "kp": 2.153817303571371,
+        "ki": 6.260137738036176,
+        "kd": 0.1439009317443718,
+        "kv_p": 0.4130166058435117
+      },
+      "picked_source": "mean",
+      "picked_gains": {
+        "kp": 2.153817303571371,
+        "ki": 6.260137738036176,
+        "kd": 0.1439009317443718,
+        "kv_p": 0.4130166058435117
+      },
+      "picked_gains_vec": [
+        2.153817303571371,
+        6.260137738036176,
+        0.1439009317443718,
+        0.4130166058435117
+      ],
+      "own_dev150_20s_cost": 75.151517075808,
+      "own_dev150_20s_falls": 5
+    },
+    {
+      "key": "coupling_play_only",
+      "description": "Downstream coupling play only (gearbox=0, coupling 0.01..3.0 deg)",
+      "tune_elapsed_s": 255.75,
+      "total_elapsed_s": 261.42,
+      "gpu_power": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 8.32,
+        "gpu_sm_clock_mhz": 457.0
+      },
+      "rescore_on_variant_dev150_20s": {
+        "hand-tuned": {
+          "dev20_mean_cost": 26.10172500442515,
+          "dev20_falls": 1,
+          "dev20_median_cost": 13.888043854964163
+        },
+        "model-based": {
+          "dev20_mean_cost": 46.19425212518215,
+          "dev20_falls": 3,
+          "dev20_median_cost": 8.42137684383863
+        },
+        "step1_best": {
+          "dev20_mean_cost": 24.368575218852996,
+          "dev20_falls": 1,
+          "dev20_median_cost": 12.864358671271138
+        }
+      },
+      "tuned_best_sample_gains": {
+        "kp": 2.9094951101022595,
+        "ki": 4.820100685053104,
+        "kd": 0.22431658333458915,
+        "kv_p": 0.5867094821659298
+      },
+      "tuned_mean_gains": {
+        "kp": 1.9172816358165856,
+        "ki": 4.660824308929577,
+        "kd": 0.13860669576956078,
+        "kv_p": 0.5017708654029008
+      },
+      "picked_source": "best_sample",
+      "picked_gains": {
+        "kp": 2.9094951101022595,
+        "ki": 4.820100685053104,
+        "kd": 0.22431658333458915,
+        "kv_p": 0.5867094821659298
+      },
+      "picked_gains_vec": [
+        2.9094951101022595,
+        4.820100685053104,
+        0.22431658333458915,
+        0.5867094821659298
+      ],
+      "own_dev150_20s_cost": 28.995493989886562,
+      "own_dev150_20s_falls": 1
+    },
+    {
+      "key": "wider_play_bounds",
+      "description": "Unadjusted play bounds sensitivity check (gearbox +-1.0..2.0 deg, coupling 0..4.35 deg; I1/J5)",
+      "tune_elapsed_s": 255.89,
+      "total_elapsed_s": 261.56,
+      "gpu_power": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 6.36,
+        "gpu_sm_clock_mhz": 412.0
+      },
+      "rescore_on_variant_dev150_20s": {
+        "hand-tuned": {
+          "dev20_mean_cost": 232.8374006007539,
+          "dev20_falls": 18,
+          "dev20_median_cost": 22.27642955435854
+        },
+        "model-based": {
+          "dev20_mean_cost": 98.8721205872585,
+          "dev20_falls": 7,
+          "dev20_median_cost": 11.72634017801985
+        },
+        "step1_best": {
+          "dev20_mean_cost": 65.96556451225561,
+          "dev20_falls": 4,
+          "dev20_median_cost": 18.388963283696
+        }
+      },
+      "tuned_best_sample_gains": {
+        "kp": 2.0034962138014087,
+        "ki": 6.735819164669932,
+        "kd": 0.16018476095851478,
+        "kv_p": 0.4467478848331268
+      },
+      "tuned_mean_gains": {
+        "kp": 2.1148565619050963,
+        "ki": 8.036631103839353,
+        "kd": 0.16052262485294438,
+        "kv_p": 0.4413282099928568
+      },
+      "picked_source": "mean",
+      "picked_gains": {
+        "kp": 2.1148565619050963,
+        "ki": 8.036631103839353,
+        "kd": 0.16052262485294438,
+        "kv_p": 0.4413282099928568
+      },
+      "picked_gains_vec": [
+        2.1148565619050963,
+        8.036631103839353,
+        0.16052262485294438,
+        0.4413282099928568
+      ],
+      "own_dev150_20s_cost": 99.70309045873616,
+      "own_dev150_20s_falls": 7
+    },
+    {
+      "key": "ideal_pitch_sensor",
+      "description": "Measured pitch + white noise instead of IMU specific-force + complementary filter",
+      "tune_elapsed_s": 222.65,
+      "total_elapsed_s": 227.58,
+      "gpu_power": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 6.12,
+        "gpu_sm_clock_mhz": 457.0
+      },
+      "rescore_on_variant_dev150_20s": {
+        "hand-tuned": {
+          "dev20_mean_cost": 39.57450996472967,
+          "dev20_falls": 2,
+          "dev20_median_cost": 16.63566088602954
+        },
+        "model-based": {
+          "dev20_mean_cost": 56.91234868681256,
+          "dev20_falls": 4,
+          "dev20_median_cost": 11.7719857734459
+        },
+        "step1_best": {
+          "dev20_mean_cost": 15.425759572656691,
+          "dev20_falls": 0,
+          "dev20_median_cost": 15.233342282568222
+        }
+      },
+      "tuned_best_sample_gains": {
+        "kp": 1.0145675493114104,
+        "ki": 2.2980597582031765,
+        "kd": 0.08447502888204092,
+        "kv_p": 0.3250397406490113
+      },
+      "tuned_mean_gains": {
+        "kp": 1.3286024295519654,
+        "ki": 3.4292782396467563,
+        "kd": 0.12062737604097619,
+        "kv_p": 0.13856799167325864
+      },
+      "picked_source": "best_sample",
+      "picked_gains": {
+        "kp": 1.0145675493114104,
+        "ki": 2.2980597582031765,
+        "kd": 0.08447502888204092,
+        "kv_p": 0.3250397406490113
+      },
+      "picked_gains_vec": [
+        1.0145675493114104,
+        2.2980597582031765,
+        0.08447502888204092,
+        0.3250397406490113
+      ],
+      "own_dev150_20s_cost": 6.145061064762917,
+      "own_dev150_20s_falls": 0
+    },
+    {
+      "key": "continuous_velocity",
+      "description": "Continuous velocity + noise instead of 360-count 100 Hz 5 ms delayed encoder",
+      "tune_elapsed_s": 249.43,
+      "total_elapsed_s": 254.97,
+      "gpu_power": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 8.89,
+        "gpu_sm_clock_mhz": 450.0
+      },
+      "rescore_on_variant_dev150_20s": {
+        "hand-tuned": {
+          "dev20_mean_cost": 47.70933848716131,
+          "dev20_falls": 3,
+          "dev20_median_cost": 12.375366014173037
+        },
+        "model-based": {
+          "dev20_mean_cost": 33.85021340793417,
+          "dev20_falls": 2,
+          "dev20_median_cost": 9.402738454292821
+        },
+        "step1_best": {
+          "dev20_mean_cost": 37.61807879106774,
+          "dev20_falls": 2,
+          "dev20_median_cost": 14.830205320749988
+        }
+      },
+      "tuned_best_sample_gains": {
+        "kp": 1.355463391504709,
+        "ki": 2.151633317918499,
+        "kd": 0.16398880369191723,
+        "kv_p": 0.7921082143036201
+      },
+      "tuned_mean_gains": {
+        "kp": 1.34727351493609,
+        "ki": 2.115530304630802,
+        "kd": 0.1654359476822222,
+        "kv_p": 0.7976002677248106
+      },
+      "picked_source": "best_sample",
+      "picked_gains": {
+        "kp": 1.355463391504709,
+        "ki": 2.151633317918499,
+        "kd": 0.16398880369191723,
+        "kv_p": 0.7921082143036201
+      },
+      "picked_gains_vec": [
+        1.355463391504709,
+        2.151633317918499,
+        0.16398880369191723,
+        0.7921082143036201
+      ],
+      "own_dev150_20s_cost": 19.636029283123314,
+      "own_dev150_20s_falls": 1
+    },
+    {
+      "key": "averaged_slow_pwm",
+      "description": "Averaged slow-PWM (pwm_tick_s=0) instead of 10 ms pulse-density modulation",
+      "tune_elapsed_s": 249.96,
+      "total_elapsed_s": 255.43,
+      "gpu_power": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 6.7,
+        "gpu_sm_clock_mhz": 375.0
+      },
+      "rescore_on_variant_dev150_20s": {
+        "hand-tuned": {
+          "dev20_mean_cost": 12.0339470813245,
+          "dev20_falls": 0,
+          "dev20_median_cost": 11.578013383431797
+        },
+        "model-based": {
+          "dev20_mean_cost": 44.598398166891556,
+          "dev20_falls": 3,
+          "dev20_median_cost": 5.231983041184554
+        },
+        "step1_best": {
+          "dev20_mean_cost": 9.28078261678278,
+          "dev20_falls": 0,
+          "dev20_median_cost": 8.59563503233391
+        }
+      },
+      "tuned_best_sample_gains": {
+        "kp": 2.4716686616378225,
+        "ki": 4.1474961758764675,
+        "kd": 0.15720965228223027,
+        "kv_p": 0.5612254440723283
+      },
+      "tuned_mean_gains": {
+        "kp": 2.348837791244115,
+        "ki": 3.4633645648520384,
+        "kd": 0.1590670871675521,
+        "kv_p": 0.6011756005937986
+      },
+      "picked_source": "best_sample",
+      "picked_gains": {
+        "kp": 2.4716686616378225,
+        "ki": 4.1474961758764675,
+        "kd": 0.15720965228223027,
+        "kv_p": 0.5612254440723283
+      },
+      "picked_gains_vec": [
+        2.4716686616378225,
+        4.1474961758764675,
+        0.15720965228223027,
+        0.5612254440723283
+      ],
+      "own_dev150_20s_cost": 6.554267570376628,
+      "own_dev150_20s_falls": 0
+    },
+    {
+      "key": "fixed_tick_phase",
+      "description": "10 ms PDM pulses with fixed tick phase (0.25) instead of uniform [0, 1) per scenario",
+      "tune_elapsed_s": 255.26,
+      "total_elapsed_s": 260.78,
+      "gpu_power": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 6.05,
+        "gpu_sm_clock_mhz": 457.0
+      },
+      "rescore_on_variant_dev150_20s": {
+        "hand-tuned": {
+          "dev20_mean_cost": 139.46309109859817,
+          "dev20_falls": 10,
+          "dev20_median_cost": 19.820068818362195
+        },
+        "model-based": {
+          "dev20_mean_cost": 116.97771774365988,
+          "dev20_falls": 9,
+          "dev20_median_cost": 11.028759541248213
+        },
+        "step1_best": {
+          "dev20_mean_cost": 63.820065577458884,
+          "dev20_falls": 4,
+          "dev20_median_cost": 16.19159429175749
+        }
+      },
+      "tuned_best_sample_gains": {
+        "kp": 2.04020569168692,
+        "ki": 4.586171929285917,
+        "kd": 0.1390668426230119,
+        "kv_p": 0.4996573809078504
+      },
+      "tuned_mean_gains": {
+        "kp": 2.061080595166595,
+        "ki": 5.531260094584516,
+        "kd": 0.14838287499735964,
+        "kv_p": 0.4866354447808692
+      },
+      "picked_source": "best_sample",
+      "picked_gains": {
+        "kp": 2.04020569168692,
+        "ki": 4.586171929285917,
+        "kd": 0.1390668426230119,
+        "kv_p": 0.4996573809078504
+      },
+      "picked_gains_vec": [
+        2.04020569168692,
+        4.586171929285917,
+        0.1390668426230119,
+        0.4996573809078504
+      ],
+      "own_dev150_20s_cost": 70.33851292999965,
+      "own_dev150_20s_falls": 5
+    },
+    {
+      "key": "exact_feedforward",
+      "description": "Zero motor/supply mismatch on feedforward (k, R, V, eta spreads = 0)",
+      "tune_elapsed_s": 255.1,
+      "total_elapsed_s": 260.68,
+      "gpu_power": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 6.42,
+        "gpu_sm_clock_mhz": 412.0
+      },
+      "rescore_on_variant_dev150_20s": {
+        "hand-tuned": {
+          "dev20_mean_cost": 101.30662800223836,
+          "dev20_falls": 7,
+          "dev20_median_cost": 19.450652865178125
+        },
+        "model-based": {
+          "dev20_mean_cost": 22.10021537335874,
+          "dev20_falls": 1,
+          "dev20_median_cost": 10.419655846601383
+        },
+        "step1_best": {
+          "dev20_mean_cost": 50.18838158292306,
+          "dev20_falls": 3,
+          "dev20_median_cost": 16.250004586583067
+        }
+      },
+      "tuned_best_sample_gains": {
+        "kp": 2.373762261738836,
+        "ki": 3.6957640408169823,
+        "kd": 0.17907050920917356,
+        "kv_p": 0.5437987427604992
+      },
+      "tuned_mean_gains": {
+        "kp": 2.502741593525227,
+        "ki": 4.79685608804017,
+        "kd": 0.18377704053449073,
+        "kv_p": 0.5085484637107137
+      },
+      "picked_source": "best_sample",
+      "picked_gains": {
+        "kp": 2.373762261738836,
+        "ki": 3.6957640408169823,
+        "kd": 0.17907050920917356,
+        "kv_p": 0.5437987427604992
+      },
+      "picked_gains_vec": [
+        2.373762261738836,
+        3.6957640408169823,
+        0.17907050920917356,
+        0.5437987427604992
+      ],
+      "own_dev150_20s_cost": 26.255385208766025,
+      "own_dev150_20s_falls": 1
+    },
+    {
+      "key": "zero_pitch_offset",
+      "description": "Zero pitch-bias spread (pitch_bias = 0 instead of +-0.015 rad)",
+      "tune_elapsed_s": 255.47,
+      "total_elapsed_s": 261.06,
+      "gpu_power": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 6.76,
+        "gpu_sm_clock_mhz": 390.0
+      },
+      "rescore_on_variant_dev150_20s": {
+        "hand-tuned": {
+          "dev20_mean_cost": 173.03536928185667,
+          "dev20_falls": 13,
+          "dev20_median_cost": 19.8143522203359
+        },
+        "model-based": {
+          "dev20_mean_cost": 61.731895369652314,
+          "dev20_falls": 4,
+          "dev20_median_cost": 10.745158809248505
+        },
+        "step1_best": {
+          "dev20_mean_cost": 27.221165466659162,
+          "dev20_falls": 1,
+          "dev20_median_cost": 15.548116862828753
+        }
+      },
+      "tuned_best_sample_gains": {
+        "kp": 2.2720241547224926,
+        "ki": 5.72678156906564,
+        "kd": 0.1447685588640506,
+        "kv_p": 0.44360496462964066
+      },
+      "tuned_mean_gains": {
+        "kp": 2.358175762055288,
+        "ki": 7.214964425242011,
+        "kd": 0.15006096165654362,
+        "kv_p": 0.425292905540953
+      },
+      "picked_source": "mean",
+      "picked_gains": {
+        "kp": 2.358175762055288,
+        "ki": 7.214964425242011,
+        "kd": 0.15006096165654362,
+        "kv_p": 0.425292905540953
+      },
+      "picked_gains_vec": [
+        2.358175762055288,
+        7.214964425242011,
+        0.15006096165654362,
+        0.425292905540953
+      ],
+      "own_dev150_20s_cost": 48.719069904698166,
+      "own_dev150_20s_falls": 3
+    },
+    {
+      "key": "wider_latency_10_15ms",
+      "description": "Wider sample-to-HAT latency (10.0-15.0 ms -> 10.0-17.5 ms loop delay; H4)",
+      "tune_elapsed_s": 255.64,
+      "total_elapsed_s": 261.27,
+      "gpu_power": {
+        "gpu_power_limit_w": 33.0,
+        "gpu_power_draw_w": 5.95,
+        "gpu_sm_clock_mhz": 450.0
+      },
+      "rescore_on_variant_dev150_20s": {
+        "hand-tuned": {
+          "dev20_mean_cost": 151.96654878585977,
+          "dev20_falls": 11,
+          "dev20_median_cost": 20.234868050178157
+        },
+        "model-based": {
+          "dev20_mean_cost": 83.07307820801633,
+          "dev20_falls": 6,
+          "dev20_median_cost": 10.871870572481669
+        },
+        "step1_best": {
+          "dev20_mean_cost": 64.11765028028589,
+          "dev20_falls": 4,
+          "dev20_median_cost": 16.41397600230097
+        }
+      },
+      "tuned_best_sample_gains": {
+        "kp": 2.373895514602404,
+        "ki": 6.791276226660302,
+        "kd": 0.15582299100449887,
+        "kv_p": 0.4559213394363709
+      },
+      "tuned_mean_gains": {
+        "kp": 2.353425350300889,
+        "ki": 8.192537956327154,
+        "kd": 0.166208818989278,
+        "kv_p": 0.447366361282757
+      },
+      "picked_source": "best_sample",
+      "picked_gains": {
+        "kp": 2.373895514602404,
+        "ki": 6.791276226660302,
+        "kd": 0.15582299100449887,
+        "kv_p": 0.4559213394363709
+      },
+      "picked_gains_vec": [
+        2.373895514602404,
+        6.791276226660302,
+        0.15582299100449887,
+        0.4559213394363709
+      ],
+      "own_dev150_20s_cost": 25.642505822085276,
+      "own_dev150_20s_falls": 1
+    }
+  ],
+  "cross_evaluation_on_full_lego": {
+    "hand-tuned": {
+      "gains": {
+        "kp": 2.5,
+        "ki": 1.5,
+        "kd": 0.2,
+        "kv_p": 0.5
+      },
+      "dev150_20s": {
+        "mean_cost": 172.8078795747571,
+        "median_cost": 19.733535715377403,
+        "falls": 13
+      },
+      "dev150_60s": {
+        "mean_cost": 217.90595373343865,
+        "median_cost": 53.66997845622531,
+        "falls": 13,
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.8731326789210394,
+          "low_95": 1.7723340837360844,
+          "high_95": 1.983216533063438
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 12,
+          "only_reference_fell": 4,
+          "p_value": 0.076812744140625
+        }
+      },
+      "dev450_20s": {
+        "mean_cost": 129.22409731640315,
+        "median_cost": 19.485023976517116,
+        "falls": 28,
+        "fall_rate": 0.06222222222222222,
+        "fall_rate_95ci": [
+          0.041740778473723594,
+          0.0886754756187812
+        ],
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.784240698755485,
+          "low_95": 1.7509045530487353,
+          "high_95": 1.8082422350307883
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 26,
+          "only_reference_fell": 8,
+          "p_value": 0.0029350556433200836
+        }
+      }
+    },
+    "model-based": {
+      "gains": {
+        "kp": 1.9796769192699448,
+        "ki": 5.236019498934128,
+        "kd": 0.1509013128652891,
+        "kv_p": 0.5152520198827069
+      },
+      "dev150_20s": {
+        "mean_cost": 83.34609253801123,
+        "median_cost": 10.623278184224198,
+        "falls": 6
+      },
+      "dev150_60s": {
+        "mean_cost": 105.31355103605591,
+        "median_cost": 27.818582624361156,
+        "falls": 6,
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.009019991626065,
+          "low_95": 1.0015803216479426,
+          "high_95": 1.025744978449251
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 3,
+          "only_reference_fell": 2,
+          "p_value": 1.0
+        }
+      },
+      "dev450_20s": {
+        "mean_cost": 54.768950761255525,
+        "median_cost": 10.723000770776231,
+        "falls": 11,
+        "fall_rate": 0.024444444444444446,
+        "fall_rate_95ci": [
+          0.012264313087265463,
+          0.043316256919356144
+        ],
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 0.9963972137711701,
+          "low_95": 0.9863792058181678,
+          "high_95": 1.0027655240107887
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 6,
+          "only_reference_fell": 5,
+          "p_value": 1.0
+        }
+      }
+    },
+    "step1_best": {
+      "gains": {
+        "kp": 2.992929993237084,
+        "ki": 8.21891862823941,
+        "kd": 0.17874257240087899,
+        "kv_p": 0.3602086041124777
+      },
+      "dev150_20s": {
+        "mean_cost": 50.628895234636296,
+        "median_cost": 16.289248248095532,
+        "falls": 3
+      },
+      "dev150_60s": {
+        "mean_cost": 79.7412452920559,
+        "median_cost": 41.84857044099172,
+        "falls": 3,
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.48641768154544,
+          "low_95": 1.4729424811391703,
+          "high_95": 1.5200007354369844
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 3,
+          "only_reference_fell": 5,
+          "p_value": 0.7265625
+        }
+      },
+      "dev450_20s": {
+        "mean_cost": 63.01696713771651,
+        "median_cost": 16.342944482757296,
+        "falls": 12,
+        "fall_rate": 0.02666666666666667,
+        "fall_rate_95ci": [
+          0.013853318919172122,
+          0.0461176749125141
+        ],
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.5180798209930924,
+          "low_95": 1.5025727839261815,
+          "high_95": 1.532451728469617
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 11,
+          "only_reference_fell": 9,
+          "p_value": 0.8238029479980469
+        }
+      }
+    },
+    "full_model": {
+      "gains": {
+        "kp": 2.1565553051210062,
+        "ki": 6.994459712688527,
+        "kd": 0.1444163300575543,
+        "kv_p": 0.4320787350129265
+      },
+      "dev150_20s": {
+        "mean_cost": 74.77363439936566,
+        "median_cost": 10.606033472302999,
+        "falls": 5
+      },
+      "dev150_60s": {
+        "mean_cost": 93.07917698153639,
+        "median_cost": 27.81888063484822,
+        "falls": 5,
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.0,
+          "low_95": 1.0,
+          "high_95": 1.0
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 0,
+          "only_reference_fell": 0,
+          "p_value": 1.0
+        }
+      },
+      "dev450_20s": {
+        "mean_cost": 52.408205633168535,
+        "median_cost": 10.712262398691148,
+        "falls": 10,
+        "fall_rate": 0.022222222222222223,
+        "fall_rate_95ci": [
+          0.01070665256408739,
+          0.040486876015548935
+        ],
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.0,
+          "low_95": 1.0,
+          "high_95": 1.0
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 0,
+          "only_reference_fell": 0,
+          "p_value": 1.0
+        }
+      }
+    },
+    "no_backlash": {
+      "gains": {
+        "kp": 1.405806115136023,
+        "ki": 4.032108625776598,
+        "kd": 0.11471587710906261,
+        "kv_p": 0.43492708559998683
+      },
+      "dev150_20s": {
+        "mean_cost": 269.14781055182414,
+        "median_cost": 8.138718569191528,
+        "falls": 20
+      },
+      "dev150_60s": {
+        "mean_cost": 284.3345834592927,
+        "median_cost": 21.08237300117781,
+        "falls": 20,
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 0.7617558420334797,
+          "low_95": 0.7473798831286121,
+          "high_95": 0.7758370537318822
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 16,
+          "only_reference_fell": 1,
+          "p_value": 0.000274658203125
+        }
+      },
+      "dev450_20s": {
+        "mean_cost": 286.3331005013359,
+        "median_cost": 8.022634510513864,
+        "falls": 64,
+        "fall_rate": 0.14222222222222222,
+        "fall_rate_95ci": [
+          0.11128163801956131,
+          0.1779554384017957
+        ],
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 0.7727471661521725,
+          "low_95": 0.7600796053944863,
+          "high_95": 0.7934283896069044
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 58,
+          "only_reference_fell": 4,
+          "p_value": 2.5917592724744587e-13
+        }
+      }
+    },
+    "gearbox_play_only": {
+      "gains": {
+        "kp": 2.153817303571371,
+        "ki": 6.260137738036176,
+        "kd": 0.1439009317443718,
+        "kv_p": 0.4130166058435117
+      },
+      "dev150_20s": {
+        "mean_cost": 110.33713663227745,
+        "median_cost": 10.668153945765452,
+        "falls": 8
+      },
+      "dev150_60s": {
+        "mean_cost": 131.2406319882678,
+        "median_cost": 27.916543646202815,
+        "falls": 8,
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.0037291806449056,
+          "low_95": 0.9985673063741605,
+          "high_95": 1.0112649768294548
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 4,
+          "only_reference_fell": 1,
+          "p_value": 0.375
+        }
+      },
+      "dev450_20s": {
+        "mean_cost": 64.22655551531538,
+        "median_cost": 10.727641448141362,
+        "falls": 13,
+        "fall_rate": 0.028888888888888888,
+        "fall_rate_95ci": [
+          0.015469902930346167,
+          0.04889427134529143
+        ],
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.0088037110352563,
+          "low_95": 0.999728202982474,
+          "high_95": 1.0169953042274718
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 7,
+          "only_reference_fell": 4,
+          "p_value": 0.548828125
+        }
+      }
+    },
+    "coupling_play_only": {
+      "gains": {
+        "kp": 2.9094951101022595,
+        "ki": 4.820100685053104,
+        "kd": 0.22431658333458915,
+        "kv_p": 0.5867094821659298
+      },
+      "dev150_20s": {
+        "mean_cost": 86.22882970782868,
+        "median_cost": 25.55640926401266,
+        "falls": 5
+      },
+      "dev150_60s": {
+        "mean_cost": 148.19637434348195,
+        "median_cost": 75.60679994192631,
+        "falls": 5,
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 2.7958201670064,
+          "low_95": 2.551182167038821,
+          "high_95": 2.993977168643419
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 5,
+          "only_reference_fell": 5,
+          "p_value": 1.0
+        }
+      },
+      "dev450_20s": {
+        "mean_cost": 93.22145829156085,
+        "median_cost": 25.178978276259052,
+        "falls": 17,
+        "fall_rate": 0.03777777777777778,
+        "fall_rate_95ci": [
+          0.022158216179523623,
+          0.05979820064474645
+        ],
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 2.3279977313504823,
+          "low_95": 2.2844582973501373,
+          "high_95": 2.418233364612024
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 17,
+          "only_reference_fell": 10,
+          "p_value": 0.24778856337070465
+        }
+      }
+    },
+    "wider_play_bounds": {
+      "gains": {
+        "kp": 2.1148565619050963,
+        "ki": 8.036631103839353,
+        "kd": 0.16052262485294438,
+        "kv_p": 0.4413282099928568
+      },
+      "dev150_20s": {
+        "mean_cost": 74.03696685045642,
+        "median_cost": 11.5187064935232,
+        "falls": 5
+      },
+      "dev150_60s": {
+        "mean_cost": 96.09220975664121,
+        "median_cost": 31.269782892338736,
+        "falls": 5,
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.123864032608644,
+          "low_95": 1.1103527062021188,
+          "high_95": 1.1433540940576337
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 2,
+          "only_reference_fell": 2,
+          "p_value": 1.0
+        }
+      },
+      "dev450_20s": {
+        "mean_cost": 52.89771785812826,
+        "median_cost": 11.780149542040807,
+        "falls": 10,
+        "fall_rate": 0.022222222222222223,
+        "fall_rate_95ci": [
+          0.01070665256408739,
+          0.040486876015548935
+        ],
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.1068363275842814,
+          "low_95": 1.0975041603537452,
+          "high_95": 1.1152783925474048
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 5,
+          "only_reference_fell": 5,
+          "p_value": 1.0
+        }
+      }
+    },
+    "ideal_pitch_sensor": {
+      "gains": {
+        "kp": 1.0145675493114104,
+        "ki": 2.2980597582031765,
+        "kd": 0.08447502888204092,
+        "kv_p": 0.3250397406490113
+      },
+      "dev150_20s": {
+        "mean_cost": 820.4127726124998,
+        "median_cost": 11.370518944044312,
+        "falls": 63
+      },
+      "dev150_60s": {
+        "mean_cost": 848.3260561500367,
+        "median_cost": 31.464247220572595,
+        "falls": 63,
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.0649683603185616,
+          "low_95": 0.9964785367359255,
+          "high_95": 1.3093635322528936
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 58,
+          "only_reference_fell": 0,
+          "p_value": 6.938893903907228e-18
+        }
+      },
+      "dev450_20s": {
+        "mean_cost": 861.5716890273579,
+        "median_cost": 11.445068312892314,
+        "falls": 199,
+        "fall_rate": 0.44222222222222224,
+        "fall_rate_95ci": [
+          0.39573538569538536,
+          0.48947337314460276
+        ],
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.1100492641513051,
+          "low_95": 1.0498046550620113,
+          "high_95": 1.2069107642602805
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 189,
+          "only_reference_fell": 0,
+          "p_value": 2.5489470578119236e-57
+        }
+      }
+    },
+    "continuous_velocity": {
+      "gains": {
+        "kp": 1.355463391504709,
+        "ki": 2.151633317918499,
+        "kd": 0.16398880369191723,
+        "kv_p": 0.7921082143036201
+      },
+      "dev150_20s": {
+        "mean_cost": 296.689894815701,
+        "median_cost": 13.171871019709018,
+        "falls": 24
+      },
+      "dev150_60s": {
+        "mean_cost": 339.06659743523375,
+        "median_cost": 34.8871732983829,
+        "falls": 24,
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.2345046812739822,
+          "low_95": 1.2036587025186993,
+          "high_95": 1.2785341176031768
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 19,
+          "only_reference_fell": 0,
+          "p_value": 3.814697265625e-06
+        }
+      },
+      "dev450_20s": {
+        "mean_cost": 300.6733247865868,
+        "median_cost": 13.569380097736536,
+        "falls": 73,
+        "fall_rate": 0.1622222222222222,
+        "fall_rate_95ci": [
+          0.12936478679141347,
+          0.19959445166601883
+        ],
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.2374262101605158,
+          "low_95": 1.2057085678133233,
+          "high_95": 1.2661631964415831
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 65,
+          "only_reference_fell": 2,
+          "p_value": 3.088620938868081e-17
+        }
+      }
+    },
+    "averaged_slow_pwm": {
+      "gains": {
+        "kp": 2.4716686616378225,
+        "ki": 4.1474961758764675,
+        "kd": 0.15720965228223027,
+        "kv_p": 0.5612254440723283
+      },
+      "dev150_20s": {
+        "mean_cost": 82.8386795790216,
+        "median_cost": 14.331011820469701,
+        "falls": 6
+      },
+      "dev150_60s": {
+        "mean_cost": 110.82385577280402,
+        "median_cost": 34.288155205996944,
+        "falls": 6,
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.23097688388098,
+          "low_95": 1.2083580779621506,
+          "high_95": 1.2537122437960666
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 6,
+          "only_reference_fell": 5,
+          "p_value": 1.0
+        }
+      },
+      "dev450_20s": {
+        "mean_cost": 109.80903385722215,
+        "median_cost": 14.220934954143065,
+        "falls": 25,
+        "fall_rate": 0.05555555555555555,
+        "fall_rate_95ci": [
+          0.03627158789802668,
+          0.08092126334508308
+        ],
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.294185635266123,
+          "low_95": 1.275343522563958,
+          "high_95": 1.320309537441084
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 25,
+          "only_reference_fell": 10,
+          "p_value": 0.016673847800120715
+        }
+      }
+    },
+    "fixed_tick_phase": {
+      "gains": {
+        "kp": 2.04020569168692,
+        "ki": 4.586171929285917,
+        "kd": 0.1390668426230119,
+        "kv_p": 0.4996573809078504
+      },
+      "dev150_20s": {
+        "mean_cost": 120.17246311538347,
+        "median_cost": 10.199658227600978,
+        "falls": 9
+      },
+      "dev150_60s": {
+        "mean_cost": 141.9455283059963,
+        "median_cost": 25.928653322581972,
+        "falls": 9,
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 0.9519625558187845,
+          "low_95": 0.941674789191683,
+          "high_95": 0.9629311289840707
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 4,
+          "only_reference_fell": 0,
+          "p_value": 0.125
+        }
+      },
+      "dev450_20s": {
+        "mean_cost": 82.22036024877188,
+        "median_cost": 10.261781592768214,
+        "falls": 18,
+        "fall_rate": 0.04,
+        "fall_rate_95ci": [
+          0.023875902765750873,
+          0.06248211962534085
+        ],
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 0.9628318721845278,
+          "low_95": 0.9527764296183203,
+          "high_95": 0.9733781658966654
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 11,
+          "only_reference_fell": 3,
+          "p_value": 0.057373046875
+        }
+      }
+    },
+    "exact_feedforward": {
+      "gains": {
+        "kp": 2.373762261738836,
+        "ki": 3.6957640408169823,
+        "kd": 0.17907050920917356,
+        "kv_p": 0.5437987427604992
+      },
+      "dev150_20s": {
+        "mean_cost": 26.877724405882805,
+        "median_cost": 14.322643811456018,
+        "falls": 1
+      },
+      "dev150_60s": {
+        "mean_cost": 54.24423112667288,
+        "median_cost": 38.09194960358482,
+        "falls": 1,
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.410925270436443,
+          "low_95": 1.3809254179956487,
+          "high_95": 1.4496071214817703
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 1,
+          "only_reference_fell": 5,
+          "p_value": 0.21875
+        }
+      },
+      "dev450_20s": {
+        "mean_cost": 50.125258121055,
+        "median_cost": 14.4957230260625,
+        "falls": 9,
+        "fall_rate": 0.02,
+        "fall_rate_95ci": [
+          0.009185069367986416,
+          0.037625645733088936
+        ],
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.3591754861657042,
+          "low_95": 1.3381559093230755,
+          "high_95": 1.3781501879199514
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 9,
+          "only_reference_fell": 10,
+          "p_value": 1.0
+        }
+      }
+    },
+    "zero_pitch_offset": {
+      "gains": {
+        "kp": 2.358175762055288,
+        "ki": 7.214964425242011,
+        "kd": 0.15006096165654362,
+        "kv_p": 0.425292905540953
+      },
+      "dev150_20s": {
+        "mean_cost": 73.79299285884454,
+        "median_cost": 11.327749163431818,
+        "falls": 5
+      },
+      "dev150_60s": {
+        "mean_cost": 94.65918296591698,
+        "median_cost": 30.071069069917534,
+        "falls": 5,
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.0855130644241315,
+          "low_95": 1.0692310255254212,
+          "high_95": 1.0943490079618785
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 2,
+          "only_reference_fell": 2,
+          "p_value": 1.0
+        }
+      },
+      "dev450_20s": {
+        "mean_cost": 52.36031424012041,
+        "median_cost": 11.5613706142847,
+        "falls": 10,
+        "fall_rate": 0.022222222222222223,
+        "fall_rate_95ci": [
+          0.01070665256408739,
+          0.040486876015548935
+        ],
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.0880888916219043,
+          "low_95": 1.0784956153522227,
+          "high_95": 1.0996132149973223
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 5,
+          "only_reference_fell": 5,
+          "p_value": 1.0
+        }
+      }
+    },
+    "wider_latency_10_15ms": {
+      "gains": {
+        "kp": 2.373895514602404,
+        "ki": 6.791276226660302,
+        "kd": 0.15582299100449887,
+        "kv_p": 0.4559213394363709
+      },
+      "dev150_20s": {
+        "mean_cost": 12.286592759982986,
+        "median_cost": 11.959620950963611,
+        "falls": 0
+      },
+      "dev150_60s": {
+        "mean_cost": 31.56910983670423,
+        "median_cost": 30.800056030730232,
+        "falls": 0,
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.121927480758799,
+          "low_95": 1.106477893572764,
+          "high_95": 1.137711237006941
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 0,
+          "only_reference_fell": 5,
+          "p_value": 0.0625
+        }
+      },
+      "dev450_20s": {
+        "mean_cost": 50.514358344142984,
+        "median_cost": 12.161462256664775,
+        "falls": 10,
+        "fall_rate": 0.022222222222222223,
+        "fall_rate_95ci": [
+          0.01070665256408739,
+          0.040486876015548935
+        ],
+        "paired_ratio_vs_full_model": {
+          "median_ratio": 1.1271392694598235,
+          "low_95": 1.1129217270042842,
+          "high_95": 1.1357613475238046
+        },
+        "mcnemar_vs_full_model": {
+          "only_this_fell": 7,
+          "only_reference_fell": 7,
+          "p_value": 1.0
+        }
+      }
+    }
+  }
+}
