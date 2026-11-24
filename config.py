@@ -90,6 +90,12 @@ class RobotConfig:
     coulomb_friction: float = 0.0      # N m, Coulomb (dry), both wheels together
     coulomb_friction_speed: float = 1.0   # rad/s, smoothing of the Coulomb step (PHYSICS.md 9.4)
     gravity: float = 9.81              # m/s^2 (9.8015 at West Lafayette; the difference is 0.09%)
+    # Free play between motor and wheel, half-widths in rad (RobotParams.gearbox_backlash, coupling_backlash;
+    # PHYSICS.md 10.3). The encoder sits between the two: gearbox_backlash is between the motor side and the
+    # output shaft it reads, coupling_backlash between that shaft and the wheel. 0 and 0 is a rigid drive
+    # train (this robot: the Pololu gearbox's play is not modelled).
+    gearbox_backlash: float = 0.0
+    coupling_backlash: float = 0.0
 
     def build(self, rotor_inertia: float) -> RobotParams:
         """rotor_inertia: the motor rotors reflected to the axle (ActuatorConfig.reflected_rotor_inertia);
@@ -107,6 +113,8 @@ class RobotConfig:
             coulomb_friction=self.coulomb_friction,
             coulomb_friction_speed=self.coulomb_friction_speed,
             gravity=self.gravity,
+            gearbox_backlash=self.gearbox_backlash,
+            coupling_backlash=self.coupling_backlash,
         )
 
 
@@ -869,6 +877,9 @@ class ProjectConfig:
     # values derived from the rest.
     NOT_SCORING = ("lqr", "search", "derived", "learning.output_dir", "robustness.validation_seeds",
                    "robustness.fall_rate_seeds", "robustness.retired_seeds", "robustness.fresh_seed_start")
+    # Keys added after runs were saved, with the value that leaves scoring as it was then: a saved snapshot
+    # without one is read as having it.
+    ADDED_DEFAULTS = {"robot.gearbox_backlash": 0.0, "robot.coupling_backlash": 0.0}
 
     def scoring_differences(self, snapshot: dict) -> list:
         """Dotted keys (e.g. "robustness.latency_range_s") where a saved snapshot() differs from
@@ -890,7 +901,8 @@ class ProjectConfig:
                 continue
             for key in sorted(set(a) | set(b)):
                 name = f"{section}.{key}"
-                if name not in self.NOT_SCORING and a.get(key) != b.get(key):
+                old = b.get(key, self.ADDED_DEFAULTS.get(name))
+                if name not in self.NOT_SCORING and a.get(key, self.ADDED_DEFAULTS.get(name)) != old:
                     differences.append(name)
         return differences
 

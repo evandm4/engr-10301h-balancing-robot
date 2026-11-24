@@ -22,6 +22,7 @@ The motor, body and sensor values are measured (SOFTWARE_PLAN C3, C4; DATASHEET 
 robustness spreads are shrunk to their measurement uncertainty.
 """
 
+import math
 from dataclasses import replace
 
 from config import (
@@ -56,6 +57,14 @@ ROBOT = RobotConfig(
                                    # 0.016 / 0.019 from coast-downs
     coulomb_friction_speed=1.0,    # rad/s, as config.py (PHYSICS.md 9.4)
     gravity=9.81,
+    # Free play between motor and wheel (SOFTWARE_PLAN B5; PHYSICS.md 10.3), measured 2026-11-23 (DATASHEET 8.7;
+    # bench_data/*_backlash.csv): rocking the wheel against the motor held at duty 0 moved the encoder on the
+    # output shaft 5 deg peak-to-peak in 1 deg counts (5-6 deg), so the gearbox play is upstream of the encoder,
+    # +-2.6-3 deg. The beam tip moved 11.3 deg in all: the other ~6 deg (+-0-3) is in the LEGO couplings (axle
+    # in the motor's cross-hole, wheel hub), downstream of the encoder, which can't see it. The nominal robot
+    # takes the middle of each; ROBUSTNESS draws both per scenario.
+    gearbox_backlash=math.radians(2.8),    # rad, motor side to the encoder's output shaft
+    coupling_backlash=math.radians(1.5),   # rad, output shaft to the wheel
 )
 
 # -------------------------------------------------------------- ACTUATOR ---
@@ -170,6 +179,10 @@ ROBUSTNESS = replace(
         # COM offset e: a pitch offset of atan(e / l), 0.011 rad per mm at l = 90 mm. Last in the
         # list, so the draws above are unchanged. Plain (non-robust) runs keep +b.
         ("pitch_bias", -0.015, 0.015),        # rad
+        # SOFTWARE_PLAN B5: the free play (ROBOT above), +-2.6-6 deg in all. After pitch_bias, so the draws
+        # above are unchanged.
+        ("gearbox_backlash", math.radians(2.6), math.radians(3.0)),   # rad: the encoder's 5-6 deg peak-to-peak
+        ("coupling_backlash", 0.0, math.radians(3.0)),                # rad: up to the rest of the beam's 11.3 deg
         # The pulse ticks' phase is no longer drawn (it was uniform in a tick, B1b): the robot loop is
         # locked to the ticks (ACTUATOR.pwm_tick_locked), so each scenario's phase follows its latency.
     ),
@@ -228,12 +241,16 @@ CONTROLLER = replace(
 #   t = 2-3.25 s     0 -> 0.40 m/s in 1.25 s: peak 0.70 m/s^2, a 0.125 rad lean (half of
 #                    Pololu's 0.25 / 0.30 of pitch_limit_rad).
 #   t = 3.25-9.5 s   cruise at 0.40 m/s, 53% of the nominal no-load speed (Pololu 53%).
-#   t = 5.5, 7.5 s   pushes, forward then backward: 1.02 N for 50 ms = 0.051 N s, 98% of the
+#   t = 5.5, 7.5 s   pushes, forward then backward: 0.70 N for 50 ms = 0.035 N s, 98% of the
 #                    largest forward push a full-torque response catches at 0.40 m/s on every
-#                    corner (0.0523 N s: light, tall, high rotor inertia, weakest motor, most
-#                    friction; 0.108 nominal at 10 ms). 50 ms is under the 119 ms fastest unstable
-#                    time constant (123 ms nominal). Backward: 0.325 catchable, easy (braking is
-#                    helped by back-EMF), as on the Pololu robot.
+#                    corner, with the free play in its worst position (closed away from the
+#                    recovery, so the motor side first crosses the whole gap; decided 2026-11-23,
+#                    the user): 0.0357 N s (light, tall, high rotor inertia, weakest motor, most
+#                    friction, most play: +-6 deg; 0.085 nominal at 20 ms). Was 1.02 N before the
+#                    play was modelled (0.0523 N s; with the play closed forward, as at a steady
+#                    cruise, 0.0531). 50 ms is under the 119 ms fastest unstable time constant
+#                    (123 ms nominal). Backward: 0.306 catchable, easy (braking is helped by
+#                    back-EMF), as on the Pololu robot.
 #   t = 9.5-11.9 s   0.40 -> -0.15 m/s in 2.4 s: 0.50 m/s^2, 0.092 rad.
 #   t = 11.9-14 s    cruise backward at -0.15 m/s (Pololu's 0.5/1.3 of top speed).
 #   t = 14-16 s      -0.15 -> 0 in 2.0 s: 0.16 m/s^2, 0.030 rad.
@@ -247,16 +264,16 @@ SCENARIO = replace(
         (14.0, 0.0, 2.0),     # gentle stop: 0.16 m/s^2
     ),
     pushes=(
-        (5.5, 0.05, 1.02),    # from behind at 0.40 m/s
-        (7.5, 0.05, -1.02),   # from the front at 0.40 m/s
+        (5.5, 0.05, 0.70),    # from behind at 0.40 m/s
+        (7.5, 0.05, -0.70),   # from the front at 0.40 m/s
     ),
     start_pitches_deg=(2.8648, -8.5944, 17.1887),    # 0.05, -0.15, 0.30 rad
 )
 
 # Cost limits (CostConfig's Bryson rule), in the Pololu cost's proportions:
 #   pitch_limit_rad 0.30: Pololu's is both 77% of its catchable start tilt and 69% of its lean
-#     cap. Here those give 0.35 (of the 0.454 rad caught on every corner; 0.628 nominal at 10 ms)
-#     and 0.30; the smaller keeps the goal profile's leans (shares of it) under the cap.
+#     cap. Here those give 0.33 (of the 0.436 rad caught on every corner with the play at its worst;
+#     0.589 nominal at 10 ms) and 0.30; the smaller keeps the goal profile's leans (shares of it) under the cap.
 #   velocity_limit 0.06 m/s: Pololu's 0.2/1.3 of the top speed.
 #   torque_limit 0.09 N m: Pololu's 0.1/0.135 of the nominal lean-cap torque (0.119), so pitch
 #     and effort trade as they do there; 10% of max_torque.

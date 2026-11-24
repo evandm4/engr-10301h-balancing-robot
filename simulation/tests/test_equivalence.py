@@ -6,6 +6,7 @@ only difference is that the reference code sums each integral with np.sum
 while the batched code adds it up step by step.
 """
 
+import math
 from dataclasses import replace
 
 import numpy as np
@@ -30,7 +31,9 @@ CONFIGS = {
     "ideal_actuator": replace(SHORT, motor=None),
     "no_noise_no_latency": replace(SHORT, sensor=SensorNoise(), latency=0.0),
     "biases_without_noise": replace(SHORT, sensor=SensorNoise(pitch_bias=0.02, pitch_rate_bias=0.01)),
-    "no_rotor_lossless_gearbox": replace(SHORT, params=SHORT.params.with_changes(rotor_inertia=0.0),
+    # No rotor, so no play either (the LEGO robot's would need the motor side's inertia).
+    "no_rotor_lossless_gearbox": replace(SHORT, params=SHORT.params.with_changes(rotor_inertia=0.0, gearbox_backlash=0.0,
+                                                                                 coupling_backlash=0.0),
                                          motor=replace(SHORT.motor, gear_efficiency=1.0)),
     "latency_between_steps": replace(SHORT, latency=0.0037),
     "control_every_step": replace(SHORT, control_dt=0.0025),
@@ -646,3 +649,95 @@ def test_pdm_phase_changes_the_result():
     a = BatchEvaluator(replace(PDM_CONFIGS["pdm_10ms"], pwm_tick_phase=0.0), SPACE).evaluate_population(gains).costs
     b = BatchEvaluator(replace(PDM_CONFIGS["pdm_10ms"], pwm_tick_phase=0.6), SPACE).evaluate_population(gains).costs
     assert not np.allclose(a, b, rtol=1e-6)
+
+
+# ---- Backlash: free play between motor and wheel (SOFTWARE_PLAN B5; PHYSICS.md 10.3) ----
+
+def _play(config, gearbox_deg, coupling_deg):
+    return replace(config, params=config.params.with_changes(gearbox_backlash=math.radians(gearbox_deg),
+                                                             coupling_backlash=math.radians(coupling_deg)))
+
+
+_PULSED = replace(_encoder_config(imu=True, voltage=True), slow_pwm=True, pwm_tick=0.01, pwm_tick_locked=True)
+BACKLASH_CONFIGS = {
+    "gearbox_and_coupling": _play(SHORT, 2.8, 1.5),
+    "coupling_only": _play(SHORT, 0.0, 1.5),               # the first B5 test's: encoder on the motor side
+    "gearbox_only_imu_encoder_voltage": _play(_encoder_config(imu=True, voltage=True), 3.0, 0.0),
+    "lego_features": _play(_PULSED, 2.8, 1.5),             # IMU, encoder, slow PWM with locked pulses, pushes
+    "ideal_actuator": _play(replace(SHORT, motor=None), 1.0, 1.0),
+    "latency_between_steps": _play(replace(SHORT, latency=0.0037), 2.0, 2.0),
+}
+
+
+@pytest.mark.parametrize("name", list(BACKLASH_CONFIGS))
+def test_backlash_costs_and_falls_match_reference(name):
+    config = BACKLASH_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    assert batched.robot.has_backlash and ref.dynamics().has_backlash
+    gains = _candidates()
+    result = batched.evaluate_population(gains)
+    for i, g in enumerate(gains):
+        expected = ref.evaluate_gains(g)
+        np.testing.assert_allclose(result.costs[i], expected.costs, rtol=COST_RTOL)
+        assert result.n_fell[i] == expected.n_fell
+
+
+@pytest.mark.parametrize("name", list(BACKLASH_CONFIGS))
+def test_backlash_trajectories_match_reference_exactly(name):
+    """All eight states, the play's gap, motor speed, encoder shaft and contact side included."""
+    config = BACKLASH_CONFIGS[name]
+    ref, batched = Evaluator(config, SPACE), BatchEvaluator(config, SPACE)
+    gains = _candidates(n=12, seed=1)
+    pitch, seed = ref.scenarios()[1]
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), schedule=batched.schedule, record=True)
+    assert run.states.shape[-1] == 8
+    events = 0
+    for i, g in enumerate(gains):
+        expected = ref.run(g, pitch, seed)
+        np.testing.assert_array_equal(run.states[:len(expected.t), i], expected.states)
+        np.testing.assert_array_equal(run.final_state[i], expected.states[-1])
+        assert run.fell[i] == expected.fell
+        events += np.count_nonzero(np.diff(expected.states[:, 7]))
+    assert events > 50     # the play opens and closes many times
+
+
+def test_backlash_per_simulation_play_matches_separate_reference_runs():
+    """Robust scoring draws both plays per scenario: (B,) arrays, each matching its own reference run."""
+    config = BACKLASH_CONFIGS["lego_features"]
+    n = 8
+    rng = np.random.default_rng(9)
+    gearbox, coupling = np.radians(rng.uniform(2.6, 3.0, n)), np.radians(rng.uniform(0.0, 3.0, n))
+    batched = BatchEvaluator(config, SPACE)
+    robot = replace(batched.robot, gearbox_backlash=gearbox, coupling_backlash=coupling)
+    pitch, seed = batched.scenarios()[0]
+    run = simulate_batch(batched.spec, robot, np.tile(HAND_TUNED, (n, 1)), pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(n, dtype=int), schedule=batched.schedule)
+    for i in range(n):
+        params = config.params.with_changes(gearbox_backlash=float(gearbox[i]), coupling_backlash=float(coupling[i]))
+        ref = Evaluator(replace(config, params=params), SPACE)
+        expected = ref.run(HAND_TUNED, pitch, seed)
+        np.testing.assert_allclose(run.cost[i], ref.score(expected), rtol=COST_RTOL)
+        np.testing.assert_array_equal(run.final_state[i], expected.states[-1])
+
+
+def test_backlash_per_simulation_delay_matches_reference():
+    config = BACKLASH_CONFIGS["gearbox_only_imu_encoder_voltage"]
+    batched = BatchEvaluator(config, SPACE)
+    gains = _candidates(n=6, seed=2)
+    pitch, seed = batched.scenarios()[0]
+    delays = np.array([0, 1, 3, 4, 7, 12])
+    run = simulate_batch(batched.spec, batched.robot, gains, pitch, noise=batched.noise_for((seed,)),
+                         seed_index=np.zeros(len(gains), dtype=int), delay_steps=delays, record=True)
+    for i, (g, d) in enumerate(zip(gains, delays)):
+        expected = Evaluator(replace(config, latency=d * config.dt), SPACE).run(g, pitch, seed)
+        np.testing.assert_array_equal(run.states[:len(expected.t), i], expected.states)
+
+
+def test_backlash_changes_the_run():
+    gains = _candidates(n=6, seed=5)
+    config = BACKLASH_CONFIGS["gearbox_and_coupling"]
+    rigid = _play(config, 0.0, 0.0)
+    assert not BatchEvaluator(rigid, SPACE).robot.has_backlash
+    assert not np.allclose(BatchEvaluator(rigid, SPACE).evaluate_population(gains).costs,
+                           BatchEvaluator(config, SPACE).evaluate_population(gains).costs, rtol=1e-6)

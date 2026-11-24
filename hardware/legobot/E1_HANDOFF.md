@@ -13,7 +13,7 @@ State on 2026-11-23, branch `legobot-config` (merged with `main`, PR #13 include
 | Item | Gates |
 |---|---|
 | Bench B1 (tick offsets after a power cycle) and B2 (duty 0: coast or brake), in BENCH_CHECKS.md | E1 conclusions: either result can change the simulation model. Check `docs/legobot-review/triage.md` for their status before trusting E1 numbers |
-| The backlash port (part 2 below) | E2. E1 can run without it, but it may well be one of the models that matter |
+| The backlash port (part 2 below) | E2. *Done 2026-11-23 on branch `claude/legobot-backlash`* (PHYSICS.md 10.3): the play is drawn per scenario and the pushes are re-derived with it (0.70 N, was 1.02). The baselines fall in 6–13% of robust scenarios, every fall catchable (A4_BASELINES.md, last section). E1 results without it are not comparable with E2's |
 | Bench B3–B4 and C1–C5 | E2 (final tuning) |
 
 ---

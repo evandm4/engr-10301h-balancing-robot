@@ -24,8 +24,8 @@ import math
 import numpy as np
 
 from .controller import cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
-from .physics import (accelerometer_tilt, derivatives, pdm_update, pwm_steps_per_tick, pwm_tick_offset, rk4_step,
-                      voltage_drive)
+from .physics import (accelerometer_tilt, backlash_end_step, backlash_release, backlash_rk4_step, backlash_terms,
+                      derivatives, pdm_update, pwm_steps_per_tick, pwm_tick_offset, rk4_step, voltage_drive)
 from .policy import PolicyMemory, ResidualBase, policy_update, unpack_batch
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule, encoder_steps, per_sim_ring_size
@@ -39,8 +39,9 @@ class BatchResult:
     velocity_error: np.ndarray  # (B,) integral of (velocity - goal)^2 dt
     fell: np.ndarray            # (B,) bool
     fall_time: np.ndarray       # (B,) s; NaN for robots that stayed up
-    final_state: np.ndarray     # (B, 4) state at the end (at the moment of falling, for fallen robots)
-    states: Optional[np.ndarray] = None  # (n_steps + 1, B, 4) if record=True; frozen after a fall
+    final_state: np.ndarray     # (B, 4) state at the end (at the moment of falling, for fallen robots);
+                                # (B, 8) with backlash, in Planar2D's order (gap, motor_speed, shaft, contact)
+    states: Optional[np.ndarray] = None  # (n_steps + 1, B, 4 or 8) if record=True; frozen after a fall
     # How the controller drove the motor, counted over control ticks while the robot was up (none
     # of these enter the cost; they are for reporting, e.g. torque roughness the cost can't see):
     torque_variation: Optional[np.ndarray] = None   # (B,) sum of |u_k - u_{k-1}| over commands (N m)
@@ -122,6 +123,15 @@ def simulate_batch(
 
     zeros = lambda: np.zeros(B, dtype=dtype)
     state = (zeros(), zeros(), np.broadcast_to(np.asarray(start_pitch, dtype=dtype), (B,)).copy(), zeros())
+    backlash = robot.has_backlash
+    if backlash:
+        # Planar2D.complete_state: play open and centred, motor side at the wheel's speed, shaft on the wheel.
+        if np.any(np.asarray(robot.gearbox_backlash + robot.coupling_backlash) <= 0):
+            raise ValueError("with backlash every simulation's play must be positive (both 0 is the rigid model)")
+        x, x_dot, theta, theta_dot = state
+        state = state + (zeros(), np.divide(x_dot, robot.wheel_radius) - theta_dot)
+        contact, shaft = zeros(), np.divide(x, robot.wheel_radius) - theta
+    full_state = (lambda: np.stack(state + (shaft, contact), axis=-1)) if backlash else (lambda: np.stack(state, axis=-1))
     pitch_integral, velocity_integral, setpoint = zeros(), zeros(), zeros()   # setpoint stays 0 for the LQR
     in_flight = [zeros() for _ in range(gains.shape[1] - 4)] if lqr else []    # LQR commands in flight, oldest first
     per_sim_delay = delay_steps is not None
@@ -152,7 +162,7 @@ def simulate_batch(
     last_command, torque_variation, torque_rate_sq = zeros(), zeros(), zeros()
     saturated_ticks, alive_ticks, peak_pitch = zeros(), zeros(), zeros()
     upright_reference = spec.pitch_reference == "upright"
-    history = [np.stack(state, axis=-1)] if record else None
+    history = [full_state()] if record else None
     encoder = spec.encoder_counts > 0
     if encoder:
         # Counts sampled every n_period steps (the state at the start of the step, before the
@@ -164,17 +174,19 @@ def simulate_batch(
 
     for k in range(schedule.n_steps):
         if encoder and k % n_period == 0:
-            counts[(k // n_period) % len(counts)] = np.floor((np.divide(state[0], robot.wheel_radius) - state[2])
-                                                             / resolution)
+            angle = shaft if backlash else np.divide(state[0], robot.wheel_radius) - state[2]   # Encoder.observe
+            counts[(k // n_period) % len(counts)] = np.floor(angle / resolution)
         if k % spc == 0:
             j = k // spc
-            _, x_dot, theta, theta_dot = state
+            x_dot, theta, theta_dot = state[1], state[2], state[3]
             if noise is not None:
                 n = noise[j][:, seed_index]
                 x_dot = x_dot + spec.velocity_std * n[0]
             if spec.imu:
                 # Accelerations at the sample: the drive in effect just before this tick, the push now.
-                derivs = derivatives(robot, state, applied, np, float(schedule.force_per_step[k]))
+                force = float(schedule.force_per_step[k])
+                derivs = (backlash_terms(robot, state, applied, contact, np, force)[0] if backlash
+                          else derivatives(robot, state, applied, np, force))
                 if noise is not None:
                     gyro = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
                     tilt_offset = spec.pitch_std * n[1] + pitch_bias
@@ -257,13 +269,20 @@ def simulate_batch(
                 applied = np.where(tick, out, applied)
         elif k >= pdm_offset and (k - pdm_offset) % pdm_steps == 0:
             pdm_total, applied = pdm_update(pdm_total, drive)
-        stepped = rk4_step(robot, state, applied, dt, np, float(schedule.force_per_step[k]))
+        force = float(schedule.force_per_step[k])
+        if backlash:
+            new_contact = backlash_release(robot, state, applied, contact, np, force)
+            stepped = backlash_rk4_step(robot, state, applied, new_contact, dt, np, force)
+            stepped, new_contact, new_shaft = backlash_end_step(robot, stepped, new_contact, shaft, np)
+            contact, shaft = np.where(alive, new_contact, contact), np.where(alive, new_shaft, shaft)
+        else:
+            stepped = rk4_step(robot, state, applied, dt, np, force)
         state = tuple(np.where(alive, new, old) for new, old in zip(stepped, state))
         just_fell = alive & (np.abs(state[2]) > spec.fall_angle)
         fall_time[just_fell] = (k + 1) * dt
         alive &= ~just_fell
         if record:
-            history.append(np.stack(state, axis=-1))
+            history.append(full_state())
         if not alive.any():
             break
 
@@ -282,7 +301,7 @@ def simulate_batch(
         velocity_error=velocity_error,
         fell=fell,
         fall_time=fall_time,
-        final_state=np.stack(state, axis=-1),
+        final_state=full_state(),
         states=np.stack(history) if record else None,
         torque_variation=torque_variation,
         torque_rate_sq=torque_rate_sq,

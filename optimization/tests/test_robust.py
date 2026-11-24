@@ -110,7 +110,8 @@ def test_project_config_randomizes_friction_and_latency():
     r = CONFIG.build_robustness()
     names = {name for name, _, _ in r.randomize_range}
     assert {"wheel_friction", "coulomb_friction"} <= names <= {"wheel_friction", "coulomb_friction", "pitch_bias",
-                                                               "pwm_tick_phase"}
+                                                               "pwm_tick_phase", "gearbox_backlash",
+                                                               "coupling_backlash"}
     assert r.latency_range is not None and r.latency_range[0] <= CONFIG.timing.latency_s <= r.latency_range[1]
 
 

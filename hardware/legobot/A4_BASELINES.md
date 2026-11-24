@@ -396,3 +396,47 @@ the chaos term rose from 0.26 to 12. The torch engine scored the same gains 7.2 
 the two engines disagree on one borderline fall. Under pulse-density PWM a run is bit-chaotic, and a flipped
 fall moves a 150-scenario mean by ~11. Treat robust-score differences of that size between candidates as
 noise, unless the falls are traced. These are the reference points for E1.
+
+### Backlash modelled (SOFTWARE_PLAN B5; 2026-11-23; superseded by the re-derived pushes below)
+
+Gearbox play ±2.8° and coupling play ±1.5° on the nominal robot, drawn per scenario in robust scoring (gearbox
+±2.6–3.0°, coupling ±0–3°; PHYSICS.md 10.3). `python hardware/legobot/legobot_baselines.py`:
+
+| Baseline | Plain (9) | Robust train (150) | Robust dev (150) | Dev worst | Dev chaos |
+|---|---|---|---|---|---|
+| Hand-tuned PID (2.5, 1.5, 0.2, 0.5) | 29.51 (0) | 354.3 (28) | 388.1 (31) | 1972 | 520 |
+| Model-based PID (1.98, 5.24, 0.15, 0.52) | 13.35 (0) | 230.7 (19) | 284.1 (23) | 1978 | 310 |
+
+The plain costs rose 187% (hand-tuned) and 89% (model-based) with no falls; robust, the falls went from 0–2 to
+19–31 of 150. The model-based PID's come about 0.5 s after the 5.5 s forward push (at 0.40 m/s), and their rate barely depends on
+the size of the play (8 of 43 dev scenarios with ±2.6–3.5° in all, 3 of 16 with ±5.5–6°) but rises with the
+latency (2 of 37 at 7.5 ms, 10 of 36 at 15 ms; model-based PID). The
+stiff tooth contact drops 17 of the same 150 dev robots, so the falls are the play's, not the step size's
+(PHYSICS.md 10.3: the 2.5 ms model may overstate them by up to a third). Neither baseline was designed for
+play; E2 tunes against it. The robust means are dominated by the falls (each moves a 150-scenario mean by ~11).
+
+### Pushes re-derived with the play in the catch test (2026-11-23)
+
+The scenario's catch test (`legobot_scenario.py`) now steps the play model, with the play as a corner like the rest
+and in its worst position: closed away from the recovery, so a full-torque response first carries the motor side
+across the whole gap (the user's choice; at a steady cruise it sits closed forward, which for a forward push is the
+best case: 0.0531 N s on every corner, against 0.0523 without play). Worst corner: 0.0357 N s forward (±6° of
+play, light, tall, weakest motor, most friction), 0.306 backward, 0.436 rad of start tilt. So the pushes are
+**0.70 N** × 50 ms (98%, was 1.02 N). `pitch_limit_rad` stays 0.30 (the lean cap's bound, under the tilt's 0.33),
+and with it the start tilts. `RECORDED_CATCH` holds the new values.
+
+| Baseline | Plain (9) | Robust train (150) | Robust dev (150) | Dev worst | Dev chaos |
+|---|---|---|---|---|---|
+| Hand-tuned PID (2.5, 1.5, 0.2, 0.5) | 28.34 (0) | 262.0 (20) | 264.3 (20) | 1972 | 360 |
+| Model-based PID (1.98, 5.24, 0.15, 0.52) | 13.19 (0) | 116.1 (9) | 192.2 (15) | 1978 | 180 |
+
+Against the 1.02 N pushes with play: train falls 28 → 20 and 19 → 9, dev 31 → 20 and 23 → 15. Every remaining
+dev fall is catchable: each scenario's forward push is caught by full torque on its own robot and latency (20 of
+20, 15 of 15, play at its worst), and no start tilt exceeds 0.30 rad against the 0.436 rad caught on every
+corner. Where they fall (dev):
+- *Hand-tuned:* 14 of 20 at 3.6–4.8 s, while settling into the 0.40 m/s cruise after the acceleration (it ends at
+  3.25 s), before any push; 3 at 6.2–6.3 s after the forward push; one each at the 0.30 rad start and at 9.3 s.
+- *Model-based:* 6 of 15 at 0.6–1.2 s recovering from the 0.30 rad start tilt; 6 at 5.0–6.4 s around the forward
+  push; 3 later (7.9, 8.7 s and one at 5.7 s).
+
+So these falls are the controllers' (neither baseline was designed for play), for E2's tuning to remove.

@@ -53,6 +53,8 @@ class SimWorld:
         self.held = False
 
     def _relative_deg(self):
+        if len(self.state) > 6:     # free play modelled: the encoder reads the output shaft (Planar2D state[6])
+            return math.degrees(self.state[6])
         return math.degrees(self.state[0] / self.cfg.robot.wheel_radius - self.state[2])
 
     def advance(self, target):
@@ -69,7 +71,10 @@ class SimWorld:
                                       math.floor(self._relative_deg())))
                 self._next_sample += self.period
             if not self.held and abs(self.state[2]) < 1.4:
-                self.state = self._rk4(self.dyn, self.state, self.drive, self.h)
+                if getattr(self.dyn, "has_backlash", False):
+                    self.state = self.dyn.step(self.state, self.drive, self.h)   # with the free play's events
+                else:
+                    self.state = self._rk4(self.dyn, self.state, self.drive, self.h)
             self.t += self.h
         while self._encoder and self._encoder[0][0] <= self.now + 1e-12:
             t_arr, pos = self._encoder.popleft()

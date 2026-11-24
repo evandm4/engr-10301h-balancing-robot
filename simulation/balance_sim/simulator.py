@@ -84,6 +84,10 @@ def simulate(
     n_steps = int(round(duration / dt))
 
     state = dynamics.initial_state() if initial_state is None else np.array(initial_state, dtype=float)
+    # Backlash (Planar2D): extra states, and an event check before and after every step.
+    backlash = getattr(dynamics, "has_backlash", False)
+    if backlash:
+        state = dynamics.complete_state(state)
     controller.reset()
     if sensor is not None:
         sensor.reset()
@@ -127,7 +131,10 @@ def simulate(
             pdm_total, applied = pdm_update(pdm_total, drive)
         torques.append(torque)
         references.append(controller.pitch_reference())
-        state = _rk4_step(dynamics, state, applied, dt, *push)
+        if backlash:
+            state = dynamics.step(state, applied, dt, *push)   # begin_step, _rk4_step, end_step
+        else:
+            state = _rk4_step(dynamics, state, applied, dt, *push)
         ts.append((k + 1) * dt)
         states.append(state.copy())
         if dynamics.is_fallen(state):

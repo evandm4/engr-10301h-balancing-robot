@@ -74,6 +74,8 @@ def test_evaluator_carries_the_counters_and_torch_agrees():
                        device=device).evaluate_population([GAINS])
     for field in BatchEvaluator.REPORT_FIELDS:
         assert getattr(a, field).shape == a.costs.shape
-        # 1e-6 with pulse-density ticks (LEGO): a last-bit GPU difference can move an encoder count or pulse
+        # 1e-6 with pulse-density ticks (LEGO): a last-bit GPU difference can move an encoder count or pulse;
+        # 1e-4 with the free play too, whose engagement impacts amplify such differences further
         rtol = 1e-6 if CONFIG.actuator.model == "slow_pwm" and CONFIG.actuator.pwm_tick_s > 0 else 1e-9
+        rtol = 1e-4 if CONFIG_SHORT.params.backlash > 0 else rtol
         np.testing.assert_allclose(getattr(b, field), getattr(a, field), rtol=rtol, err_msg=field)

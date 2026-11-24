@@ -51,7 +51,7 @@ RANDOMIZABLE = tuple(f.name for f in fields(BatchRobot) if f.name not in (
     "est_torque_constant", "est_resistance", "est_gear_efficiency"))
 ROBOT_PARAM_FIELDS = ("body_mass", "body_com_height", "body_inertia", "wheel_mass", "wheel_radius",
                       "wheel_inertia", "rotor_inertia", "max_torque", "wheel_friction", "coulomb_friction",
-                      "coulomb_friction_speed", "gravity")
+                      "coulomb_friction_speed", "gravity", "gearbox_backlash", "coupling_backlash")
 MOTOR_PARAM_FIELDS = ("gear_ratio", "torque_constant", "resistance", "supply_voltage", "current_limit", "n_motors",
                       "gear_efficiency")
 

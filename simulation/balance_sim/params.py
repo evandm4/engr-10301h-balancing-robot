@@ -31,6 +31,18 @@ class RobotParams:
     coulomb_friction_speed: float  # rad/s, relative wheel speed over which the Coulomb torque
                                    # rises smoothly: tau_c tanh(speed / this) (keeps RK4 accurate)
     gravity: float          # m/s^2
+    # Free play between motor and wheel (Planar2D; PHYSICS.md 10.3), half-widths in rad of motor
+    # angle relative to the body. The motor's encoder sits between the two: gearbox_backlash is
+    # between the motor side (rotor and gear train, rotor_inertia) and the output shaft the encoder
+    # reads, coupling_backlash between that shaft and the wheel, which the encoder can't see. Both 0
+    # (the default) is a rigid drive train.
+    gearbox_backlash: float = 0.0
+    coupling_backlash: float = 0.0
+
+    @property
+    def backlash(self) -> float:
+        """Total free play between the motor side and the wheel, half-width (rad)."""
+        return self.gearbox_backlash + self.coupling_backlash
 
     def __post_init__(self):
         positive = (
@@ -54,6 +66,10 @@ class RobotParams:
             raise ValueError("coulomb_friction must be non-negative")
         if self.coulomb_friction_speed <= 0:
             raise ValueError("coulomb_friction_speed must be positive")
+        if self.gearbox_backlash < 0 or self.coupling_backlash < 0:
+            raise ValueError("gearbox_backlash and coupling_backlash must be non-negative")
+        if self.backlash > 0 and self.rotor_inertia <= 0:
+            raise ValueError("backlash needs a positive rotor_inertia: the motor side moves on its own in the play")
 
     def with_changes(self, **changes) -> "RobotParams":
         """Return a copy with some fields changed (handy for design sweeps)."""

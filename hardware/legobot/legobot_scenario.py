@@ -12,8 +12,9 @@ Usage (from the repo root):
     python hardware/legobot/legobot_scenario.py --check      # also re-derive the Pololu numbers
 
 The "robust-scoring box" is every corner of RobustnessSettings: each randomize
-spread at either end and each randomize_range at either end (2^11 = 2048
-robots for both configs). Worst cases are taken over all corners.
+spread at either end and each randomize_range at either end, leaving out the
+ranges the catch test can't see (NOT_IN_CORNERS). Worst cases are taken over
+all corners.
 
 A "full-torque response" (the catch test): the robot cruises upright at speed v,
 a push of impulse J acts on the body's centre of mass for push_duration; the
@@ -25,6 +26,17 @@ and is held. The robot is caught if the pitch comes back through zero before it
 passes the fall angle. Start tilts: the same from rest, with no push. No
 controller does better than this from the same state, so a push or tilt that
 passes on every corner can always be saved: a fall is the controller's doing.
+
+With free play between motor and wheel (the LEGO robot; PHYSICS.md 10.3) the test
+steps the engines' play model (batch_sim.physics.backlash_*): torque reaches the
+wheel only once the motor side has closed the gap, with the inelastic engagement.
+The play starts in its worst position: closed on the side away from the recovery,
+so the full-torque response must first carry the motor side across the whole gap
+(decided 2026-11-23, the user). At a steady cruise the play sits closed forward
+(the motor drives against friction), which for a forward push is the best case:
+that bound was 0.0531 N s on every corner, against 0.0523 N s without play. The
+worst position covers a push that lands while the motor side is elsewhere in the
+gap. The plays are corners like the rest.
 """
 
 import argparse
@@ -40,7 +52,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from config import POLOLU_CONFIG, ProjectConfig  # noqa: E402  (also puts simulation/ on the path)
-from batch_sim.physics import actuator_torque, rk4_step, voltage_drive  # noqa: E402
+from batch_sim.physics import (actuator_torque, backlash_end_step, backlash_release,  # noqa: E402
+                               backlash_rk4_step, rk4_step, voltage_drive)
 from batch_sim.robot import BatchRobot  # noqa: E402
 
 BLEND_PEAK = 2.1875   # step_profile: peak acceleration = 2.1875 x change / blend time
@@ -69,19 +82,18 @@ def corner_robots(cfg: ProjectConfig, driver: str = None) -> BatchRobot:
     """Every corner of the robust-scoring box, as one batch."""
     base = nominal_robot(cfg, driver)
     r = cfg.robustness
-    n_rel, n_rng = len(r.randomize), len(r.randomize_range)
-    signs = np.array(list(itertools.product((-1.0, 1.0), repeat=n_rel + n_rng)))
+    ranged = [(name, lo, hi) for name, lo, hi in r.randomize_range if name not in NOT_IN_CORNERS]
+    n_rel = len(r.randomize)
+    signs = np.array(list(itertools.product((-1.0, 1.0), repeat=n_rel + len(ranged))))
     changes = {name: getattr(base, name) * (1 + s * signs[:, j]) for j, (name, s) in enumerate(r.randomize)}
-    changes.update({name: np.where(signs[:, n_rel + j] > 0, hi, lo)
-                    for j, (name, lo, hi) in enumerate(r.randomize_range) if name not in NOT_IN_CORNERS})
+    changes.update({name: np.where(signs[:, n_rel + j] > 0, hi, lo) for j, (name, lo, hi) in enumerate(ranged)})
     return replace(base, **changes)
 
 
 # Robustness ranges the catch tests here don't see: the pulse-density tick phase (no longer drawn for the LEGO
 # robot, whose ticks are locked; catch_latencies covers their wait), and the pitch offset, which full torque
-# ignores. Held at the base value (both corner signs then give the same robot, so the batch has duplicates
-# rather than fewer corners: harmless).
-NOT_IN_CORNERS = ("pwm_tick_phase",)
+# ignores. Held at the base value and left out of the corners (they would only duplicate robots).
+NOT_IN_CORNERS = ("pwm_tick_phase", "pitch_bias")
 
 
 def size(robot: BatchRobot) -> int:
@@ -157,13 +169,17 @@ def caught(R: BatchRobot, *, speed, impulse=0.0, start_pitch=0.0, push_duration=
     force = impulse / push_duration
     direction = np.where(impulse != 0, np.sign(impulse), np.sign(start_pitch) if start_pitch else 1.0)
     state = (np.zeros(n), np.full(n, float(speed)), np.full(n, float(start_pitch)), np.zeros(n))
+    play = _Play(R, state, closed_side=-direction) if R.has_backlash else None   # worst position: see the docstring
     hold = (friction(R, speed / R.wheel_radius) if hold_cruise_torque else 0.0) * np.ones(n)
     alive, done = np.ones(n, bool), np.zeros(n, bool)
     t = 0.0
     while t < horizon and not done.all():
         torque = hold if t < latency else direction * 1e6
         f = force if t < push_duration else 0.0
-        state = _step_with_force(R, state, drive(R, torque, state[1], state[3]), dt, f)
+        if play is not None:
+            state = play.step(torque, dt, f)
+        else:
+            state = _step_with_force(R, state, drive(R, torque, state[1], state[3]), dt, f)
         t += dt
         theta = state[2]
         fell = np.abs(theta) > fall_angle
@@ -171,6 +187,32 @@ def caught(R: BatchRobot, *, speed, impulse=0.0, start_pitch=0.0, push_duration=
         alive &= ~(fell & ~done)
         done |= fell | back
     return alive & done
+
+
+class _Play:
+    """The play's extra state through a catch test, stepped as the engines step it (begin: release,
+    RK4 with each play open or closed, end: engagement). The robot code's drive takes the motor side's own
+    speed (measured exactly, as drive() takes the wheel's)."""
+
+    def __init__(self, R, state, closed_side=0.0):
+        n = size(R)
+        self.R = R
+        x, x_dot, theta, theta_dot = state
+        wheel = x_dot / R.wheel_radius - theta_dot
+        play = R.gearbox_backlash + R.coupling_backlash
+        side = np.broadcast_to(np.asarray(closed_side, float), (n,)).copy()   # +1 / -1 closed that way, 0 open
+        self.state = (x, x_dot, theta, theta_dot, side * play, wheel.copy())
+        self.contact = side
+        self.shaft = x / R.wheel_radius - theta
+
+    def step(self, torque, dt, force):
+        R, s = self.R, self.state
+        motor_x_dot = R.wheel_radius * (s[5] + s[3])        # the x_dot at which the wheel would turn as the motor side
+        applied = drive(R, torque, motor_x_dot, s[3])
+        contact = backlash_release(R, s, applied, self.contact, np, force)
+        s = backlash_rk4_step(R, s, applied, contact, dt, np, force)
+        self.state, self.contact, self.shaft = backlash_end_step(R, s, contact, self.shaft, np)
+        return self.state[:4]
 
 
 def _step_with_force(R, state, torque, dt, force):
@@ -241,11 +283,15 @@ def largest_catchable_tilt(R, latency, steps=16, max_tilt=1.2):
 def _tilt_batch(R, tilts, latency, dt=0.0005, horizon=3.0, fall_angle=math.radians(60)):
     n = size(R)
     state = (np.zeros(n), np.zeros(n), tilts.copy(), np.zeros(n))
+    play = _Play(R, state, closed_side=-1.0) if R.has_backlash else None   # worst position: away from the recovery
     alive, done = np.ones(n, bool), np.zeros(n, bool)
     t = 0.0
     while t < horizon and not done.all():
         torque = np.zeros(n) if t < latency else np.full(n, 1e6)
-        state = rk4_step(R, state, drive(R, torque, state[1], state[3]), dt)
+        if play is not None:
+            state = play.step(torque, dt, 0.0)
+        else:
+            state = rk4_step(R, state, drive(R, torque, state[1], state[3]), dt)
         t += dt
         fell = np.abs(state[2]) > fall_angle
         back = (t > latency) & (state[2] <= 0)
@@ -264,6 +310,9 @@ def describe_worst(cfg, R, index):
         if name in NOT_IN_CORNERS:
             continue
         out.append(f"{name} {'hi' if np.ravel(getattr(R, name))[index] > 0.5 * (lo + hi) else 'lo'}")
+    if R.has_backlash:
+        play = np.ravel(np.asarray(R.gearbox_backlash + R.coupling_backlash, float) * np.ones(size(R)))[index]
+        out.append(f"play +-{math.degrees(play):.1f} deg in all")
     return ", ".join(out)
 
 
@@ -313,9 +362,11 @@ TOP_SPEED_CHOICE = 0.40
 LEAN_SOFTENING = 0.5
 POLOLU_PUSH_SHARE = 0.145 / 0.149             # push / largest catchable on every corner
 # What a full run of the catch simulations gives for legobot_config.py as of 2026-11-23 (measured robot, slow
-# PWM with ticks locked to the loop, latency to 15 ms: push reaction 25 ms, tilt 15 ms), for --quick. Re-run
-# without --quick after changing the config. nominal_* are at the nominal 10 ms (push 20 ms).
-RECORDED_CATCH = dict(forward=0.0523, backward=0.3250, tilt=0.486, nominal_forward=0.099, nominal_tilt=0.628)
+# PWM with ticks locked to the loop, latency to 15 ms: push reaction 25 ms, tilt 15 ms; gearbox and coupling
+# play, B5, in its worst position), for --quick. Re-run without --quick after changing the config. nominal_* are
+# at the nominal 10 ms (push 20 ms). Without the play: forward 0.0523, backward 0.3250, tilt 0.486, nominal
+# forward 0.099, nominal tilt 0.628.
+RECORDED_CATCH = dict(forward=0.03572, backward=0.3059, tilt=0.436, nominal_forward=0.085, nominal_tilt=0.589)
 
 
 def lean_cap_table(N, R, caps_deg):

@@ -17,7 +17,7 @@ from batch_tuning import BatchEvaluator, robot_from_eval_config, spec_from_eval_
 from config import CONFIG
 from tuning import Evaluator
 
-P = CONFIG.build_robot_params()
+P = CONFIG.build_robot_params().with_changes(gearbox_backlash=0.0, coupling_backlash=0.0)   # rigid: the free play has test_backlash.py
 HAND_TUNED = np.array(CONFIG.controller.hand_tuned_gains)
 SPACE = CONFIG.build_search_space()
 # Ticks unlocked (a fixed phase): these tests compare simulate_batch's per-simulation delays with reference runs
@@ -187,13 +187,14 @@ def test_torch_per_sim_delay_matches_numpy(device, controller):
     sim = TorchSimulator(spec, robot, B, noise=noise, device=device, dtype=torch.float64,
                          n_gains=gains.shape[1], max_delay_steps=8)
     got = sim.run(gains, pitch, seed_index, robot=robot, delay_steps=delays)
-    np.testing.assert_allclose(got.cost, ref.cost, rtol=1e-9)
+    rtol = 1e-7 if config.params.backlash > 0 else 1e-9   # the play's impacts amplify last-bit differences
+    np.testing.assert_allclose(got.cost, ref.cost, rtol=rtol)
     np.testing.assert_array_equal(got.fell, ref.fell)
     # A second run (replaying captured graphs on the GPU) with other delays.
     delays2 = delays[::-1].copy()
     ref2 = simulate_batch(spec, robot, gains, pitch, noise=noise, seed_index=seed_index, delay_steps=delays2)
     got2 = sim.run(gains, pitch, seed_index, robot=robot, delay_steps=delays2)
-    np.testing.assert_allclose(got2.cost, ref2.cost, rtol=1e-9)
+    np.testing.assert_allclose(got2.cost, ref2.cost, rtol=rtol)
     with pytest.raises(ValueError, match="delay_steps"):
         sim.run(gains, pitch, seed_index, robot=robot)
     with pytest.raises(ValueError, match="delay_steps"):

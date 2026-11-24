@@ -9,7 +9,8 @@ from balance_sim import (
 )
 from config import CONFIG
 
-ROBOT = CONFIG.build_robot_params()
+# The rigid model's physics (the LEGO robot's free play has its own tests, test_backlash.py).
+ROBOT = CONFIG.build_robot_params().with_changes(gearbox_backlash=0.0, coupling_backlash=0.0)
 FRICTIONLESS = ROBOT.with_changes(wheel_friction=0.0, coulomb_friction=0.0)
 
 

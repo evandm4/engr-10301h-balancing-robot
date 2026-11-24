@@ -529,9 +529,8 @@ handled by firmware choices, and the rest are modeling decisions for later.
 4. **Motor data arrive at 100 Hz.** At a 200 Hz control rate, every other encoder reading repeats. The sim's
    sensor model samples fresh state every control step. The fix in firmware is to difference positions 10 ms apart
    (as `velocity_std` above assumes); the model's sample-and-hold and sensor delay are not represented.
-5. **Gearbox slack.** The ±3° accuracy includes slack. The sim has no backlash; `position_std` stands in for its
-   effect on the measurement, but not for the dead zone in torque transmission, which can cause small limit cycles
-   while standing still.
+5. **Gearbox slack.** The ±3° accuracy includes slack. *Modelled since 2026-11-23 (SOFTWARE_PLAN B5; PHYSICS.md
+   10.3):* gearbox and coupling play on either side of the encoder, as measured in 8.7.
 6. **Inductance.** L/R is about 3 ms (Pybricks estimate), against 0.2–0.5 ms for the Pololu motor. The model omits
    inductance; folding it into the latency (section 6 does) is the simple approximation.
 7. **The two motor data sources disagree on stall torque** (3.1). The cap and spreads in section 2 cover both until

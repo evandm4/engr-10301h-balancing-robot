@@ -29,8 +29,8 @@ from typing import Optional
 import numpy as np
 
 from .controller import LQR_STATE_GAINS, cascaded_update, five_gain_columns, lqr_gain_columns, lqr_update
-from .physics import (accelerometer_tilt, derivatives, pdm_update, pwm_steps_per_tick, pwm_tick_offset, rk4_step,
-                      voltage_drive)
+from .physics import (accelerometer_tilt, backlash_end_step, backlash_release, backlash_rk4_step, backlash_terms,
+                      derivatives, pdm_update, pwm_steps_per_tick, pwm_tick_offset, rk4_step, voltage_drive)
 from .policy import PolicyMemory, ResidualBase, policy_update, unpack_batch
 from .robot import BatchRobot
 from .schedule import Schedule, SimSpec, build_schedule, encoder_steps, per_sim_ring_size
@@ -132,7 +132,13 @@ class TorchSimulator:
         self.delay_steps = zeros(torch.long)   # used only with per-simulation latency
 
         # ---- state, updated in place every step ----
-        self.state = tuple(zeros() for _ in range(4))
+        # With backlash (physics.backlash_*): gap and motor_speed join the integrated state, and contact and
+        # the encoder's shaft angle ride along; the recorded and final states then have 8 columns.
+        self.backlash = robot.has_backlash   # robot: the NumPy BatchRobot given
+        if self.backlash:
+            _check_play(robot)
+        self.state = tuple(zeros() for _ in range(6 if self.backlash else 4))
+        self.contact, self.shaft = (zeros(), zeros()) if self.backlash else (None, None)
         self.pitch_integral, self.velocity_integral, self.setpoint = zeros(), zeros(), zeros()   # setpoint stays 0 for the LQR
         n_in_flight = self.n_gains - LQR_STATE_GAINS if self.lqr else 0
         self.in_flight = torch.zeros(n_in_flight, B, dtype=dtype, device=device)   # LQR commands in flight, oldest first
@@ -176,11 +182,17 @@ class TorchSimulator:
         self.saturated_ticks, self.alive_ticks, self.peak_pitch = zeros(), zeros(), zeros()
         self.step = torch.zeros(1, dtype=torch.long, device=device)
         self.tick = torch.zeros(1, dtype=torch.long, device=device)
-        self.history = (torch.zeros(s.n_steps + 1, B, 4, dtype=dtype, device=device) if record else None)
+        self.history = (torch.zeros(s.n_steps + 1, B, 8 if self.backlash else 4, dtype=dtype, device=device)
+                        if record else None)
 
         self._graphs = None
 
     # ---- one step, written as in-place updates so it can be captured --------
+
+    def _full_state(self):
+        """(B, 4) state, or (B, 8) with backlash in Planar2D's order."""
+        extra = (self.shaft, self.contact) if self.backlash else ()
+        return self.torch.stack((*self.state, *extra), dim=-1)
 
     def _encoder_sample(self):
         """Store this step's count if it is a sampling step. Idempotent within a step (the state
@@ -188,8 +200,9 @@ class TorchSimulator:
         torch, xp = self.torch, self.xp
         step = self.step
         slot = torch.div(step, self.n_period, rounding_mode="floor") % self.n_counts
-        x, _, theta, _ = self.state
-        count = xp.floor((xp.divide(x, self.robot.wheel_radius) - theta) / self.resolution)
+        x, theta = self.state[0], self.state[2]
+        angle = self.shaft if self.backlash else xp.divide(x, self.robot.wheel_radius) - theta   # Encoder.observe
+        count = xp.floor(angle / self.resolution)
         old = self.counts[slot]
         self.counts.index_copy_(0, slot, torch.where(step % self.n_period == 0, count.unsqueeze(0), old))
 
@@ -197,14 +210,15 @@ class TorchSimulator:
         spec, xp = self.spec, self.xp
         if self.encoder:
             self._encoder_sample()
-        _, x_dot, theta, theta_dot = self.state
+        x_dot, theta, theta_dot = self.state[1], self.state[2], self.state[3]
         if self.noise is not None:
             n = self.noise[self.tick][0][:, self.seed_index]    # (3, B): velocity, pitch, pitch-rate noise
             x_dot = x_dot + spec.velocity_std * n[0]
         if spec.imu:
             # Accelerations at the sample: the drive in effect just before this tick, the push now.
             force = self.force_per_step[self.step][0] if self.has_push else 0.0
-            derivs = derivatives(self.robot, self.state, self.applied, xp, force)
+            derivs = (backlash_terms(self.robot, self.state, self.applied, self.contact, xp, force)[0]
+                      if self.backlash else derivatives(self.robot, self.state, self.applied, xp, force))
             if self.noise is not None:
                 gyro = theta_dot + (spec.pitch_rate_std * n[2] + spec.pitch_rate_bias)
                 tilt_offset = spec.pitch_std * n[1] + self.pitch_bias
@@ -296,7 +310,7 @@ class TorchSimulator:
             drive = self.ring_drive[slot][0] if self.voltage else torque
 
         # Cost terms at this sample, only for robots still up.
-        x, x_dot, theta, theta_dot = self.state
+        x_dot, theta = self.state[1], self.state[2]
         pitch_err = theta if spec.pitch_reference == "upright" else theta - self.setpoint
         self.peak_pitch.copy_(torch.maximum(self.peak_pitch, torch.where(alive, torch.abs(theta), 0.0)))
         self.pitch_error.add_(torch.where(alive, pitch_err**2 * dt, 0.0))
@@ -314,14 +328,21 @@ class TorchSimulator:
             drive = self.pdm_out
         if spec.imu:
             self.applied.copy_(drive)
-        stepped = rk4_step(self.robot, self.state, drive, dt, xp, force)
+        if self.backlash:
+            contact = backlash_release(self.robot, self.state, drive, self.contact, xp, force)
+            stepped = backlash_rk4_step(self.robot, self.state, drive, contact, dt, xp, force)
+            stepped, contact, shaft = backlash_end_step(self.robot, stepped, contact, self.shaft, xp)
+            self.contact.copy_(torch.where(alive, contact, self.contact))
+            self.shaft.copy_(torch.where(alive, shaft, self.shaft))
+        else:
+            stepped = rk4_step(self.robot, self.state, drive, dt, xp, force)
         for buffer, new in zip(self.state, stepped):
             buffer.copy_(torch.where(alive, new, buffer))
         just_fell = alive & (torch.abs(self.state[2]) > spec.fall_angle)
         self.fall_time.copy_(torch.where(just_fell, self.step_end_time[self.step], self.fall_time))
         alive.logical_and_(~just_fell)
         if self.record:
-            self.history.index_copy_(0, self.step + 1, torch.stack(self.state, dim=-1).unsqueeze(0))
+            self.history.index_copy_(0, self.step + 1, self._full_state().unsqueeze(0))
         self.step.add_(1)
 
     def _control_step(self):
@@ -337,14 +358,18 @@ class TorchSimulator:
                        self.pitch_error, self.effort, self.velocity_error, self.step, self.tick,
                        self.int_v, self.int_theta, self.commands, self.saturated, self.last_command,
                        self.torque_variation, self.torque_rate_sq, self.saturated_ticks, self.alive_ticks,
-                       self.peak_pitch):
+                       self.peak_pitch, *([self.contact, self.shaft] if self.backlash else [])):
             buffer.zero_()
         self.state[2].copy_(self.start_pitch)
+        if self.backlash:   # simulate_batch: play open and centred, motor side at the wheel's speed, shaft on the wheel
+            x, x_dot, theta, theta_dot = self.state[:4]
+            self.state[5].copy_(self.xp.divide(x_dot, self.robot.wheel_radius) - theta_dot)
+            self.shaft.copy_(self.xp.divide(x, self.robot.wheel_radius) - theta)
         self.alive.fill_(True)
         self.fall_time.fill_(float("nan"))
         if self.record:
             self.history.zero_()
-            self.history[0].copy_(self.torch.stack(self.state, dim=-1))
+            self.history[0].copy_(self._full_state())
 
     def _capture(self):
         torch = self.torch
@@ -403,6 +428,8 @@ class TorchSimulator:
             given = [f.name for f in fields(robot) if np.ndim(getattr(robot, f.name))]
             if sorted(per_sim) != sorted(given):
                 raise ValueError(f"robot must give per-simulation values for exactly {per_sim}, got {given}")
+            if self.backlash:
+                _check_play(robot)
             for name in per_sim:
                 getattr(self.robot, name).copy_(torch.as_tensor(np.asarray(getattr(robot, name)), dtype=self.dtype))
             if self.pdm_steps and isinstance(self.pdm_offset, torch.Tensor):
@@ -445,7 +472,7 @@ class TorchSimulator:
             velocity_error=out(self.velocity_error),
             fell=fell.cpu().numpy(),
             fall_time=out(self.fall_time),
-            final_state=out(self.torch.stack(self.state, dim=-1)),
+            final_state=out(self._full_state()),
             states=out(self.history) if self.record else None,
             torque_variation=out(self.torque_variation),
             torque_rate_sq=out(self.torque_rate_sq),
@@ -453,3 +480,9 @@ class TorchSimulator:
             alive_ticks=out(self.alive_ticks),
             peak_pitch=out(self.peak_pitch),
         )
+
+
+def _check_play(robot: BatchRobot) -> None:
+    """As simulate_batch: with backlash, every simulation's total play must be positive."""
+    if np.any(np.asarray(robot.gearbox_backlash + robot.coupling_backlash) <= 0):
+        raise ValueError("with backlash every simulation's play must be positive (both 0 is the rigid model)")

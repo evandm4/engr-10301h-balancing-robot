@@ -2,9 +2,9 @@
 
 The other equivalence tests run against CONFIG, which is the Pololu robot under a plain `pytest`, so the
 LEGO robot's features (IMU and complementary filter, quantized encoder, slow PWM with 10 ms pulses locked to
-the loop, pushes) were only checked together under ROBOT=legobot, and only one or two at a time. Here every
-one is on, with robust scoring drawing the robot, latency and pitch offset per scenario (the pulse phase
-following the latency), and each scenario is checked against its own reference run (balance_sim), then the
+the loop, pushes, gearbox and coupling backlash) were only checked together under ROBOT=legobot, and only one or
+two at a time. Here every one is on, with robust scoring drawing the robot (its free play included), latency and
+pitch offset per scenario (the pulse phase following the latency), and each scenario is checked against its own reference run (balance_sim), then the
 torch engine against NumPy.
 """
 
@@ -31,7 +31,9 @@ def test_every_lego_feature_is_on():
     assert SHORT.slow_pwm and SHORT.pwm_tick > 0 and SHORT.voltage_estimate is not None and SHORT.pwm_tick_locked
     assert SHORT.sensor.has_encoder and type(SHORT.sensor).__name__ == "IMUSensor"
     ranged = {name for name, _, _ in ROBUST.randomize_range}
-    assert {"pitch_bias", "coulomb_friction"} <= ranged and "pwm_tick_phase" not in ranged
+    assert {"pitch_bias", "coulomb_friction", "gearbox_backlash", "coupling_backlash"} <= ranged
+    assert "pwm_tick_phase" not in ranged
+    assert SHORT.params.gearbox_backlash > 0 and SHORT.params.coupling_backlash > 0
     assert ROBUST.randomize and ROBUST.latency_range is not None
 
 
@@ -45,8 +47,10 @@ def test_robust_scores_match_reference_runs_scenario_by_scenario():
     phases = np.broadcast_to(np.asarray(robots.pwm_tick_phase, dtype=float), (len(ev.scenarios()),))
     assert len(set(np.round(phases, 6))) > 1          # the phase follows each scenario's own latency
     assert len(set(delays)) > 1
+    assert len(set(robots.gearbox_backlash)) == len(set(robots.coupling_backlash)) == len(ev.scenarios())
     for i, (pitch, seed) in enumerate(ev.scenarios()):
         params, motor = robot_at(robots, i)
+        assert params.gearbox_backlash == robots.gearbox_backlash[i] and params.backlash > 0
         sensor = replace(SHORT.sensor, pitch_bias=pitch_bias_at(robots, i))
         config = replace(SHORT, params=params, motor=motor, sensor=sensor, latency=delays[i] * SHORT.dt)
         assert tick_phase(config) == phases[i]
