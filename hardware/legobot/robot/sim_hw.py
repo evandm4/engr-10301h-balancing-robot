@@ -45,6 +45,8 @@ class SimWorld:
         # run on the same HAT clock as the lines (not the physics grid).
         actuator = getattr(self.dyn, "actuator", None)
         self.pwm_tick = getattr(actuator, "pwm_tick", 0.0)
+        if self.pwm_tick > 0 and abs(self.pwm_tick - self.period) > 1e-3:
+            raise ValueError(f"SimWorld paces slow-PWM ticks on HAT_LINE_PERIOD ({self.period} s), got pwm_tick={self.pwm_tick} s")
         self.pdm_total = 0.0
         self._next_pwm_tick = getattr(actuator, "pwm_tick_phase", 0.0) * self.period
         self.now = 0.0                        # the loop's clock (continuous); physics steps on the h grid

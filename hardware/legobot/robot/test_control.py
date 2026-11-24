@@ -134,6 +134,12 @@ def test_runaway_threshold_follows_the_battery_voltage(cfg):
     s = control.Safety(dt)      # a transient 0 V reading at a normal speed does not false-trip the runaway check
     out = [s.check(k * dt, 0.0, (0.3, 0.3), (5.0, 5.0), vin_reading=(0.0, 0.0), **ok) for k in range(n + 5)]
     assert not any(o and "running away" in o for o in out)
+    # L9: startup vin seeds Safety.vin before the first in-loop vin reply arrives (vin_reading=None)
+    s84 = control.Safety(dt, vin=8.4)
+    assert all(s84.check(k * dt, 0.0, (0.6, 0.6), (18.0, 18.0), vin_reading=None, **ok) is None for k in range(n + 5))
+    s68 = control.Safety(dt, vin=6.8)
+    assert any(o and "running away" in o
+               for o in [s68.check(k * dt, 0.0, (0.6, 0.6), (16.0, 16.0), vin_reading=None, **ok) for k in range(n + 5)])
 
 
 def test_watchdog_stop_joins_its_thread():
@@ -182,6 +188,9 @@ def test_sim_world_applies_slow_pwm_pulses(cfg):
         w.advance(k * 0.0025)
         seen.add(round(w.applied, 6))
     assert seen <= {-1.0, 0.0, 1.0} and {0.0, 1.0} <= seen
+    from dataclasses import replace
+    with pytest.raises(ValueError, match="HAT_LINE_PERIOD"):
+        SimWorld(replace(cfg, actuator=replace(cfg.actuator, pwm_tick_s=0.020)))
 
 
 def test_a_crash_in_the_loop_still_writes_the_logs(tmp_path, monkeypatch):

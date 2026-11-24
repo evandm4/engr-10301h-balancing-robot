@@ -313,7 +313,7 @@ class Safety:
     """The per-tick trips of D3 that need no clock of their own. check() returns a reason string or None.
     The loop itself handles the loop-stall trip and the watchdog thread (balance.py)."""
 
-    def __init__(self, dt, tilt_limit=lc.TILT_LIMIT, vin_cutoff=lc.VIN_CUTOFF, stall_duty=lc.STALL_DUTY):
+    def __init__(self, dt, tilt_limit=lc.TILT_LIMIT, vin_cutoff=lc.VIN_CUTOFF, stall_duty=lc.STALL_DUTY, vin=None):
         self.dt = dt
         self.stall_duty = stall_duty
         self.tilt_limit = tilt_limit
@@ -324,7 +324,7 @@ class Safety:
         m = max(1, int(round(lc.RUNAWAY_S / dt)))
         self._runaway = [deque(maxlen=m), deque(maxlen=m)]  # each wheel's signed speed over the last RUNAWAY_S
         self.vin_low = 0
-        self.vin = None                 # the latest vin reading, for the runaway threshold
+        self.vin = float(vin) if vin is not None and 5.0 <= vin <= 10.0 else None   # latest vin, for runaway threshold
         self._last_vin_t = None
         self.first_vin_t = None
 

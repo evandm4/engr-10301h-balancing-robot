@@ -482,8 +482,10 @@ def main(argv=None):
                               control.Feedforward(cfg, ff_gain, plimit), duty_cap, hat_period)
         if not a.sim and (vin := notes.get("vin at start")):
             brain.feedforward.set_supply(vin)
-        # stall threshold under the duty cap, so the stall trip can fire on the bench too
-        safety = control.Safety(dt, stall_duty=min(lc.STALL_DUTY, 0.8 * duty_cap))
+        # stall threshold under the duty cap, so the stall trip can fire on the bench too; seed Safety.vin from
+        # startup so the fixed 17 rad/s fallback isn't used before the first in-loop vin reply arrives (audit L9)
+        safety = control.Safety(dt, stall_duty=min(lc.STALL_DUTY, 0.8 * duty_cap),
+                                vin=hat.vin() if a.sim else notes.get("vin at start"))
 
         print(f"controller {desc['kind']} {desc['spec']}: gains {[round(g, 4) for g in desc['gains']]}, goal {a.goal}, "
               f"duty cap {duty_cap}, feedforward gain {brain.feedforward.gain}, pitch zero {pitch_zero:+.4f} rad")

@@ -2,10 +2,10 @@
 
     cd ~/legobot && robot/run_safe.sh robot.measure.backlash --side left --seconds 10
 
-The motor is put in pwm mode at duty 0 (set_pwm(0, 0), NOT coast), so the output is as stiff as the winding
-makes it. In slow PWM (pwmparams 1 0.01) set 0 still coasts between the 10 ms pulses (Bench B2b), so the rotor
-is free: rock the wheel gently, never so far that the rotor turns (its slip is not free play). Rock the wheel gently by hand back and forth between the two soft stops of the free play for
---seconds, not hard enough to back-drive the gearbox. The script logs POS and APOS and reports the
+The script sends pwm duty 0 (set_pwm(0, 0)). In slow PWM (pwmparams 1 0.01) duty 0 coasts the driver rather than
+braking the winding (confirmed in Bench B2b, DATASHEET 8.7), so only gearbox and brush friction hold the rotor:
+rock the wheel gently by hand back and forth between the two soft stops of the free play for --seconds, never hard
+enough to back-drive the gearbox and turn the rotor (rotor slip is not free play). The script logs POS and APOS and reports the
 peak-to-peak position, and from the time spent at each position the separation of the two dwell clusters
 (the two ends of the free play) in degrees. It then asks for the free play you saw at the tire tread in mm
 (blank to skip) and converts it to degrees of wheel rotation, 360 mm / (pi D), for the tire diameter D
