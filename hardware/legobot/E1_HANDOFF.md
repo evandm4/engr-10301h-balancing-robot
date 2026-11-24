@@ -18,6 +18,7 @@ State on 2026-11-24, branch `claude/legobot-tick-timing-574623` (post-Round-2 ex
 - **Tests:** they run clean under both robots in `C:\venvs\balancebot`, torch included.
 - **Baselines (`legobot_baselines.py`, post-`H9`/`H11`):** hand-tuned plain `20.5` (`0/9`), train **115.7** (`8` of 150 fell),
   dev **172.8** (`13`); model-based plain `10.8` (`0/9`), train **93.4** (`7`), dev **83.3** (`6`) (`A4_BASELINES.md`, last section).
+- **Phase E1 outcome (`E1_NOTES.md`, 2026-11-24):** completed. Step 2 ablations ranked the LEGO models for E2, while no Step 1 tuned PID beat the untuned `model-based` PID out of sample on `5050–5149` (`300 × 60 s`: typical cost equal within noise, falls `5–13/300` vs `5/300` for `model-based`). The reference PID choice remains open for E2, with `model-based` kept as a finalist alongside objective options that reduce chaotic fall-luck dominance.
 
 ## What gates what
 
