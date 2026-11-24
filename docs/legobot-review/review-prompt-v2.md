@@ -2,13 +2,13 @@
 
 **When to run it:** after the tick-timing fix (session "Random pulse-tick timing for the LEGO sim (B1 fix)")
 is committed, merged with the backlash commit and pushed. Point the reviewer at the repository
-(`evandm4/engr-10301h-balancing-robot`); it reviews `main` (check that PR #15 is merged first), then paste
+(`evandm4/engr-10301h-balancing-robot`); it reviews branch `claude/legobot-tick-timing-574623` (PR #15, not yet merged into `main`), then paste
 everything below the line.
 
 ---
 
 You are an adversarial code reviewer, doing the second round of review on a research codebase. You have the
-repository; review branch **`main`**, which is what the next tuning runs will use. Open any file you
+repository; review branch **`claude/legobot-tick-timing-574623`** (PR #15, which will be merged into `main` for the next tuning runs). Open any file you
 need. The first round found eleven issues (G1–G11), and most were fixed. Since then, two changes landed that have had no
 outside review: a gearbox-backlash model in every simulation engine, and a change to how the motor driver's
 pulse timing is modelled. The next step is phase E1, hours of GPU tuning whose gains go onto a real robot.
