@@ -22,7 +22,7 @@ CONFIG = load_config("pololu")      # the Pololu robot, whatever ROBOT is set to
 def test_lego_has_its_own_learning_scales():
     assert LEGO.learning != CONFIG.learning
     assert LEGO.learning.speed_scale == 0.4                  # its 0.40 m/s cruise, not the Pololu 1 m/s
-    assert LEGO.learning.command_scale == LEGO.learning.output_scale == 0.4
+    assert LEGO.learning.command_scale == LEGO.learning.output_scale == 0.6
     # The search settings are shared: only the scales and the reference differ.
     assert LEGO.learning.hidden == CONFIG.learning.hidden
     assert LEGO.learning.mlp_popsize == CONFIG.learning.mlp_popsize
@@ -31,7 +31,7 @@ def test_lego_has_its_own_learning_scales():
         assert spec.scales == LEGO.learning.scales
     residual = LEGO.build_policy_spec("residual")
     np.testing.assert_allclose(residual.output_scale, LEGO.learning.residual_authority * LEGO.robot.max_torque)
-    assert residual.residual_scales == (0.25, 0.06)
+    assert residual.residual_scales == (0.35, 0.09)
 
 
 def test_lego_reference_is_its_hand_tuned_pid_and_provisional():
