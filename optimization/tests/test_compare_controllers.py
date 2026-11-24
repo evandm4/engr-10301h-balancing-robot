@@ -147,12 +147,17 @@ def _save_cma_result(folder, extra):
 
 
 def test_gain_runs_reads_the_dict_gains_save_result_writes(tmp_path):
-    """H8: <method>.json from the tuning scripts stores gains as {kp, ki, ...}; the matching config is embedded, so
-    no snapshot.json is needed to check comparability."""
+    """H8/L7: <method>.json from the tuning scripts stores gains as {kp, ki, ...}; the matching config is embedded, so
+    no snapshot.json is needed to check comparability. mean_gains is gated off on Pololu so its JSON keys stay unchanged."""
     from compare_controllers import gain_runs
     path = _save_cma_result(tmp_path, {"config": CONFIG.snapshot()})
     saved = json.loads(path.read_text())
-    assert set(saved["mean_gains"]) == set(saved["gains"])          # the optional mean is saved as a dict too
+    if CONFIG.name == "pololu":
+        assert "mean_gains" not in saved
+        lego_saved = json.loads(_save_cma_result(tmp_path / "lego", {"config": {**CONFIG.snapshot(), "name": "legobot"}}).read_text())
+        assert set(lego_saved["mean_gains"]) == set(lego_saved["gains"])
+    else:
+        assert set(saved["mean_gains"]) == set(saved["gains"])      # the optional mean is saved as a dict on LEGO
     (entry,) = gain_runs(f"CMA={path}")
     np.testing.assert_allclose(entry.gains, CONFIG.controller.hand_tuned_gains)
     assert entry.kind == "cascaded" and entry.warnings == []

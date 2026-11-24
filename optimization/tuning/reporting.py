@@ -48,7 +48,10 @@ def save_result(result: TuningResult, folder, extra: dict = None) -> Path:
         "n_evals": result.n_evals,
         "elapsed_s": round(result.elapsed_s, 2),
     }
-    if result.mean_gains is not None:
+    from config import CONFIG
+
+    robot_name = (extra or {}).get("config", {}).get("name", CONFIG.name)
+    if result.mean_gains is not None and robot_name != "pololu":
         summary["mean_gains"] = {n: float(g) for n, g in zip(result.gain_names, result.mean_gains)}
     summary["provenance"] = provenance()
     if extra:

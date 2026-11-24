@@ -323,6 +323,9 @@ def main():
             s.method = f"{SLUGS[name]}_{method}"
             save_result(s, folder, extra={"controller": name, "backend": args.backend,
                                           "dtype": np.dtype(dtype).name})
+    robust_dict = asdict(robustness)
+    if CONFIG.name == "pololu":
+        robust_dict.pop("dev_extended_seeds", None)
     (folder / "comparison.json").write_text(json.dumps({
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "provenance": provenance(),
@@ -331,7 +334,7 @@ def main():
         "simulations_per_evaluation": sims,
         "checked_on": checked_on,   # which seeds the "validation" fields and the sweep used
         "results": comparison,
-        "robustness": asdict(robustness),
+        "robustness": robust_dict,
         "config": snapshot}, indent=2))
     runs, scenario = example_runs(cfg, gains)
     save_example_runs(folder, {n.replace(", ", "_"): r for n, r in runs.items()},
