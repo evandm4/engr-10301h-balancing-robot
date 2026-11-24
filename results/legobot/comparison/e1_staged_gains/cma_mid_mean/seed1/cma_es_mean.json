@@ -6,15 +6,10 @@
     "kd": 0.14751738310015583,
     "kv_p": 0.43912234873941064
   },
-  "best_training_cost": 23.771602076279628,
+  "mean_train_cost": 46.792937491417,
+  "mean_train_objective": 46.792937491417,
   "n_evals": 3600,
   "elapsed_s": 316.72,
-  "mean_gains": {
-    "kp": 2.120351965296202,
-    "ki": 6.957141534385337,
-    "kd": 0.14751738310015583,
-    "kv_p": 0.43912234873941064
-  },
   "provenance": {
     "git_commit": "59065a3487bd6b4567d3665295d118efb5aa23ad",
     "git_dirty": true,
