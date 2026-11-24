@@ -58,13 +58,14 @@ ROBOT = RobotConfig(
     coulomb_friction_speed=1.0,    # rad/s, as config.py (PHYSICS.md 9.4)
     gravity=9.81,
     # Free play between motor and wheel (SOFTWARE_PLAN B5; PHYSICS.md 10.3), measured 2026-11-23 (DATASHEET 8.7;
-    # bench_data/20261123_073624_backlash.csv, re-read in review round 2): steady hand rocking (3-15 s) sits in two
-    # dwell clusters 2.58 deg apart on the output-shaft encoder, so the gearbox play is +-1.3 deg (half-width;
-    # ROBUSTNESS draws +-1.1-1.6 deg for the 1 deg counts and the unmeasured right motor). The +2 deg at 1-2 s was
-    # unbraked rotor slip: in slow PWM (1 0.01) "set 0" coasts (bench B2b), it does not hold the rotor. The beam
-    # tip moved 11.3 deg in all; less the same ~2 deg of rotor slip that is ~9.3 deg peak-to-peak (+-4.65 deg),
-    # matching +-1.6 deg gearbox + up to +-3.0 deg coupling (+-4.6 deg). The rest is in the LEGO couplings (axle
-    # in the motor's cross-hole, wheel hub), downstream of the encoder, which can't see it. The nominal robot
+    # bench_data/20261123_073624_backlash.csv, re-read in review round 2 and audit L6): the 2.58 deg cluster
+    # separation in _backlash_fit.json was over the whole 0-15 s record (including unbraked "set 0" rotor slip at
+    # 1-2 s, since slow PWM coasts at duty 0, bench B2b); 3-15 s alone gives 2.67 deg, and that half-centroid
+    # estimate is biased toward the middle while 3-15 s counts span -3..+1 (true span > 3 deg, so at least +-1.5 deg).
+    # Kept at Round 2's +-1.3 deg nominal (+-1.1-1.6 deg in ROBUSTNESS) pending E2 / Bench C (either widen to
+    # ~+-1.5 deg with +-1.2-2.0 deg range, or re-measure with the rotor braked). The beam tip moved 11.3 deg in all;
+    # less ~2 deg of rotor slip that is ~9.3 deg peak-to-peak (+-4.65 deg), with the rest in the LEGO couplings
+    # (axle in the motor's cross-hole, wheel hub), downstream of the encoder, which can't see it. The nominal robot
     # takes the middle of each; ROBUSTNESS draws both per scenario.
     gearbox_backlash=math.radians(1.3),    # rad, motor side to the encoder's output shaft
     coupling_backlash=math.radians(1.5),   # rad, output shaft to the wheel
@@ -191,7 +192,7 @@ ROBUSTNESS = replace(
         ("pitch_bias", -0.015, 0.015),        # rad
         # SOFTWARE_PLAN B5: the free play (ROBOT above), up to +-4.6 deg in all. After pitch_bias, so the draws
         # above are unchanged.
-        ("gearbox_backlash", math.radians(1.1), math.radians(1.6)),   # rad: the encoder's 2.58 deg cluster separation, +-1.3
+        ("gearbox_backlash", math.radians(1.1), math.radians(1.6)),   # rad: Round-2 setting (see ROBOT comment; audit L6 notes >= +-1.5 deg)
         ("coupling_backlash", 0.0, math.radians(3.0)),                # rad: up to the rest of the beam's ~9.3 deg (+-4.65)
         # The pulse ticks' phase against the control loop, as a fraction of a 10 ms tick (B1b): bench B1 found
         # it fixed neither between power-ups nor within one (ACTUATOR.pwm_tick_locked), so it is drawn per

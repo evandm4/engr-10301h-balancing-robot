@@ -807,13 +807,15 @@ The wheel's coupling has some of that. So the free play between motor and wheel 
 [reconciled below to ±1.1–1.6° after excluding unbraked `set 0` rotor slip] plus up to ±3° (LEGO couplings),
 and well above the ±1.5° at which the B5 test raised costs 19–129%: **port the backlash model (B5)**. A
 wheel-on visual check would narrow the coupling share.
-*Round-2 reconciliation (2026-11-24, `docs/legobot-review/review-v2.md` H3/I1):* Bench B2(b) later showed `set 0`
-in slow PWM coasts rather than brakes, so the +2° shift at t = 1–2 s in `20261123_073624_backlash.csv` was
-unbraked rotor slip. During steady rocking (3–15 s) the encoder sits in two dwell clusters 2.58° apart
-(±1.3° half-width, modelled as ±1.3° nominal and randomized ±1.1–1.6° in `legobot_config.py` to cover 1°
-encoder counts and the unmeasured right motor). Subtracting the same ~2° slip from the 11.3° visual beam span
-leaves ~9.3° peak-to-peak (±4.65° half-width), consistent with up to ±1.6° gearbox plus ±0–3° coupling play
-(±4.6° total).
+*Round-2 reconciliation (2026-11-24, `docs/legobot-review/review-v2.md` H3/I1; audit L6):* Bench B2(b) later showed
+`set 0` in slow PWM coasts rather than brakes, so the reach to `+2°` at t = 1–2 s in `20261123_073624_backlash.csv`
+included unbraked rotor slip. Note that `2.58°` in `20261123_073624_backlash_fit.json` was computed over the whole
+15 s record (including the 1–2 s slip); `robot.measure.backlash.analyse` on the 3–15 s steady-rocking window alone
+gives **2.67°**, and that half-centroid estimate (`c_hi - c_lo`) is biased toward the middle by transitional samples
+— in 3–15 s the 1° counts span **−3…+1** (4° ptp, so a true continuous span over 3°, i.e. at least **±1.5°**).
+`legobot_config.py` currently retains the Round-2 ±1.3° nominal (±1.1–1.6° randomized) setting alongside ±0–3°
+coupling play; before E2, either widen gearbox play to ~±1.5° nominal (±1.2–2.0°) or re-measure during Bench C with
+the rotor braked/held.
 
 *Balance point* (`balance_point`, 8 free falls on the wheels with the motors coasting). The script's regression
 θ̈ = cθ + eθ̇ + h is **ill-conditioned for falls from rest**: an exponential fall keeps θ̇ proportional to
