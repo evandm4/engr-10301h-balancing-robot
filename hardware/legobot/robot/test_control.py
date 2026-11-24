@@ -117,6 +117,73 @@ def test_runaway_trip_catches_free_spinning_wheels(cfg):
     assert all(s.check(k * dt, 0.0, (0.6, -0.6), (19.0, -19.0), **ok) is None for k in range(n + 50))
 
 
+def test_runaway_threshold_follows_the_battery_voltage(cfg):
+    """H6: 0.85 of the no-load speed at the measured vin (0.85 * 22.2 rad/s at 8.4 V but 0.85 * 17.8 at 6.8 V)."""
+    assert control.runaway_speed_for_vin(6.8) == pytest.approx(15.13, abs=0.01)
+    assert control.runaway_speed_for_vin(7.6) == pytest.approx(17.01, abs=0.01)
+    assert control.runaway_speed_for_vin(8.4) == pytest.approx(18.89, abs=0.01)
+    assert control.runaway_speed_for_vin(None) == lc.RUNAWAY_SPEED
+    assert control.runaway_speed_for_vin(0.0) >= 15.0       # a glitched reading never drives the threshold to zero
+    dt = cfg.timing.control_dt_s
+    n = int(round(lc.RUNAWAY_S / dt))
+    ok = dict(motor_ages=(0.005, 0.005), fault=None, reader_alive=True, running=True)
+    for vin, speed, trips in [(6.8, 16.0, True), (7.6, 16.0, False), (8.4, 18.0, False), (8.4, 19.5, True)]:
+        s = control.Safety(dt)
+        out = [s.check(k * dt, 0.0, (0.6, 0.6), (speed, speed), vin_reading=(0.0, vin), **ok) for k in range(n + 5)]
+        assert any(o and "running away" in o for o in out) == trips, (vin, speed)
+    s = control.Safety(dt)      # a transient 0 V reading at a normal speed does not false-trip the runaway check
+    out = [s.check(k * dt, 0.0, (0.3, 0.3), (5.0, 5.0), vin_reading=(0.0, 0.0), **ok) for k in range(n + 5)]
+    assert not any(o and "running away" in o for o in out)
+
+
+def test_watchdog_stop_joins_its_thread():
+    """H6: stop() waits for the thread to end, so the run does not close the HAT under a coasting watchdog."""
+    hat = type("H", (), {"emergency_coast": lambda self: None})()
+    wd = balance.Watchdog(hat)
+    wd.start()
+    wd.kick()
+    wd.stop()
+    assert not wd.is_alive()
+    wd.stop()                                     # idempotent once the thread has ended
+
+
+def test_calibrate_gyro_bridges_one_i2c_error_not_two():
+    """H6: one transient OSError during the gyro calibration is skipped (as run() bridges it); two in a row raise."""
+    class Clock:
+        t = 0.0
+        def now(self): return self.t
+        def wait_until(self, d): self.t = max(self.t, d)
+
+    class Imu:
+        def __init__(self, fail):
+            self.fail, self.n = set(fail), 0
+        def read(self):
+            self.n += 1
+            if self.n in self.fail:
+                raise OSError("NACK")
+            return namedtuple("R", "pitch_rate acc_fwd acc_up")(0.001, 0.0, 9.81)
+
+    bias, sd, g = balance.calibrate_gyro(Imu({5}), Clock(), 0.005, say=lambda m: None)
+    assert bias == pytest.approx(0.001)
+    with pytest.raises(OSError):
+        balance.calibrate_gyro(Imu({5, 6}), Clock(), 0.005, say=lambda m: None)
+
+
+def test_sim_world_applies_slow_pwm_pulses(cfg):
+    """H7: under slow PWM the simulated motor sees pulses in {-1, 0, +1} (pulse-density), as the real HAT gives."""
+    from robot.sim_hw import SimWorld
+    if getattr(cfg.build_actuator(), "pwm_tick", 0.0) <= 0:
+        pytest.skip("this robot's actuator is not slow PWM")
+    w = SimWorld(cfg, pitch=0.0)
+    w.release()
+    seen = set()
+    for k in range(1, 400):
+        w.drive = 0.3
+        w.advance(k * 0.0025)
+        seen.add(round(w.applied, 6))
+    assert seen <= {-1.0, 0.0, 1.0} and {0.0, 1.0} <= seen
+
+
 def test_a_crash_in_the_loop_still_writes_the_logs(tmp_path, monkeypatch):
     """Review G2: an exception escaping the loop used to skip write_logs, losing the run's only record."""
     act = control.Brain.act
@@ -196,7 +263,8 @@ def _reference_falls(spec):
     controller, _ = control.build_controller(cfg, spec, goal="scenario")
     r = simulate(cfg.build_dynamics(), controller, duration=20.0, dt=cfg.timing.dt_s,
                  initial_state=np.array([0.0, 0.0, cfg.scenario.start_pitches_rad[0], 0.0]),
-                 control_dt=cfg.timing.control_dt_s, sensor=cfg.build_sensor(0), latency=cfg.timing.latency_s)
+                 control_dt=cfg.timing.control_dt_s, sensor=cfg.build_sensor(0), latency=cfg.timing.latency_s,
+                 disturbance=cfg.build_disturbance())
     return r.fell
 
 

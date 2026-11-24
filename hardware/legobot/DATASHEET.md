@@ -99,9 +99,9 @@ measurement brings it down to. Values marked Est. are placeholders to replace wi
 
 | Field | Value | Spread until measured | Tag | Notes |
 |---|---|---|---|---|
-| `body_mass` | **0.362 kg** (was 0.55 Est.) | ±0.01 | Measured | Everything except the wheels: motors (their housings ride with the body), Pi, both HATs, battery, LEGO frame. 440 g total minus two 39 g wheels (section 1, as built). Not yet in `legobot_config.py` |
-| `body_com_height` | **0.060 m** (was 0.09 Est.) | ±0.08 | Measured (balance test) | Body only: the whole robot's 49 mm (wheels on) scaled by 440/362. ±5 mm measuring error. Not yet in `legobot_config.py` |
-| `body_inertia` | **8.8e-4 kg m²** (was 0.0035 Est.) | ±0.15 | Measured (compound pendulum, section 1) | Pitch inertia about the body's own COM. Most of the uncertainty is the COM height (±5 mm → ±9%); exact video frame counts would bring the timing share from ±5% to about ±1%. Not yet in `legobot_config.py` |
+| `body_mass` | **0.362 kg** (was 0.55 Est.) | ±0.01 | Measured | Everything except the wheels: motors (their housings ride with the body), Pi, both HATs, battery, LEGO frame. 440 g total minus two 39 g wheels (section 1, as built). In `legobot_config.py` |
+| `body_com_height` | **0.060 m** (was 0.09 Est.) | ±0.08 | Measured (balance test) | Body only: the whole robot's 49 mm (wheels on) scaled by 440/362. ±5 mm measuring error. In `legobot_config.py` |
+| `body_inertia` | **8.8e-4 kg m²** (was 0.0035 Est.) | ±0.15 | Measured (compound pendulum, section 1) | Pitch inertia about the body's own COM. Most of the uncertainty is the COM height (±5 mm → ±9%); exact video frame counts would bring the timing share from ±5% to about ±1%. In `legobot_config.py` |
 | `wheel_mass` | 0.078 kg | — | Measured | Pair: 39 g per wheel including its axle |
 | `wheel_radius` | 0.0345 m | — | From diameter | Half the 69 mm diameter (0.044 m for the 88 mm wheel). Approximation for now; the loaded rolling radius (roll ten turns, divide the distance by 20π) can replace it later |
 | `wheel_inertia` | 6.0e-5 kg m² | ±0.20 | Measured mass / Est. | Pair, 0.65 m r² each (tire at the rim), as in the main datasheet. Slightly high, since the axle's few grams sit at the centre. The motor's output-side inertia is separate (`rotor_inertia` below) |
@@ -110,11 +110,13 @@ measurement brings it down to. Values marked Est. are placeholders to replace wi
 | `coulomb_friction` | **0.042 N m** (was 0.046) | range 0.030–0.055 | Measured | Both motors: 0.022 / 0.027 (left / right) from the speeds, 0.016 / 0.019 from coast-downs (8.7) |
 | `gravity` | 9.81 m/s² | — | — | Unchanged |
 
-### 2.2 `ActuatorConfig` (model `"dc_motor"`)
+### 2.2 `ActuatorConfig` (model `"slow_pwm"`)
 
 The internal gear ratio of the SPIKE motors is not published, and nothing here needs it. Every published and
 measured number is at the **output shaft**, so the motor is described as a lumped output-side motor with
-`gear_ratio = 1`. `DCMotorActuator` then gives exactly the measured behaviour: torque = n η k i, back-EMF = k ω.
+`gear_ratio = 1`. In slow PWM (`SlowPwmActuator`, chosen in C3/B1b; replaces the earlier `"dc_motor"`
+placeholder), torque follows $\tau = |d|\,a\,(\operatorname{sgn}(d)\,V - k\omega)$ with $a = \eta k / R$,
+delivered as 10 ms full-voltage pulses (`pwm_tick_s = 0.01`).
 
 | Field | Value | Spread until measured | Tag | Notes |
 |---|---|---|---|---|
@@ -801,9 +803,17 @@ either model; stiction between pulses is the likely remainder.
 encoder on the output shaft moved 5–6° peak-to-peak, and the two ends of the play were 2.6° apart. That is
 the gearbox, matching LEGO's ±3° figure. By eye the beam tip moved 19 mm at 96 mm, or **11.3° in total**: the
 extra ~6° is play the encoder can't see, from the axle in the motor's cross-hole and the beam on the axle.
-The wheel's coupling has some of that. So the free play between motor and wheel is about ±3° (gearbox) plus
-up to ±3° (LEGO couplings), and well above the ±1.5° at which the B5 test raised costs 19–129%: **port the
-backlash model (B5)**. A wheel-on visual check would narrow the coupling share.
+The wheel's coupling has some of that. So the free play between motor and wheel is about ±3° (gearbox)
+[reconciled below to ±1.1–1.6° after excluding unbraked `set 0` rotor slip] plus up to ±3° (LEGO couplings),
+and well above the ±1.5° at which the B5 test raised costs 19–129%: **port the backlash model (B5)**. A
+wheel-on visual check would narrow the coupling share.
+*Round-2 reconciliation (2026-11-24, `docs/legobot-review/review-v2.md` H3/I1):* Bench B2(b) later showed `set 0`
+in slow PWM coasts rather than brakes, so the +2° shift at t = 1–2 s in `20261123_073624_backlash.csv` was
+unbraked rotor slip. During steady rocking (3–15 s) the encoder sits in two dwell clusters 2.58° apart
+(±1.3° half-width, modelled as ±1.3° nominal and randomized ±1.1–1.6° in `legobot_config.py` to cover 1°
+encoder counts and the unmeasured right motor). Subtracting the same ~2° slip from the 11.3° visual beam span
+leaves ~9.3° peak-to-peak (±4.65° half-width), consistent with up to ±1.6° gearbox plus ±0–3° coupling play
+(±4.6° total).
 
 *Balance point* (`balance_point`, 8 free falls on the wheels with the motors coasting). The script's regression
 θ̈ = cθ + eθ̇ + h is **ill-conditioned for falls from rest**: an exponential fall keeps θ̇ proportional to

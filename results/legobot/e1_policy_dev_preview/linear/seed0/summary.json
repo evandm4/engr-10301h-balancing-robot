@@ -1,0 +1,30 @@
+{
+  "method": "linear",
+  "search": "cma_es",
+  "run_seed": 0,
+  "profile": "quick",
+  "n_params": 10,
+  "stop_reason": "generation cap",
+  "generations": 30,
+  "n_evals": 7681,
+  "robot_seconds": 4608600.0,
+  "robot_seconds_total": 4608600.0,
+  "charged_before": 0.0,
+  "elapsed_s": 299.09265875816345,
+  "selected": {
+    "robot_seconds": 922200.0,
+    "generation": 6,
+    "which": "best",
+    "train_objective": 165.69563802931356,
+    "dev20_objective": 166.3192954185944,
+    "dev20_falls": 0,
+    "dev60_objective": "",
+    "dev60_falls": "",
+    "gap20": 0.0037638733083034115,
+    "file": "checkpoints/best_9.222e05.npz"
+  },
+  "train_objective_float32": 165.69563802931356,
+  "train_objective_float64": 165.69563802931356,
+  "float32_float64_disagree": false,
+  "best_train_objective": 165.69563802931356
+}

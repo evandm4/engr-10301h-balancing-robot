@@ -92,13 +92,13 @@ class Watchdog(threading.Thread):
         self.hat, self.timeout = hat, timeout
         self.last = None              # None = not armed (motors not driven)
         self.fired = None
-        self._stop = threading.Event()
+        self._halt = threading.Event()     # not _stop: Thread.join() calls its own _stop()
 
     def kick(self):
         self.last = time.perf_counter()
 
     def run(self):
-        while not self._stop.wait(0.01):
+        while not self._halt.wait(0.01):
             last = self.last
             if last is not None and time.perf_counter() - last > self.timeout:
                 try:
@@ -107,12 +107,14 @@ class Watchdog(threading.Thread):
                     self.fired = time.perf_counter() - last
                 # Keep coasting until the run ends: a command the stuck loop was writing could land after
                 # the first coast and drive a motor again (review G11).
-                while not self._stop.wait(lc.WATCHDOG_REPEAT_S):
+                while not self._halt.wait(lc.WATCHDOG_REPEAT_S):
                     self.hat.emergency_coast()
                 return
 
     def stop(self):
-        self._stop.set()
+        self._halt.set()
+        if threading.current_thread() is not self and self.is_alive():
+            self.join(timeout=0.2)
 
 
 # ------------------------------------------------------------------------------------ the run ---
@@ -120,6 +122,7 @@ def calibrate_gyro(imu, clock, dt, say=lambda m: print(m, flush=True)):
     """D4: the robot still for GYRO_CAL_S; returns (bias, sd, g ratio). Retries each GYRO_CAL_S window that
     shows motion until GYRO_CAL_TIMEOUT_S, then raises the last ValueError."""
     t_give_up = clock.now() + lc.GYRO_CAL_TIMEOUT_S
+    imu_errors = 0
     while True:
         samples = []
         t_end = clock.now() + lc.GYRO_CAL_S
@@ -127,7 +130,16 @@ def calibrate_gyro(imu, clock, dt, say=lambda m: print(m, flush=True)):
         while clock.now() < t_end:
             deadline += dt
             clock.wait_until(deadline)
-            r = imu.read()
+            try:
+                r = imu.read()
+            except OSError:
+                # one transient I2C error (motor noise can NACK a read) is bridged by skipping the sample, as
+                # run() does; IMU_ERROR_LIMIT in a row raises
+                imu_errors += 1
+                if imu_errors >= lc.IMU_ERROR_LIMIT:
+                    raise
+                continue
+            imu_errors = 0
             samples.append((r.pitch_rate, r.acc_fwd, r.acc_up))
         try:
             return control.gyro_bias_from(samples)
@@ -447,32 +459,44 @@ def main(argv=None):
         time.sleep(0.3)                       # both data streams running
         vin = hat.vin()
         if vin is None or vin < lc.VIN_CUTOFF:
+            watchdog.stop()
             hat.close()
+            imu.close()
             raise SystemExit(f"battery {vin} V: below the {lc.VIN_CUTOFF} V cutoff, or no reply")
         notes["vin at start"] = vin
         # D2: watchdog above the loop, reader just below it, the loop pinned to one core
-        notes["watchdog priority"] = set_priority(lc.RT_PRIORITY + 1, watchdog.native_id)
-        notes["reader priority"] = set_priority(lc.RT_PRIORITY - 1, hat._reader.native_id)
-        notes["loop priority"] = set_priority(lc.RT_PRIORITY, 0, lc.CPU)
-        notes["memory locked"] = lock_memory()
-
-    plimit = 1.0 if a.sim else hc.RUN_PLIMIT
-    brain = control.Brain(cfg, controller, control.PitchEstimator(cfg, 0.0, pitch_zero),
-                          control.Feedforward(cfg, ff_gain, plimit), duty_cap, hat_period)
-    if not a.sim and (vin := notes.get("vin at start")):
-        brain.feedforward.set_supply(vin)
-    # stall threshold under the duty cap, so the stall trip can fire on the bench too
-    safety = control.Safety(dt, stall_duty=min(lc.STALL_DUTY, 0.8 * duty_cap))
-
-    print(f"controller {desc['kind']} {desc['spec']}: gains {[round(g, 4) for g in desc['gains']]}, goal {a.goal}, "
-          f"duty cap {duty_cap}, feedforward gain {brain.feedforward.gain}, pitch zero {pitch_zero:+.4f} rad")
-    print("hold the robot STILL for gyro calibration...", flush=True)
-    try:
-        bias, sd, g = calibrate_gyro(imu, clock, dt)
-    except ValueError as e:
-        if not a.sim:
+        try:
+            notes["watchdog priority"] = set_priority(lc.RT_PRIORITY + 1, watchdog.native_id)
+            notes["reader priority"] = set_priority(lc.RT_PRIORITY - 1, hat._reader.native_id)
+            notes["loop priority"] = set_priority(lc.RT_PRIORITY, 0, lc.CPU)
+            notes["memory locked"] = lock_memory()
+        except BaseException:
+            watchdog.stop()
             hat.close()
-        raise SystemExit(f"gyro calibration failed: {e}")
+            imu.close()
+            raise
+
+    try:
+        plimit = 1.0 if a.sim else hc.RUN_PLIMIT
+        brain = control.Brain(cfg, controller, control.PitchEstimator(cfg, 0.0, pitch_zero),
+                              control.Feedforward(cfg, ff_gain, plimit), duty_cap, hat_period)
+        if not a.sim and (vin := notes.get("vin at start")):
+            brain.feedforward.set_supply(vin)
+        # stall threshold under the duty cap, so the stall trip can fire on the bench too
+        safety = control.Safety(dt, stall_duty=min(lc.STALL_DUTY, 0.8 * duty_cap))
+
+        print(f"controller {desc['kind']} {desc['spec']}: gains {[round(g, 4) for g in desc['gains']]}, goal {a.goal}, "
+              f"duty cap {duty_cap}, feedforward gain {brain.feedforward.gain}, pitch zero {pitch_zero:+.4f} rad")
+        print("hold the robot STILL for gyro calibration...", flush=True)
+        bias, sd, g = calibrate_gyro(imu, clock, dt)
+    except BaseException as e:      # ValueError, a second I2C error in a row, Ctrl-C: release the hardware
+        if not a.sim:
+            watchdog.stop()
+            hat.close()
+            imu.close()
+        if isinstance(e, ValueError):
+            raise SystemExit(f"gyro calibration or setup failed: {e}")
+        raise
     brain.estimator.gyro_bias = bias
     notes.update({"gyro bias": bias, "gyro sd at rest": sd, "accel |g| ratio": g})
 

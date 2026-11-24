@@ -64,7 +64,10 @@ WATCHDOG_REPEAT_S = 0.05   # ...and keeps re-sending the coast at this interval 
                            # the stuck loop finishes writing after the first coast can't leave a motor driven
 IMU_ERROR_LIMIT = 2        # consecutive failed IMU reads (I2C errors) before tripping; one is bridged with the last sample
 RUNAWAY_SPEED = 17.0       # rad/s: both wheels' mean speed at least this, the same way (no-load is ~19.6 at 7.4 V;
-RUNAWAY_S = 1.5            # the scenario cruises at 11.6) over this window: lifted while armed, or running away
+RUNAWAY_S = 1.5            # the scenario cruises at 11.6) over this window: lifted while armed, or running away.
+                           # The fallback when vin is unknown; with it, control.runaway_speed_for_vin scales the threshold
+RUNAWAY_FRACTION = 0.85    # of the no-load speed at the measured vin (control.runaway_speed_for_vin): 15.1 rad/s at 6.8 V,
+                           # 17.0 at 7.6 V, 18.9 at 8.4 V. A fixed 17 is above 6.8 V's whole no-load speed margin (review H6)
 
 # ---- logging (D5) ----
 LOG_DIR = "logs"

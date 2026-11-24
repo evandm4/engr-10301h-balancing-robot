@@ -49,3 +49,16 @@ def test_faster_outer_loop_is_unstable_at_the_configured_latency():
     gains = model_based_pid_gains(P, outer_fraction=0.5)
     loop = LinearController.cascaded_pid(gains, T)
     assert spectral_radius(P, loop, T, CONFIG.timing.latency_s) > 1.0
+
+
+@pytest.mark.skipif(CONFIG.name != "legobot", reason="the claim in legobot_config.py's design_integral_ratio comment")
+def test_model_based_design_is_stable_over_the_latency_range_standstill_and_cruise():
+    """H10: at standstill (Coulomb friction's zero-crossing slope) the design is stable for any delay up to 35 ms,
+    and at cruise (Coulomb saturated: no friction slope) up to 20 ms; it crosses 1.0 near 25 ms."""
+    loop = LinearController.cascaded_pid(CONFIG.model_based_gains(), T)
+    cruise = P.with_changes(coulomb_friction=0.0)
+    for latency in (0.0, 0.005, 0.01, 0.02, 0.035):
+        assert spectral_radius(P, loop, T, latency) < 1.0, latency
+    for latency in (0.0, 0.005, 0.01, 0.02):
+        assert spectral_radius(cruise, loop, T, latency) < 1.0, latency
+    assert spectral_radius(cruise, loop, T, 0.03) > 1.0

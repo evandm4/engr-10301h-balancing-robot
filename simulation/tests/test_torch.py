@@ -165,6 +165,23 @@ def test_float64_matches_numpy_for_well_behaved_gains(device, reference):
     np.testing.assert_allclose(got.states[:, up], ref.states[:, up], rtol=0, atol=TOL)
 
 
+@pytest.mark.parametrize("device", DEVICES)
+def test_first_200_ms_float64_matches_numpy_on_any_config(device):
+    """The configured robot (LEGO: pulses, free play, IMU) over 80 steps, before pulse and impact chaos can build
+    up: the engines agree to 1e-9 in every state and in the cost."""
+    evaluator = BatchEvaluator(replace(SHORT, duration=0.2, goal_steps=((0.05, 0.3),), start_pitches=(0.1, -0.08)),
+                               SPACE)
+    G, pitch, seed_index, noise = _flat(evaluator, _near_hand_tuned(16))
+    ref = simulate_batch(evaluator.spec, evaluator.robot, G, pitch, noise, seed_index, evaluator.schedule,
+                         record=True)
+    got = TorchSimulator(evaluator.spec, evaluator.robot, len(G), noise, evaluator.schedule, device=device,
+                         dtype=torch.float64, record=True).run(G, pitch, seed_index)
+    assert ref.states.shape[0] == 81
+    np.testing.assert_array_equal(got.fell, ref.fell)
+    np.testing.assert_allclose(got.cost, ref.cost, rtol=0, atol=1e-9)
+    np.testing.assert_allclose(got.states, ref.states, rtol=0, atol=1e-9)
+
+
 @pytest.mark.parametrize("feedforward", [True, False])
 @pytest.mark.parametrize("device", DEVICES)
 def test_voltage_mode_float64_matches_numpy(device, feedforward):

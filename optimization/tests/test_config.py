@@ -94,6 +94,18 @@ def test_hand_tuned_gains_match_the_search_space():
     assert all(isinstance(g, (int, float)) for g in gains)
 
 
+def test_reference_gains_sit_inside_the_search_space():
+    """H1: the hand-tuned and model-based gains are strictly inside the bounds (so CMA-ES can start from them, and
+    a bound that clips one is a config bug); encode / decode round-trips them."""
+    space = CONFIG.build_search_space()
+    for gains in (CONFIG.controller.hand_tuned_gains, CONFIG.model_based_gains()):
+        g = np.asarray(gains, float)[: space.dim]
+        assert not space.at_bounds(g)
+        u = space.encode(g)
+        assert np.all((u > 0.0) & (u < 1.0))
+        np.testing.assert_allclose(space.decode(np.clip(u, 0.0, 1.0)), g, rtol=1e-9)
+
+
 def test_integral_limits_reach_every_consumer():
     from batch_tuning import spec_from_eval_config
 

@@ -1,23 +1,30 @@
-# E1 handoff: development tuning on the LEGO robot (and the backlash port)
+# E1 handoff: development tuning on the LEGO robot
 
-State on 2026-11-23, branch `legobot-config` (merged with `main`, PR #13 included):
-- **Review fixes are in:** the review's findings (`docs/legobot-review/triage.md`), with the slow-PWM
-  `drive()` fix.
+State on 2026-11-24, branch `claude/legobot-tick-timing-574623` (post-Round-2 external review, ready for E1):
+- **Round-1 & Round-2 review fixes are in:** Round-1 findings (`docs/legobot-review/triage.md`, including the slow-PWM
+  `drive()` fix) and Round-2 reconciled findings (`docs/legobot-review/review-v2.md`: `H1`–`H13`, `I1`–`I3`).
 - **Pulse ticks at a free phase (bench B1, 2026-11-23):** the lock model (ticks locked to the loop, 7.5–15 ms)
-  was reverted after B1 found the HAT's ticks keep no fixed phase. Each scenario now draws the tick phase
-  (`pwm_tick_phase`, a 0–10 ms wait) on top of a 7.5–12.5 ms sample-to-HAT latency, and the scenario was
-  re-derived with the longer reactions (A4_BASELINES.md, last section). E1 numbers made before this aren't
-  comparable with ones after it.
-- **Model-based PID:** made linearly stable (integral ratio 0.3).
+  was reverted after B1 found the HAT's ticks keep no fixed phase. Each scenario draws the tick phase
+  (`pwm_tick_phase`, a 0–10 ms wait) on top of a 7.5–12.5 ms sample-to-HAT latency. E1 numbers made before
+  this aren't comparable with ones after it.
+- **Backlash landed & reconciled (B5 + Round-2 `H3`/`I1`):** all three engines model gearbox play (`±1.3°` nominal,
+  randomized `±1.1–1.6°` after excluding unbraked `set 0` rotor slip) and coupling play (`±1.5°` nominal, randomized
+  `±0–3.0°`). Re-derived pushes are **`0.73 N` × 50 ms** at **`5.5 s` and `7.5 s`** (`jf = 0.03772 N s`).
+- **Search & scoring safeguards (`H1`/`H2`):** `SEARCH.ki_max = 10.0` (so `model_based_gains()` at `ki = 5.24`
+  sits inside the search space near the midpoint), `ROBUSTNESS.sensitivity_weight = 0.0` on LEGO (disables the
+  chaotic twin penalty, halving GPU wall clock; objective = `mean_cost`), and `run_batch_tuning.py` supports
+  `--cma-x0` warm-starts and scores `cma-es (mean)` (`xfavorite`).
+- **Model-based PID:** made linearly stable (integral ratio `0.3`, `ki = 5.24`).
 - **Tests:** they run clean under both robots in `C:\venvs\balancebot`, torch included.
-- **Baselines:** the reference points are A4_BASELINES.md's last table.
+- **Baselines (`legobot_baselines.py`, post-`H9`/`H11`):** hand-tuned plain `20.5` (`0/9`), train **115.7** (`8` of 150 fell),
+  dev **172.8** (`13`); model-based plain `10.8` (`0/9`), train **93.4** (`7`), dev **83.3** (`6`) (`A4_BASELINES.md`, last section).
 
 ## What gates what
 
 | Item | Gates |
 |---|---|
-| Bench B1 (tick offsets after a power cycle) and B2 (duty 0: coast or brake), in BENCH_CHECKS.md | E1 conclusions. *Both done 2026-11-23.* B1 failed: the ticks keep no fixed phase, so the lock model was reverted (free tick phase drawn per scenario, latency 7.5–12.5 ms, pushes 0.67 N; triage G6, branch `claude/legobot-tick-timing-574623`). B2: duty 0 coasts, as modelled. E1 can start once that branch is merged |
-| The backlash port (part 2 below) | E2. *Done 2026-11-23 on branch `claude/legobot-backlash`* (PHYSICS.md 10.3): the play is drawn per scenario and the pushes are re-derived with it (0.70 N, was 1.02; 0.67 N after B1). The baselines fall in 3–11% of robust scenarios, every fall catchable (A4_BASELINES.md, last section). E1 results without it are not comparable with E2's |
+| Bench B1 (tick offsets after a power cycle) and B2 (duty 0: coast or brake), in BENCH_CHECKS.md | E1 conclusions. *Both done 2026-11-23.* B1 failed: the ticks keep no fixed phase, so the lock model was reverted (free tick phase drawn per scenario, latency 7.5–12.5 ms; pushes 0.67 N initially, now 0.73 N after Round-2 `H3`; triage G6). B2: duty 0 coasts, as modelled. E1 is unblocked |
+| The backlash port (part 2 below) | E2. **Done / Landed** in all three engines (`balance_sim`, `batch_sim`, `torch_sim.py`; PHYSICS.md 10.3): play is drawn per scenario (`±1.1–1.6°` gearbox, `±0–3.0°` coupling after Round-2 `H3`/`I1`) and pushes are re-derived with it (`0.73 N` at `5.5 s` and `7.5 s`). Baselines fall in 4–9% of robust scenarios (`4.7–8.7%`; `A4_BASELINES.md`, last section) |
 | Bench B3–B4 and C1–C5 | E2 (final tuning) |
 
 ---
@@ -26,7 +33,7 @@ State on 2026-11-23, branch `legobot-config` (merged with `main`, PR #13 include
 
 I'm starting phase E1 of my LEGO balancing-robot project: development tuning of the cascaded PID on the
 LEGO robot's simulation, to find which of the robot's models matter. This window owns E1. The bench
-checks run in another window, and so may the backlash port (part 2 of `hardware/legobot/E1_HANDOFF.md`).
+checks run in another window (the backlash port in part 2 is already landed in all three engines).
 
 **Read first:**
 1. `CLAUDE.md`: the venv and the test commands.
@@ -44,33 +51,46 @@ checks run in another window, and so may the backlash port (part 2 of `hardware/
 - **Speed over accuracy while developing:** start with short budgets, benchmark the full robust run's wall
   clock on this GPU, then scale up.
 - **No LQR on this robot.**
-- **Noise:** under pulse-density PWM a run is bit-chaotic. A flipped fall moves a 150-scenario mean by ~11,
-  and the NumPy and torch engines can disagree on a borderline fall. Don't read differences smaller than
-  that between candidates without tracing the falls (dev seeds, or the retired 1000–1099 set).
+- **Noise:** under pulse-density PWM + backlash a run is bit-chaotic. A single flipped fall moves a 150-scenario mean
+  by ~11, and single-tier 150-scenario scores carry **`~±30` objective (`±3–4` falls)** of chaotic variance (and NumPy
+  vs torch can disagree on borderline falls). Do not treat single-tier differences within `±30` / `±4` falls as signal:
+  compare candidates and ablations with **paired per-scenario bootstrap CIs / McNemar tests** (or larger dev seed slices
+  when close, e.g. `5050–5149`, or trace the falls).
 
 **Steps:**
-1. Benchmark, then run the default robust tuning (DE and CMA-ES) in float64. Compare with A4's baselines:
-   hand-tuned train 170.9 (12 of 150 fell), dev 226.5 (17); model-based train 73.0 (5), dev 120.9 (9)
-   (A4_BASELINES.md, last section: play modelled, free tick phase).
+1. Benchmark, then run the default robust tuning (DE and CMA-ES, trying `--cma-x0 model-based` as well as midpoint)
+   in float64. Compare with A4's current baselines:
+   hand-tuned plain `20.5` (`0/9`), train **115.7** (`8` of 150 fell), dev **172.8** (`13`); model-based plain `10.8` (`0/9`),
+   train **93.4** (`7`), dev **83.3** (`6`)
+   (`A4_BASELINES.md`, last section: `±1.1–1.6°` gearbox play, `±0–3.0°` coupling play, `0.73 N` pushes at `5.5 s`
+   and `7.5 s`, free tick phase, `sensitivity_weight = 0.0`, `ki_max = 10.0`, post-`H9`/`H11`).
 2. Ablations, to find which models matter. Re-tune or re-score with one model switched to its idealized
    form at a time, and see what changes the tuned gains or their cost:
+   - **gearbox and coupling backlash**, against rigid `0` play (and gearbox-only vs coupling-only), plus a sensitivity
+     check on the wider **`coupling_backlash` `0–4.35°`** and **`gearbox_backlash` `±1.0–2.0°`** bounds (`review-v2.md`
+     `I1`/`J5`, testing whether the unadjusted `11.3°` visual span / CSV dwell-swing range changes the tuned gains);
    - the IMU and complementary filter, against measured pitch with noise;
    - the encoder, against continuous velocity;
    - the pulse ticks, against averaged slow PWM, and the tick phase's spread, against one fixed phase;
    - the feedforward constants' mismatch spreads;
    - the pitch offset spread;
-   - the latency range.
+   - **the latency range:** `(0.010, 0.015)` vs `(0.0075, 0.0125)` (covering the `15.0–17.5 ms` hardware loop-delay band; `review-v2.md` `H4`).
 
    Keep each ablation small (dev seeds, modest budgets).
 3. Check the tuned gains on a wider latency sweep, as an evaluation only.
 4. Record everything in a new `hardware/legobot/E1_NOTES.md`: commands, budgets, wall clock, results,
    conclusions. Note which models matter for E2.
-5. If bench B1 or B2 changes the model, as recorded in `docs/legobot-review/triage.md`, stop and re-plan.
+5. If bench B3 or B4 changes the model, as recorded in `docs/legobot-review/triage.md`, stop and re-plan.
 6. Ask me before committing. Don't push.
 
 ---
 
-## Part 2: brief for the backlash port (SOFTWARE_PLAN B5; its own window, can run alongside E1)
+## Part 2: brief for the backlash port (SOFTWARE_PLAN B5 — **Done / Landed**)
+
+> **Status: Done / Landed.** The 3-DOF step-event backlash model is already implemented and tested in all three
+> engines (`balance_sim`, `batch_sim`, `torch_sim.py`; see `PHYSICS.md` 10.3 and `SOFTWARE_PLAN.md` B5), with
+> Round-2 reconciled play ranges (`±1.1–1.6°` gearbox, `±0–3.0°` coupling) and `0.73 N` pushes (`review-v2.md`
+> `H3`/`I1`). The original handoff brief is kept below for historical reference.
 
 **Why:** the gearbox play measures ±2.6–3° at the encoder, plus up to ±3° of LEGO coupling play the encoder
 can't see (DATASHEET 8.7). A reference-engine-only experiment (PHYSICS.md 10.3) found that ±1.5° raised the

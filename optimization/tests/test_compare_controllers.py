@@ -136,3 +136,59 @@ def test_end_to_end_on_smoke(tmp_path):
     assert curve["first_latency_losing_to_reference"] is None       # the reference never beats itself
     assert set(report["latency_sweep"]["by_method"]["L-PID"]) >= {"first_latency_with_cost",
                                                                   "first_latency_with_falls"}
+
+
+def _save_cma_result(folder, extra):
+    from tuning import TuningResult, save_result
+    names = CONFIG.build_search_space().names
+    gains = np.asarray(CONFIG.controller.hand_tuned_gains, float)
+    result = TuningResult("cma-es", gains, names, 1.0, 10, 0.1, [(10, 1.0)], mean_gains=gains * 1.01)
+    return save_result(result, folder, extra)
+
+
+def test_gain_runs_reads_the_dict_gains_save_result_writes(tmp_path):
+    """H8: <method>.json from the tuning scripts stores gains as {kp, ki, ...}; the matching config is embedded, so
+    no snapshot.json is needed to check comparability."""
+    from compare_controllers import gain_runs
+    path = _save_cma_result(tmp_path, {"config": CONFIG.snapshot()})
+    saved = json.loads(path.read_text())
+    assert set(saved["mean_gains"]) == set(saved["gains"])          # the optional mean is saved as a dict too
+    (entry,) = gain_runs(f"CMA={path}")
+    np.testing.assert_allclose(entry.gains, CONFIG.controller.hand_tuned_gains)
+    assert entry.kind == "cascaded" and entry.warnings == []
+
+
+def test_embedded_config_drift_is_a_warning_not_silence(tmp_path):
+    """H8: an old (pre-B5 / tick-locked) result has no snapshot.json but embeds its config: a difference in anything
+    scored is reported; a result with no config at all still says it cannot be checked."""
+    from compare_controllers import existing_controllers, gain_runs
+    drifted = json.loads(json.dumps(CONFIG.snapshot(), default=str))
+    drifted["timing"]["latency_s"] = CONFIG.timing.latency_s + 0.0123
+    path = _save_cma_result(tmp_path, {"config": drifted})
+    (entry,) = gain_runs(f"CMA={path}")
+    assert any("trained under a different config" in w and "timing.latency_s" in w for w in entry.warnings)
+
+    comparison = tmp_path / "comparison.json"
+    comparison.write_text(json.dumps({"config": drifted, "results": {"cma-es": {"gains": json.loads(path.read_text())["gains"]}}}))
+    entries = existing_controllers(comparison)
+    assert entries and all(any("timing.latency_s" in w for w in e.warnings) for e in entries)
+    comparison.write_text(json.dumps({"config": CONFIG.snapshot(), "results": {"cma-es": {"gains": json.loads(path.read_text())["gains"]}}}, default=str))
+    assert all(e.warnings == [] for e in existing_controllers(comparison))
+
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    (entry,) = gain_runs(f"X={_save_cma_result(bare, None)}")
+    assert any("no snapshot.json" in w for w in entry.warnings)
+
+
+def test_gain_runs_end_to_end_on_smoke_under_any_robot(tmp_path):
+    """H12: a tiny comparison of the tuning scripts' own <method>.json (dict gains) against the reference runs under
+    both robots (the LEGO one scores against its provisional baseline)."""
+    for k in range(2):
+        _save_cma_result(tmp_path / f"run{k}", {"config": CONFIG.snapshot()})
+    folder = main(["--tier", "smoke", "--seeds", "2", "--duration", "1.0", "--bootstrap", "200",
+                   "--gain-runs", f"CMA={tmp_path}/run*/cma-es.json", "--out", str(tmp_path / "out")])
+    report = json.loads((folder / "comparison.json").read_text())
+    assert len(report["methods"]["CMA"]["runs"]) == 2
+    assert all(report["runs"][label]["warnings"] == [] for label in ("CMA / run0", "CMA / run1"))
+    assert report["reference_provisional"] == CONFIG.reference_is_provisional

@@ -125,6 +125,9 @@ def main():
                         help="robust mode with the nominal robot and latency (no randomized parameters, friction or latency)")
     parser.add_argument("--sensitivity-weight", type=float, default=None,
                         help="weight of the chaos penalty (default: config.py; 0 turns it off)")
+    parser.add_argument("--cma-x0", choices=("midpoint", "model-based", "hand-tuned"), default="midpoint",
+                        help="where CMA-ES starts: the middle of the search space (default), or the model-based or "
+                             "hand-tuned gains (clipped into the search space)")
     parser.add_argument("--no-plot", action="store_true", help="skip the plots")
     parser.add_argument("--no-show", action="store_true", help="save the plots without opening a window")
     parser.add_argument("--final", action="store_true",
@@ -162,11 +165,16 @@ def main():
               f"chaos penalty weight {robustness.sensitivity_weight:g} "
               f"-> {sims_per_eval} simulations per evaluation")
 
+    cma_x0 = None
+    if args.cma_x0 != "midpoint":
+        start_gains = CONFIG.model_based_gains() if args.cma_x0 == "model-based" else CONFIG.controller.hand_tuned_gains
+        cma_x0 = np.clip(space.encode(start_gains), 0.0, 1.0)
     searches = {}
     for name, run in [
         ("differential evolution", lambda: differential_evolution_search(
             evaluator, max_iter=args.de_iters, pop_multiplier=args.de_pop, seed=args.seed)),
-        ("cma-es", lambda: cma_es_search(evaluator, max_iter=args.cma_iters, popsize=args.cma_pop, seed=args.seed)),
+        ("cma-es", lambda: cma_es_search(evaluator, max_iter=args.cma_iters, popsize=args.cma_pop, seed=args.seed,
+                                         x0=cma_x0)),
     ]:
         print(f"Running {name} ...")
         searches[name] = run()
@@ -189,6 +197,10 @@ def main():
     candidates = {"hand-tuned": np.array(CONFIG.controller.hand_tuned_gains),
                   "model-based": np.array(CONFIG.model_based_gains()),
                   **{name: s.gains for name, s in searches.items()}}
+    # CMA-ES's final distribution mean is also scored: on a chaotic objective the best single sample is partly
+    # selection luck, and the mean is often the better gain set (review H2). Not on Pololu: its rows and runtime stay as they were.
+    if CONFIG.name != "pololu" and searches["cma-es"].mean_gains is not None:
+        candidates["cma-es (mean)"] = searches["cma-es"].mean_gains
     comparison, robust_validation = {}, {}
     header = f"\n{'method':<24}{gains_header(space.names)}{'evals':>8}{'train':>9}{'ref val':>9}{'falls':>7}"
     if robustness:
@@ -197,14 +209,15 @@ def main():
     for name, g in candidates.items():
         train = train_check.evaluate_population([g])
         ref_val = ref_check.evaluate_population([g], seeds=ref_val_seeds)
-        n_evals = searches[name].n_evals if name in searches else None
+        searched = "cma-es" if name == "cma-es (mean)" else name     # the mean comes out of the cma-es search
+        n_evals = searches[searched].n_evals if searched in searches else None
         comparison[name] = {
             "gains": space.as_dict(g), "n_evals": n_evals,
             "train_objective": float(train.objective[0]), "train_cost": float(train.mean_cost[0]),
             "reference_validation_cost": float(ref_val.mean_cost[0]),
             "reference_validation_falls": int(ref_val.n_fell[0]),
             "reference_validation_runs": ref_val.costs.shape[1],
-            "at_search_bound": space.at_bounds(g) if name in searches else [],
+            "at_search_bound": space.at_bounds(g) if searched in searches else [],
         }
         line = (f"{name:<24}{gains_cells(g)}{'-' if n_evals is None else n_evals:>8}{train.objective[0]:>9.4f}"
                 f"{ref_val.mean_cost[0]:>9.4f}{ref_val.n_fell[0]:>3}/{ref_val.costs.shape[1]:<3}")
@@ -229,10 +242,11 @@ def main():
         print(f"robust val = mean cost on {len(robustness.validation_seeds)} unseen seeds with unseen robots; "
               "worst = its worst single scenario;\nchaos = mean cost change when the start tilt is nudged by "
               f"{robustness.sensitivity_nudge:.1e} rad ({np.degrees(robustness.sensitivity_nudge):.4f} deg)")
+    config_file = "config.py" if CONFIG.name == "pololu" else f"{CONFIG.name}_config.py"
     for name, c in comparison.items():
         if c["at_search_bound"]:
             print(f"\nNote: {name}'s result is at the edge of the search range for "
-                  f"{', '.join(c['at_search_bound'])}. Consider widening that range in config.py.")
+                  f"{', '.join(c['at_search_bound'])}. Consider widening that range in {config_file}.")
 
     folder = results_dir("batch_tuning", time.strftime("%Y%m%d-%H%M%S"))
     snapshot = CONFIG.snapshot()
@@ -251,8 +265,14 @@ def main():
         "results": comparison,
         "robustness": robust_snapshot,
         "config": snapshot}, indent=2))
-    best_name = min(searches, key=lambda n: comparison[n]["train_objective"])
-    gains = {"hand-tuned": candidates["hand-tuned"], best_name: searches[best_name].gains}
+    finalists = [n for n in candidates if n in searches or n == "cma-es (mean)"]
+    if CONFIG.name != "pololu" and robustness and not args.final:
+        # the example runs show the best on the held-out robust (development) scenarios, not the training luck;
+        # never on the frozen validation seeds (--final), which no choice may see
+        best_name = min(finalists, key=lambda n: comparison[n]["robust_validation_objective"])
+    else:
+        best_name = min(finalists, key=lambda n: comparison[n]["train_objective"])
+    gains = {"hand-tuned": candidates["hand-tuned"], best_name: candidates[best_name]}
     runs, scenario = example_runs(gains)
     save_example_runs(folder, runs, gains, **scenario)   # for simulation/animate.py
     print(f"\nSaved results to {folder}")

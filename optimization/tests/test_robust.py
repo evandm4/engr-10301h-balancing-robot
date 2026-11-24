@@ -24,11 +24,14 @@ SHORT = replace(CONFIG.build_eval_config(), duration=2.0, goal_steps=((0.3, 0.3)
                 start_pitches=(0.1, -0.08), train_seeds=(1, 2))
 HAND_TUNED = np.array(CONFIG.controller.hand_tuned_gains)
 # The project's robustness settings from config.py, with fewer seeds so the tests are quick.
-ROBUST = replace(CONFIG.build_robustness(), train_seeds=(1, 2, 3, 4), validation_seeds=(50, 51, 52))
+# Twin runs forced on: the LEGO config turns them off (sensitivity_weight = 0), but these tests are about them.
+ROBUST = replace(CONFIG.build_robustness(), sensitivity_weight=1.0, train_seeds=(1, 2, 3, 4), validation_seeds=(50, 51, 52))
 
 
 def test_project_config_turns_everything_on():
-    assert CONFIG.build_robustness().randomize and CONFIG.build_robustness().sensitivity_weight > 0
+    assert CONFIG.build_robustness().randomize
+    if CONFIG.name == "pololu":      # LEGO sets sensitivity_weight = 0 on purpose (see legobot_config.py)
+        assert CONFIG.build_robustness().sensitivity_weight > 0
     assert len(CONFIG.build_robustness().train_seeds) == CONFIG.robustness.n_train_seeds
 
 

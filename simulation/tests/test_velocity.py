@@ -17,6 +17,10 @@ pololu_only = pytest.mark.skipif(CONFIG.name != "pololu", reason="checks numbers
 
 INNER = (4.0, 0.5, 0.15)
 LIMITS = CONFIG.controller
+# The cascade the project-level tests use: Pololu-sized gains, or the LEGO robot's own hand-tuned ones.
+CASCADE = (dict(inner_gains=INNER, kv_p=0.1, track_kv_p=0.15, track_tolerance=0.03) if CONFIG.name == "pololu" else
+           dict(inner_gains=tuple(LIMITS.hand_tuned_gains[:3]), kv_p=LIMITS.hand_tuned_gains[3],
+                track_kv_p=LIMITS.hand_tuned_gains[3], track_tolerance=0.06))
 
 
 @pytest.fixture
@@ -24,11 +28,11 @@ def dyn():
     return CONFIG.build_dynamics(ideal_actuator=True)
 
 
-def inner():
-    return PIDController(*INNER, integral_limit=LIMITS.pitch_integral_limit)
+def inner(gains=INNER):
+    return PIDController(*gains, integral_limit=LIMITS.pitch_integral_limit)
 
 
-def make(kv_p=0.1, kv_i=0.03, **kwargs):
+def make(kv_p=0.1, kv_i=0.03, inner_gains=INNER, **kwargs):
     """A cascaded controller with the project's lean cap and integral limits (overridable).
 
     These tests keep a nonzero kv_i by default: the project tunes it out, but
@@ -36,7 +40,7 @@ def make(kv_p=0.1, kv_i=0.03, **kwargs):
     """
     options = dict(max_pitch_command=LIMITS.max_lean_rad, integral_limit=LIMITS.velocity_integral_limit)
     options.update(kwargs)
-    return CascadedPIDController(inner(), kv_p, kv_i, **options)
+    return CascadedPIDController(inner(inner_gains), kv_p, kv_i, **options)
 
 
 def score(result, **cost_changes):
@@ -108,14 +112,15 @@ def test_result_records_goal_profile(dyn):
 
 # ---- cascaded controller ---------------------------------------------------
 
-@pololu_only
 def test_cascade_tracks_step_velocity_commands(dyn):
     from balance_sim import step_profile
-    ctrl = make(kv_p=0.15, kv_i=0.0, goal=step_profile([(1.0, 0.3), (5.0, -0.2)]))
+    ctrl = make(kv_p=CASCADE["track_kv_p"], kv_i=0.0, inner_gains=CASCADE["inner_gains"],
+                goal=step_profile([(1.0, 0.3), (5.0, -0.2)]))
     result = run(dyn, ctrl)
     assert not result.fell
-    assert at(result, 4.9) == pytest.approx(0.3, abs=0.03)
-    assert at(result, 8.9) == pytest.approx(-0.2, abs=0.03)
+    tol = CASCADE["track_tolerance"]       # the LEGO robot's P-only velocity loop leaves a steadier offset
+    assert at(result, 4.9) == pytest.approx(0.3, abs=tol)
+    assert at(result, 8.9) == pytest.approx(-0.2, abs=tol)
 
 
 def test_moving_forward_requires_leaning_forward(dyn):
@@ -125,11 +130,11 @@ def test_moving_forward_requires_leaning_forward(dyn):
     assert result.states[-1, 1] > 0.1            # and is now moving forward
 
 
-@pololu_only
 def test_velocity_loop_reduces_drift_from_gyro_bias(dyn):
     bias = SensorNoise(pitch_rate_bias=0.05)
-    pitch_only = run(dyn, inner(), duration=10.0, pitch=0.05, sensor=bias)
-    cascaded = run(dyn, make(), duration=10.0, pitch=0.05, sensor=bias)
+    pitch_only = run(dyn, inner(CASCADE["inner_gains"]), duration=10.0, pitch=0.05, sensor=bias)
+    cascaded = run(dyn, make(kv_p=CASCADE["kv_p"], inner_gains=CASCADE["inner_gains"]), duration=10.0, pitch=0.05,
+                   sensor=bias)
     assert abs(cascaded.states[-1, 0]) < 0.25 * abs(pitch_only.states[-1, 0])
     assert abs(cascaded.states[-1, 1]) < 0.25 * abs(pitch_only.states[-1, 1])
 
@@ -232,13 +237,15 @@ def test_velocity_integrator_limited_by_lean_cap(dyn):
     assert ctrl.pitch_pid.setpoint == pytest.approx(0.05)
 
 
-@pololu_only   # its 0.3 m/s step and gains are sized for the Pololu robot
 def test_cascade_still_balances_under_harder_conditions():
     from balance_sim import step_profile
     real = CONFIG.build_dynamics()   # the configured DC motor
-    ctrl = make(goal=step_profile([(1.0, 0.3), (5.0, -0.2)]))
-    result = run(real, ctrl, sensor=CONFIG.build_sensor(), latency=CONFIG.timing.latency_s)
-    assert not result.fell
+    # Several sensor seeds: on the LEGO robot (pulse-density drive, free play) one noise draw can decide a run.
+    for seed in range(3):
+        ctrl = make(kv_p=CASCADE["kv_p"], inner_gains=CASCADE["inner_gains"],
+                    goal=step_profile([(1.0, 0.3), (5.0, -0.2)]))
+        result = run(real, ctrl, sensor=CONFIG.build_sensor(seed), latency=CONFIG.timing.latency_s)
+        assert not result.fell, seed
 
 
 # ---- metrics and cost ------------------------------------------------------

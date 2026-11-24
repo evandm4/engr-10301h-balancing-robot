@@ -264,8 +264,8 @@ After reviewing Questions 1–4 from Round 2, the builder proposed concrete reso
 | Branch `d252bff` (`2.6–3.0°`, `0.67 N`, `sens=1`) | Model-based | `72.99` (`5`) | `130.19` | `120.88` (`9`) | `212.72` |
 | `H3 + H2` at `0.67 N` (`1.1–1.6°`, `sens=0`) | Hand-tuned | `104.76` (`7`) | `104.76` | `136.01` (`10`) | `136.01` |
 | `H3 + H2` at `0.67 N` (`1.1–1.6°`, `sens=0`) | Model-based | `35.71` (`2`) | `35.71` | `61.15` (`4`) | `61.15` |
-| **`H3 + H2` re-derived `0.74 N` (`1.1–1.6°`, `sens=0`)** | **Hand-tuned** | **`104.83` (`7`)** | **`104.83`** | **`136.31` (`10`)** | **`136.31`** |
-| **`H3 + H2` re-derived `0.74 N` (`1.1–1.6°`, `sens=0`)** | **Model-based** | **`46.89` (`3`)** | **`46.89`** | **`72.60` (`5`)** | **`72.60`** |
+| `H3 + H2` re-derived `0.74 N` (`1.1–1.6°`, `sens=0`; pre-`H9`, superseded below) | Hand-tuned | `104.83` (`7`) | `104.83` | `136.31` (`10`) | `136.31` |
+| `H3 + H2` re-derived `0.74 N` (`1.1–1.6°`, `sens=0`; pre-`H9`, superseded below) | Model-based | `46.89` (`3`) | `46.89` | `72.60` (`5`) | `72.60` |
 
 ### 4. `H6` — Voltage-Scaled Runaway Threshold (`0.85 * w_nl(vin)`)
 - **Builder correction & recommendation:** Confirmed — no floor runs use `--duty-cap < 1.0` (which would also violate full-torque push sizing), and in slow PWM off-ticks coast so `duty 0.6` at `7.3–8.0 V` still reaches `~18–19.4 rad/s`. Scaling `runaway_speed = 0.85 * w_nl(vin)` using nominal `w_nl(V) = (a * V - tau_c) / (a * k + b)` gives **`15.13 rad/s` at `6.8 V`**, **`17.01 rad/s` at `7.6 V`**, and **`18.89 rad/s` at `8.4 V`**.
@@ -280,3 +280,24 @@ After reviewing Questions 1–4 from Round 2, the builder proposed concrete reso
 3. **Evaluation & doc integrity (`H8`, `H13`):** Fix `compare_controllers.py` (`gain_runs` dict gains, `_run_warnings` `data["config"]` check, `existing_controllers` `scoring_differences` check), handle plain-mode `pwm_tick_phase`, and add backlash to `E1_HANDOFF.md` Step 2 ablations.
 4. **Robot safety & `SimWorld` fidelity (`H6`, `H7`):** Scale `Safety.runaway_speed` as `0.85 * w_nl(vin)`, guard `calibrate_gyro` with `OSError`/cleanup handling, add `watchdog.join()` on stop, and wire `pdm_update` into `sim_hw.py`.
 5. **Engine polish & test coverage (`H9`, `H10`, `H11`, `H12`):** Release tensile `contact` before IMU `derivatives`, switch `pdm_update` to strict `> 0.5` / `< -0.5`, add the `80`-step `atol=1e-12` LEGO `torch` vs `NumPy` test, and un-skip the applicable LEGO velocity/comparison tests.
+
+---
+
+## Opus 5.5 Independent Audit & Final Pre-E1 Refinements
+
+An independent adversarial audit (`opus-reviewer`, Claude Opus 5.5) verified `H1`–`H13`, re-ran the `8,192`-corner catch bounds and baseline evaluations from scratch, and identified three additional items (`I1`–`I3`) plus targeted refinements adopted for the final pre-E1 implementation:
+
+- **`H1` (`SEARCH.ki_max = 10.0`):** Rather than raising `ki_max` to `15.0` (which triples the `ki` coordinate scale and shifts CMA-ES's initial `sigma0` and midpoint up to `ki = 7.5`), set `SEARCH.ki_max = 10.0` in `legobot_config.py`. This keeps `model_based_gains()` (`ki = 5.24` at `design_integral_ratio = 0.3`) right near the unit-cube midpoint (`5.0`) with well-scaled exploration.
+- **`H3` + `I1` + `H5` (beam-span reconciliation, push timing, and final baselines):**
+  - **Beam span & play ranges (`I1`, `J5`):** `opus-reviewer` raised `I1`, noting that subtracting `2.6°` gearbox play from the `11.3°` visual beam span (`19 mm` at `96 mm`, `DATASHEET.md` 8.7) without a rotor-slip adjustment leaves `±4.35°` coupling play (which would reduce the push bound to `0.68 N` / tilt `0.412 rad`), and recommended `±1.0–2.0°` gearbox from the CSV dwell-to-dwell swings (`2–4` counts). The coordinator reconciled the adopted `legobot_config.py` bounds (`±1.1–1.6°` gearbox + `±0–3.0°` coupling = `±4.6°` max) under the unbraked rotor-slip hypothesis (`11.3° − 2° = 9.3°` ptp = `±4.65°`), and added a `coupling_backlash 0–4.35°` / `gearbox_backlash ±1.0–2.0°` sensitivity check to `E1_HANDOFF.md` Step 2's backlash ablation so E1 verifies whether that choice moves the tuned gains.
+  - **Push timing and sizing (`H5`):** Corrected the Round-2 write-up's second push timestamp — LEGO pushes are at **`5.5 s` and `7.5 s`** (not `12.5 s`). Using `POLOLU_PUSH_SHARE = 0.145 / 0.149` with the worst-corner forward impulse `jf = 0.03772 N s` (`tilt = 0.423 rad`) gives `SCENARIO.pushes = ((5.5, 0.05, 0.73), (7.5, 0.05, -0.73))` (`0.734 -> 0.73 N`). Also confirmed `caught()`'s default `dt = 0.0005` already gave exact `55`-step (`27.5 ms`) holds, while switching to integer step indexing prevents the off-by-one if called at `dt = 0.0025`.
+  - **Updated NumPy float64 baselines (`±1.1–1.6°` gearbox, `±0–3.0°` coupling, `0.73 N` pushes, `sensitivity_weight = 0.0`):**
+    - *Pre-`H9` (before non-mutating IMU contact release landed):* `hand-tuned` train `104.83` (`7/150`), dev `136.21` (`10/150`); `model-based` train `46.85` (`3/150`), dev `72.51` (`5/150`).
+    - *Final post-`H9` + `H11` (`legobot_baselines.py` on the landed tree):*
+      - `hand-tuned`: plain `20.52` (`0/9`), train **`115.73`** (`8/150` falls), dev **`172.81`** (`13/150` falls), dev worst `1818.8`.
+      - `model-based`: plain `10.80` (`0/9`), train **`93.41`** (`7/150` falls), dev **`83.35`** (`6/150` falls), dev worst `1968.6`.
+    - *Chaotic variance check (`J1`/`J2`):* `H11` had zero effect, while `H9` flipped `1–4` borderline chaotic falls on the `150`-scenario tiers (`mb` train `46.85 -> 93.41`), with zero directional bias on `300` fresh dev seeds (`5050–5149`: `hand-tuned` `107.4 / 15` post-`H9` vs `118.1 / 17` pre-`H9`; `model-based` `40.5 / 5` vs `35.4 / 4`). Single-tier `150`-scenario variance is `~±30` objective (`±3–4` falls), so `E1_HANDOFF.md` requires paired per-scenario bootstrap CIs / McNemar tests (or larger dev slices) when comparing candidates.
+- **`H2` & `H4` tuning strategy:** Kept `ROBUSTNESS.sensitivity_weight = 0.0` on LEGO only (leaving Pololu's `1.0` untouched), added `--cma-x0` (`midpoint` / `model-based` / `hand-tuned`) and LEGO-only `xfavorite` (`cma-es (mean)`) held-out evaluation to `run_batch_tuning.py`, and deferred shifting `latency_range_s` (`(0.010, 0.015)` vs `(0.0075, 0.0125)`) to E1 Step 2 ablations so `catch_latencies` stays anchored at `12.5 ms` sample-to-HAT latency.
+- **`H7` & `H9` implementation guards:** Paced `SimWorld`'s `pdm_update` ticks on `HAT_LINE_PERIOD` (`9.9912 ms`) rather than a fixed `4`-step Pi grid (avoiding `~880 ppm` drift against `SimWorld`'s HAT lines), and enforced non-mutating `backlash_release` when evaluating IMU `derivatives` at sample ticks so the live state and contact remain untouched for the step integration.
+- **`I2` & `I3` (documentation & CLI hygiene):** Added a `60 s` validation fall-penalty note to `legobot_config.py`'s `CostConfig` (mirroring `config.py`, noting empirical non-fall runs stay well below `fall_penalty = 1000`), and updated `run_batch_tuning.py`'s at-bound message to name the active robot's config file (`legobot_config.py` vs `config.py`) dynamically.
+

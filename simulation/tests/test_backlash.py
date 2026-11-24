@@ -150,3 +150,27 @@ def test_batched_play_must_be_positive_for_every_simulation():
     with pytest.raises(ValueError, match="play must be positive"):
         simulate_batch(ev.spec, robot, np.tile(CONFIG.controller.hand_tuned_gains, (2, 1)), 0.05,
                        schedule=ev.schedule)
+
+
+def test_imu_acceleration_uses_the_released_contact_without_touching_the_state():
+    """H9: at a control sample the IMU's acceleration is the one the coming step will have (contact released if the
+    drive reversed), but the live state and contact are left for the step itself to release."""
+    from batch_sim.physics import backlash_release, backlash_terms
+    dyn = _dyn()
+    r = PLAY.wheel_radius
+    s = np.array([0.0, 0.0, 0.0, 0.0, PLAY.backlash, 0.0, 0.0, 1.0])
+    live = s.copy()
+    released = dyn.begin_step(s, -1.0)
+    assert released[CONTACT] == 0.0 and s[CONTACT] == 1.0 and np.array_equal(s, live)
+    open_play = dyn.derivatives(released, -1.0)
+    rigid_play = dyn.derivatives(s, -1.0)
+    assert not np.allclose(open_play[:4], rigid_play[:4])          # the locked rotor would feel the reversed drive
+    # The batch engines' version gives the same acceleration from the same state, and does not change it.
+    robot = BatchRobot.from_params(PLAY, CONFIG.build_eval_config().motor)
+    cols = tuple(np.array([v]) for v in s[:6])
+    contact = np.array([1.0])
+    sense = backlash_release(robot, cols, np.array([-1.0]), contact)
+    assert contact[0] == 1.0 and sense[0] == 0.0
+    batch_open = backlash_terms(robot, cols, np.array([-1.0]), sense)[0]
+    np.testing.assert_allclose([c[0] for c in batch_open][1], open_play[1], rtol=1e-6, atol=1e-9)
+    np.testing.assert_allclose([c[0] for c in batch_open][3], open_play[3], rtol=1e-6, atol=1e-9)

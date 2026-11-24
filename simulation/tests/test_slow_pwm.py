@@ -101,6 +101,20 @@ def test_pdm_delivers_the_duty_on_average_within_one_pulse(duty):
     assert delivered / 400 == pytest.approx(duty, abs=1 / 400)
 
 
+def test_pdm_at_exactly_half_is_a_coast_not_an_oscillation():
+    """H11: total = +-0.5 followed by duty 0 stays 0 (the thresholds are strict), in every engine."""
+    import numpy as np
+    from batch_sim.physics import pdm_update as batch_pdm
+    for total in (0.5, -0.5):
+        assert pdm_update(total, 0.0) == (total, 0.0)
+        for _ in range(5):
+            total, out = pdm_update(total, 0.0)
+            assert out == 0.0
+        new, out = batch_pdm(np.array([0.5, -0.5, 0.75, -0.75]), np.zeros(4))
+        np.testing.assert_array_equal(out, [0.0, 0.0, 1.0, -1.0])
+        np.testing.assert_array_equal(new, [0.5, -0.5, -0.25, 0.25])
+
+
 def test_pdm_pulse_rate_is_100_times_duty_at_10_ms_ticks():
     """The measured pattern (DATASHEET 8.7): duty 0.05 gives one 10 ms pulse every 200 ms."""
     total, outs = 0.0, []

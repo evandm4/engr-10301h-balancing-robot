@@ -297,6 +297,18 @@ class Pacer:
 
 
 # --------------------------------------------------------------------------------------- safety ---
+def runaway_speed_for_vin(vin):
+    """Wheel speed (rad/s) at which the runaway trip fires: RUNAWAY_FRACTION of the no-load speed at this
+    supply. In slow PWM at duty 1 the no-load speed is (a V - tau_c) / (a k + b) with a = 0.0597 N m/V,
+    k = 0.348 V s/rad, b = 0.00085 N m s/rad and the Coulomb term 0.021 N m per motor (DATASHEET 8.7): 17.8 rad/s
+    at 6.8 V, 20.0 at 7.6, 22.2 at 8.4. A fixed threshold is too high on a sagging battery and too low on a
+    full one (review H6). Falls back to lc.RUNAWAY_SPEED when vin is unknown."""
+    if vin is None:
+        return lc.RUNAWAY_SPEED
+    vin = max(float(vin), lc.VIN_CUTOFF)    # a glitched low reading (0 V) must not push the threshold to zero or below
+    return lc.RUNAWAY_FRACTION * (0.0597 * vin - 0.021) / (0.0597 * 0.348 + 0.00085)
+
+
 class Safety:
     """The per-tick trips of D3 that need no clock of their own. check() returns a reason string or None.
     The loop itself handles the loop-stall trip and the watchdog thread (balance.py)."""
@@ -312,6 +324,7 @@ class Safety:
         m = max(1, int(round(lc.RUNAWAY_S / dt)))
         self._runaway = [deque(maxlen=m), deque(maxlen=m)]  # each wheel's signed speed over the last RUNAWAY_S
         self.vin_low = 0
+        self.vin = None                 # the latest vin reading, for the runaway threshold
         self._last_vin_t = None
         self.first_vin_t = None
 
@@ -323,6 +336,8 @@ class Safety:
         for side, age in zip(("left", "right"), motor_ages):
             if age is None or age > lc.MOTOR_STALE_S:
                 return f"{side} motor data stale ({'none' if age is None else f'{age * 1e3:.0f} ms'})"
+        if vin_reading is not None and 5.0 <= vin_reading[1] <= 10.0:   # ignore an implausible reading here
+            self.vin = vin_reading[1]
         if vin_reading is not None and vin_reading[0] != self._last_vin_t:
             self._last_vin_t = vin_reading[0]
             self.vin_low = self.vin_low + 1 if vin_reading[1] < self.vin_cutoff else 0
@@ -362,13 +377,14 @@ class Safety:
         # floor that is past 0.59 m/s for 1.5 s, beyond anything the scenario asks; lifted while armed (held
         # upright, so no tilt trip) the free wheels spin up to the no-load speed and the stall trip can't see it
         # (review G11). A mean, because one encoder count per tick is 3.5 rad/s: at 19.4 rad/s, 4.4% of ticks read
-        # under 17 and reset a per-tick counter, which delayed the trip to ~4 s (bench A5, 2026-11-23).
+        # under 17 and reset a per-tick counter, which delayed the trip to ~4 s (bench A5, 2026-11-23). The speed is
+        # 0.85 of the no-load speed at the measured vin (runaway_speed_for_vin), not a fixed 17 rad/s.
         for q, w in zip(self._runaway, speeds):
             q.append(w)
         ql, qr = self._runaway
         if len(ql) == ql.maxlen:
             ml, mr = sum(ql) / len(ql), sum(qr) / len(qr)
-            if min(abs(ml), abs(mr)) >= lc.RUNAWAY_SPEED and ml * mr > 0:
+            if min(abs(ml), abs(mr)) >= runaway_speed_for_vin(self.vin) and ml * mr > 0:
                 return f"wheels running away (mean {ml:+.1f}, {mr:+.1f} rad/s over {lc.RUNAWAY_S} s): lifted?"
         return None
 

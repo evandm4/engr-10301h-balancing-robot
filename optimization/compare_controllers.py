@@ -298,14 +298,20 @@ class Entry:
         return self.method if self.run == self.method else f"{self.method} / {self.run}"
 
 
-def _run_warnings(path: Path, saved_max_torque: Optional[float] = None) -> List[str]:
+def _run_warnings(path: Path, saved_max_torque: Optional[float] = None,
+                  embedded_config: Optional[dict] = None) -> List[str]:
     """Why a saved controller may not be comparable with today's config: its run's snapshot.json
-    (next to it) differs in something that changes training or scoring, or its saved torque limit
-    differs from the one it will be scored with."""
+    (next to it), or failing that the config embedded in the file itself (the tuning scripts' per-method
+    json and comparison.json), differs in something that changes training or scoring, or its saved
+    torque limit differs from the one it will be scored with."""
     out = []
     snapshot = path.parent / "snapshot.json"
     if snapshot.exists():
         differences = CONFIG.scoring_differences(json.loads(snapshot.read_text())["config"])
+        if differences:
+            out.append("trained under a different config: " + ", ".join(differences))
+    elif isinstance(embedded_config, dict):
+        differences = CONFIG.scoring_differences(embedded_config)
         if differences:
             out.append("trained under a different config: " + ", ".join(differences))
     else:
@@ -324,7 +330,14 @@ def existing_controllers(path=None) -> List[Entry]:
         source = CONFIG.learning.reference_pid_file or f"{CONFIG.name} baselines (config.py)"
     else:
         controllers, source = read_pid_comparison(path), str(path)
-    return [Entry(label, label, kind, np.asarray(gains, float), source=str(source))
+    warnings = []
+    if path is not None:   # comparison.json embeds the config it was run under: old (pre-B5, tick-locked) files differ
+        embedded = json.loads(Path(path).read_text()).get("config")
+        if isinstance(embedded, dict):
+            differences = CONFIG.scoring_differences(embedded)
+            if differences:
+                warnings.append("trained under a different config: " + ", ".join(differences))
+    return [Entry(label, label, kind, np.asarray(gains, float), source=str(source), warnings=list(warnings))
             for label, (kind, gains) in controllers.items()]
 
 
@@ -351,8 +364,12 @@ def gain_runs(pattern: str) -> List[Entry]:
     entries = []
     for path in _expand(pattern):
         data = json.loads(path.read_text())
+        gains = data["gains"]
+        if isinstance(gains, dict):   # save_result writes {"kp": ..., "ki": ..., ...}
+            gains = [gains[k] for k in ("kp", "ki", "kd", "kv_p", "kv_i") if k in gains]
         entries.append(Entry(method, path.parent.name, data.get("kind", "cascaded"),
-                             np.asarray(data["gains"], float), source=str(path), warnings=_run_warnings(path)))
+                             np.asarray(gains, float), source=str(path),
+                             warnings=_run_warnings(path, embedded_config=data.get("config"))))
     if not entries:
         raise SystemExit(f"no files match {pattern!r}")
     return entries

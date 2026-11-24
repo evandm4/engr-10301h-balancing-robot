@@ -58,12 +58,15 @@ ROBOT = RobotConfig(
     coulomb_friction_speed=1.0,    # rad/s, as config.py (PHYSICS.md 9.4)
     gravity=9.81,
     # Free play between motor and wheel (SOFTWARE_PLAN B5; PHYSICS.md 10.3), measured 2026-11-23 (DATASHEET 8.7;
-    # bench_data/*_backlash.csv): rocking the wheel against the motor held at duty 0 moved the encoder on the
-    # output shaft 5 deg peak-to-peak in 1 deg counts (5-6 deg), so the gearbox play is upstream of the encoder,
-    # +-2.6-3 deg. The beam tip moved 11.3 deg in all: the other ~6 deg (+-0-3) is in the LEGO couplings (axle
+    # bench_data/20261123_073624_backlash.csv, re-read in review round 2): steady hand rocking (3-15 s) sits in two
+    # dwell clusters 2.58 deg apart on the output-shaft encoder, so the gearbox play is +-1.3 deg (half-width;
+    # ROBUSTNESS draws +-1.1-1.6 deg for the 1 deg counts and the unmeasured right motor). The +2 deg at 1-2 s was
+    # unbraked rotor slip: in slow PWM (1 0.01) "set 0" coasts (bench B2b), it does not hold the rotor. The beam
+    # tip moved 11.3 deg in all; less the same ~2 deg of rotor slip that is ~9.3 deg peak-to-peak (+-4.65 deg),
+    # matching +-1.6 deg gearbox + up to +-3.0 deg coupling (+-4.6 deg). The rest is in the LEGO couplings (axle
     # in the motor's cross-hole, wheel hub), downstream of the encoder, which can't see it. The nominal robot
     # takes the middle of each; ROBUSTNESS draws both per scenario.
-    gearbox_backlash=math.radians(2.8),    # rad, motor side to the encoder's output shaft
+    gearbox_backlash=math.radians(1.3),    # rad, motor side to the encoder's output shaft
     coupling_backlash=math.radians(1.5),   # rad, output shaft to the wheel
 )
 
@@ -183,13 +186,13 @@ ROBUSTNESS = replace(
         # SOFTWARE_PLAN B6: the pitch offset (the accelerometer's, in the IMU model) drawn per
         # scenario in +-b, b = SENSOR.pitch_bias, the residual after balance-point calibration
         # (DATASHEET 8.4), so the tuner sees both signs and every size. It also covers a fore-aft
-        # COM offset e: a pitch offset of atan(e / l), 0.011 rad per mm at l = 90 mm. Last in the
+        # COM offset e: a pitch offset of atan(e / l), 0.017 rad per mm at l = 60 mm. Last in the
         # list, so the draws above are unchanged. Plain (non-robust) runs keep +b.
         ("pitch_bias", -0.015, 0.015),        # rad
-        # SOFTWARE_PLAN B5: the free play (ROBOT above), +-2.6-6 deg in all. After pitch_bias, so the draws
+        # SOFTWARE_PLAN B5: the free play (ROBOT above), up to +-4.6 deg in all. After pitch_bias, so the draws
         # above are unchanged.
-        ("gearbox_backlash", math.radians(2.6), math.radians(3.0)),   # rad: the encoder's 5-6 deg peak-to-peak
-        ("coupling_backlash", 0.0, math.radians(3.0)),                # rad: up to the rest of the beam's 11.3 deg
+        ("gearbox_backlash", math.radians(1.1), math.radians(1.6)),   # rad: the encoder's 2.58 deg cluster separation, +-1.3
+        ("coupling_backlash", 0.0, math.radians(3.0)),                # rad: up to the rest of the beam's ~9.3 deg (+-4.65)
         # The pulse ticks' phase against the control loop, as a fraction of a 10 ms tick (B1b): bench B1 found
         # it fixed neither between power-ups nor within one (ACTUATOR.pwm_tick_locked), so it is drawn per
         # scenario, uniform over a tick. Last, so the draws above are unchanged. (It was drawn in B1b, then
@@ -204,6 +207,9 @@ ROBUSTNESS = replace(
     # History: 5-25 ms with the phase drawn (B1b), 7.5-15 ms with the ticks locked (review G6), this after
     # bench B1. Final gains still get a wider latency sweep as an evaluation, not as a training target.
     latency_range_s=(0.0075, 0.0125),
+    # Under 100 Hz slow-PWM pulses plus backlash, the 1e-4 rad twin runs mostly double-count random borderline
+    # fall flips while doubling the GPU runtime (review H2): off here. config.py's 1.0 stays for Pololu.
+    sensitivity_weight=0.0,
 )
 
 # ------------------------------------------- CONTROLLER, SCENARIO, COST ---
@@ -243,7 +249,8 @@ CONTROLLER = replace(
     # mode): its RHP zero is relatively faster (z/p 1.05, Pololu 0.80), so the outer loop (z/3 = 2.84 rad/s)
     # outruns the integral pole (1.63 rad/s) and the cascade's separation fails. The rule: the smallest ratio,
     # in steps of 0.1, that is linearly stable over the whole training latency range. 0.2 is still unstable
-    # (1.0003); 0.3 gives 0.997 at 0-20 ms, and 0.9975 at 35 ms, so it still holds with the free tick phase
+    # (1.0003); 0.3 gives 0.997 over 0-35 ms at standstill (Coulomb zero-crossing slope 0.042 N m s/rad), and 0.991
+    # over 0-20 ms at 0.40 m/s cruise (Coulomb saturated; it crosses 1.0 near 25 ms), so it still holds with the free tick phase
     # since bench B1 (loop delay 7.5-15 ms in the sim, up to about 17.5 ms on the robot). Robust scoring (legobot_baselines.py, NumPy, 2026-11-23): training
     # 29.8 (2 falls) -> 18.3 (1), dev 6.5 -> 7.2 (0 falls either way), dev chaos 0.26 -> 12. 0.4 falls more.
     # On Pololu, 0.3 is unstable at 15 ms.
@@ -256,16 +263,18 @@ CONTROLLER = replace(
 #   t = 2-3.25 s     0 -> 0.40 m/s in 1.25 s: peak 0.70 m/s^2, a 0.125 rad lean (half of
 #                    Pololu's 0.25 / 0.30 of pitch_limit_rad).
 #   t = 3.25-9.5 s   cruise at 0.40 m/s, 53% of the nominal no-load speed (Pololu 53%).
-#   t = 5.5, 7.5 s   pushes, forward then backward: 0.67 N for 50 ms = 0.034 N s, 98% of the
-#                    largest forward push a full-torque response catches at 0.40 m/s on every
-#                    corner, with the free play in its worst position (closed away from the
-#                    recovery, so the motor side first crosses the whole gap; decided 2026-11-23,
-#                    the user) and a 27.5 ms reaction (above): 0.0342 N s (light, tall, high rotor
-#                    inertia, weakest motor, most friction, most play: +-6 deg; 0.081 nominal at
-#                    25 ms). Was 0.70 N with the ticks locked (25 ms, 0.0357 N s) and 1.02 N before
-#                    the play was modelled (0.0523 N s). 50 ms is under the 119 ms fastest unstable
-#                    time constant (123 ms nominal). Backward: 0.301 catchable, easy (braking is
-#                    helped by back-EMF), as on the Pololu robot.
+#   t = 5.5, 7.5 s   pushes, forward then backward: 0.73 N for 50 ms = 0.0365 N s, 97% (Pololu's
+#                    0.145/0.149 share, POLOLU_PUSH_SHARE) of the largest forward push a full-torque
+#                    response catches at 0.40 m/s on every corner, with the free play in its worst
+#                    position (closed away from the recovery, so the motor side first crosses the
+#                    whole gap; decided 2026-11-23, the user) and a 27.5 ms reaction (above): 0.0377 N s
+#                    (light, tall, high rotor inertia, weakest motor, most friction, most play: +-4.6
+#                    deg; 0.085 nominal at 25 ms). 0.0377 x 0.973 / 0.05 = 0.734, rounded to 0.73 N.
+#                    Was 0.67 N with +-6 deg of play (0.0342 N s; review round 2, H3/H5), 0.70 N with
+#                    the ticks locked (25 ms, 0.0357 N s) and 1.02 N before the play was modelled
+#                    (0.0523 N s). 50 ms is under the 119 ms fastest unstable time constant (123 ms
+#                    nominal). Backward: 0.305 catchable, easy (braking is helped by back-EMF), as on
+#                    the Pololu robot.
 #   t = 9.5-11.9 s   0.40 -> -0.15 m/s in 2.4 s: 0.50 m/s^2, 0.092 rad.
 #   t = 11.9-14 s    cruise backward at -0.15 m/s (Pololu's 0.5/1.3 of top speed).
 #   t = 14-16 s      -0.15 -> 0 in 2.0 s: 0.16 m/s^2, 0.030 rad.
@@ -279,23 +288,25 @@ SCENARIO = replace(
         (14.0, 0.0, 2.0),     # gentle stop: 0.16 m/s^2
     ),
     pushes=(
-        (5.5, 0.05, 0.67),    # from behind at 0.40 m/s
-        (7.5, 0.05, -0.67),   # from the front at 0.40 m/s
+        (5.5, 0.05, 0.73),    # from behind at 0.40 m/s
+        (7.5, 0.05, -0.73),   # from the front at 0.40 m/s
     ),
     start_pitches_deg=(2.8648, -8.5944, 17.1887),    # 0.05, -0.15, 0.30 rad
 )
 
 # Cost limits (CostConfig's Bryson rule), in the Pololu cost's proportions:
 #   pitch_limit_rad 0.30: Pololu's is both 77% of its catchable start tilt and 69% of its lean
-#     cap. Here those give 0.32 (of the 0.412 rad caught on every corner with the play at its worst and a
-#     22.5 ms reaction; 0.548 nominal at 20 ms) and 0.30; the smaller keeps the goal profile's leans (shares
+#     cap. Here those give 0.33 (of the 0.423 rad caught on every corner with the play at its worst and a
+#     22.5 ms reaction; 0.561 nominal at 20 ms) and 0.30; the smaller keeps the goal profile's leans (shares
 #     of it) under the cap.
 #   velocity_limit 0.06 m/s: Pololu's 0.2/1.3 of the top speed.
 #   torque_limit 0.09 N m: Pololu's 0.1/0.135 of the nominal lean-cap torque (0.119), so pitch
 #     and effort trade as they do there; 10% of max_torque.
 # Weights: velocity (0.30/0.06)^2 = 25.0, effort (0.30/0.09)^2 = 11.1. Fall penalty: the worst
 # non-fall 20 s run costs 21.9 (pitch) + 180.0 (effort) + 791.7 (velocity, fastest corner's
-# 0.858 m/s no-load speed + 0.40) = 994, under 1000 (PHYSICS.md 8.3).
+# 0.858 m/s no-load speed + 0.40) = 994, under 1000 (PHYSICS.md 8.3). That bound is for a 20 s
+# run; the 60 s validation runs scale the integral costs with their length, but actual non-fall runs stay well
+# below fall_penalty = 1000 (review I2).
 COST = replace(
     CostConfig(),
     pitch_limit_rad=0.30,
@@ -309,8 +320,10 @@ COST = replace(
 # robot's model-based kv_p). kv_p is lean per unit speed error, so a robot whose speeds are a third of
 # Pololu's needs proportionally more; here the model-based design already gives 0.52 and the hand-tuned
 # 0.5. 2.0 leaves the tuner room above both (review finding G1, 2026-11-23). The kp bound is searched on a
-# log scale, so its Pololu-sized top costs little.
-SEARCH = replace(SearchConfig(), kv_p_max=2.0)
+# log scale, so its Pololu-sized top costs little. ki_max: model_based_gains() has ki = 5.24 at
+# design_integral_ratio = 0.3, above config.py's 5.0, which clipped it (review H1); 10.0 keeps it near the
+# midpoint without over-stretching CMA-ES's sigma0 (a 15.0 bound would triple ki's unit scale).
+SEARCH = replace(SearchConfig(), ki_max=10.0, kv_p_max=2.0)
 
 # -------------------------------------------------------------- LEARNING ---
 # Learned controllers on this robot (docs/ml-baselines-plan.md 13). The search settings are

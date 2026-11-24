@@ -94,7 +94,8 @@ def test_checkpoints_never_pass_their_marks(tmp_path, monkeypatch):
 
     marks = (10.0, 20.0)                      # robot-seconds; a tiny generation is 6 x 6 x 0.4 = 14.4
     monkeypatch.setattr(run_neuroevolution, "CONFIG",
-                        replace(CONFIG, learning=replace(CONFIG.learning, checkpoints_robot_seconds=marks)))
+                        replace(CONFIG, learning=replace(CONFIG.learning, checkpoints_robot_seconds=marks),
+                                robustness=replace(CONFIG.robustness, sensitivity_weight=1.0)))
     folder = run(["--method", "linear", *TINY, "--generations", "100", "--budget", "40",
                   "--out", str(tmp_path / "marks")])
     with open(folder / "checkpoints.csv") as f:

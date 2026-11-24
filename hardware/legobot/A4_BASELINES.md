@@ -442,7 +442,7 @@ corner. Where they fall (dev):
 
 So these falls are the controllers' (neither baseline was designed for play), for E2's tuning to remove.
 
-### Pulse ticks at a free phase after bench B1 (2026-11-23)
+### Pulse ticks at a free phase after bench B1 (2026-11-23; superseded by Round-2 review fixes below)
 
 Bench B1 found that the HAT's pulse ticks keep no fixed phase against its data-line grid. The right tick moved
 3.1 ms after a power cycle, both ticks wander within one power-up, and a motor-cable swap moved both
@@ -492,3 +492,32 @@ full torque on that scenario's own robot and latency, with the play at its worst
   1 at 4.99 s, before the push.
 
 The same pattern as with the lock. These falls are for E2's tuning to remove.
+
+### After Round-2 external review fixes (2026-11-24; current E1 reference)
+
+Round-2 review and the Opus 5.5 audit (`docs/legobot-review/review-v2.md`) reconciled four items that change the
+LEGO baseline numbers:
+- **`gearbox_backlash` (`H3`/`I1`):** excluding the `+2°` unbraked `set 0` rotor slip in `20261123_073624_backlash.csv`
+  leaves steady-rocking clusters `2.58°` apart (`±1.3°` nominal, randomized **`±1.1–1.6°`**, was `±2.6–3.0°`).
+  `coupling_backlash` stays `±1.5°` nominal (`±0–3.0°` randomized, worst total `±4.6°`, matching the `11.3° − 2° = 9.3°`
+  visual beam span).
+- **Re-derived pushes (`H3`/`H5`):** across all 8,192 corners with `±4.6°` max play and free tick phase (`27.5 ms`
+  reaction), worst-corner catchable forward impulse rises from `0.03423` to **`0.03772 N s`** (start tilt `0.423 rad`).
+  With `POLOLU_PUSH_SHARE = 0.145 / 0.149`, pushes are **`0.73 N` × 50 ms** at **`5.5 s` and `7.5 s`** (`0.734 -> 0.73 N`).
+- **`ROBUSTNESS.sensitivity_weight = 0.0` (`H2`) & `SEARCH.ki_max = 10.0` (`H1`):** the chaos twin penalty is disabled
+  on LEGO (halving GPU runtime and removing double-counted borderline fall flips; objective now equals `mean_cost`), and
+  `ki_max = 10.0` places `model_based_gains()` (`ki = 5.24`) strictly inside the search box.
+- **Engine polish (`H9`/`H11`):** non-mutating `backlash_release` before IMU `derivatives` and strict `pdm_update`
+  thresholds (`> 0.5` / `< -0.5`).
+
+NumPy float64 baselines from `python hardware/legobot/legobot_baselines.py` (with `H9` and `H11` active; `mean_cost` = `objective` with `sensitivity_weight = 0.0`, falls in brackets):
+
+| Baseline | Plain (seeds 1–3, 9) | Robust train (1–50, 150) | Robust dev (5000–5049, 150) | Dev worst | Dev chaos |
+|---|---|---|---|---|---|
+| Hand-tuned PID (2.5, 1.5, 0.2, 0.5) | 20.52 (0) | **115.73** (8) | **172.81** (13) | 1819 | 0.0 |
+| Model-based PID (1.98, 5.24, 0.15, 0.52) | 10.80 (0) | **93.41** (7) | **83.35** (6) | 1969 | 0.0 |
+
+Before `H9` (non-mutating `backlash_release` before IMU `derivatives`) landed, the same config scored `104.83 (7)` / `136.21 (10)` (hand-tuned) and `46.85 (3)` / `72.51 (5)` (model-based) on train / dev; `H11` had no effect. On 300 fresh dev seeds (`5050–5149`), post-`H9` vs pre-`H9` is `107.4 (15)` vs `118.1 (17)` for hand-tuned and `40.5 (5)` vs `35.4 (4)` for model-based — zero directional bias, confirming that single-tier 150-scenario shifts of `~±30` objective (`±3–4` falls) are chaotic noise.
+
+These are the current reference points for E1 (`hardware/legobot/E1_HANDOFF.md`; robust fall rates 4.7–8.7%). (The push-onset full-torque trace in `review-v2.md` Section 4 was run pre-`H9`; compare E1 candidates with paired per-scenario bootstrap CIs or larger dev seed slices.)
+

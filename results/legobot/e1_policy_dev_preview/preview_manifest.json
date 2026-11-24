@@ -1,0 +1,113 @@
+{
+  "timestamp": "2026-11-24 06:05:31",
+  "gpu_power": {
+    "gpu_power_limit_w": 33.0,
+    "gpu_power_draw_w": 8.04,
+    "gpu_sm_clock_mhz": 360.0
+  },
+  "runs": [
+    {
+      "method": "linear",
+      "elapsed_s": 385.36,
+      "summary": {
+        "method": "linear",
+        "search": "cma_es",
+        "run_seed": 0,
+        "profile": "quick",
+        "n_params": 10,
+        "stop_reason": "generation cap",
+        "generations": 30,
+        "n_evals": 7681,
+        "robot_seconds": 4608600.0,
+        "robot_seconds_total": 4608600.0,
+        "charged_before": 0.0,
+        "elapsed_s": 299.09265875816345,
+        "selected": {
+          "robot_seconds": 922200.0,
+          "generation": 6,
+          "which": "best",
+          "train_objective": 165.69563802931356,
+          "dev20_objective": 166.3192954185944,
+          "dev20_falls": 0,
+          "dev60_objective": "",
+          "dev60_falls": "",
+          "gap20": 0.0037638733083034115,
+          "file": "checkpoints/best_9.222e05.npz"
+        },
+        "train_objective_float32": 165.69563802931356,
+        "train_objective_float64": 165.69563802931356,
+        "float32_float64_disagree": false,
+        "best_train_objective": 165.69563802931356
+      }
+    },
+    {
+      "method": "mlp",
+      "elapsed_s": 815.38,
+      "summary": {
+        "method": "mlp",
+        "search": "cma_es",
+        "run_seed": 0,
+        "profile": "quick",
+        "n_params": 481,
+        "stop_reason": "generation cap",
+        "generations": 30,
+        "n_evals": 39961,
+        "robot_seconds": 23976600.0,
+        "robot_seconds_total": 23976600.0,
+        "charged_before": 0.0,
+        "elapsed_s": 755.416351556778,
+        "selected": {
+          "robot_seconds": 23976600.0,
+          "generation": 30,
+          "which": "mean",
+          "train_objective": 263.20864746343483,
+          "dev20_objective": 204.2900260552403,
+          "dev20_falls": 0,
+          "dev60_objective": "",
+          "dev60_falls": "",
+          "gap20": -0.22384759002410648,
+          "file": "checkpoints/mean_2.398e07.npz"
+        },
+        "train_objective_float32": 263.20864746343483,
+        "train_objective_float64": 263.20864746343483,
+        "float32_float64_disagree": false,
+        "best_train_objective": 214.78967598193495
+      }
+    },
+    {
+      "method": "residual",
+      "elapsed_s": 1346.78,
+      "summary": {
+        "method": "residual",
+        "search": "cma_es",
+        "run_seed": 0,
+        "profile": "quick",
+        "n_params": 513,
+        "stop_reason": "generation cap",
+        "generations": 30,
+        "n_evals": 39961,
+        "robot_seconds": 23976600.0,
+        "robot_seconds_total": 23976600.0,
+        "charged_before": 0.0,
+        "elapsed_s": 1201.5836446285248,
+        "selected": {
+          "robot_seconds": 2398200.0,
+          "generation": 3,
+          "which": "best",
+          "train_objective": 16.27803880368884,
+          "dev20_objective": 16.296141682586732,
+          "dev20_falls": 0,
+          "dev60_objective": "",
+          "dev60_falls": "",
+          "gap20": 0.0011121044197159868,
+          "file": "checkpoints/best_2.398e06.npz"
+        },
+        "train_objective_float32": 16.27803880368884,
+        "train_objective_float64": 16.27803880368884,
+        "float32_float64_disagree": false,
+        "best_train_objective": 13.865995992728733
+      }
+    }
+  ],
+  "comparison_dir": "c:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\comparison\\e1-dev-with-policies-preview"
+}
