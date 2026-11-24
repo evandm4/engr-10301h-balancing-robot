@@ -1,0 +1,25 @@
+reason: wheels running away (-19.2, -19.2 rad/s for 1.5 s): lifted?
+armed at: 0.5048856769999475
+vin at start: 8.03
+watchdog priority: SCHED_FIFO 51
+reader priority: SCHED_FIFO 49
+loop priority: SCHED_FIFO 50
+memory locked: True
+gyro bias: 0.04670154677111239
+gyro sd at rest: 0.0027946155392527313
+accel |g| ratio: 1.0063889756995967
+line period at start: 9.99925 ms (-75 ppm vs nominal)
+line lock: command write phase 6.50 ms, tick offset 0.30 ms
+wheels 1 s after stop (deg/s): [0.0, 0.0]
+line period at end: 9.99408 ms (-592 ppm vs nominal)
+run: 4.71 s, 944 ticks
+period: mean 4.996  sd 0.033  p50 4.998  p99 5.050  max 5.080 ms (n=943)
+lateness: mean 0.001  sd 0.011  p50 0.000  p99 0.005  max 0.253 ms (n=944)
+overruns (> 7.5 ms late): 0
+compute (IMU read to command sent): mean 1.346  sd 0.151  p50 1.342  p99 1.750  max 1.897 ms (n=944)
+IMU read: mean 0.650  sd 0.055  p50 0.648  p99 0.874  max 0.971 ms (n=944)
+ticks locked to the HAT's lines: 944 of 944
+command write phase after the line grid, mod 5 ms: mean 1.381  sd 0.110  p50 1.387  p99 1.709  max 1.800 ms (n=943)
+motor data age at the tick, left: mean 2.970  sd 2.802  p50 4.216  p99 8.656  max 9.425 ms (n=944)
+motor data age at the tick, right: mean 3.900  sd 2.760  p50 4.322  p99 8.232  max 8.386 ms (n=944)
+pitch: mean -0.0278 sd 0.0014 rad; |duty| max 0.60

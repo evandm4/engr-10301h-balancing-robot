@@ -265,6 +265,19 @@ class LineClock:
         return (t - self.t_ref) % self.period
 
 
+def port_lag(ref_times, other_times, nominal_period):
+    """How far the other port's line grid lags the reference port's, in [0, period) s; None if too few lines.
+
+    Each port streams on its own grid, started by configure(), so the lag changes from run to run (1.5-8 ms
+    in the 2026-11-23 logs). Logged as a diagnostic only: the pulse ticks don't follow their own port's grid,
+    and neither port's tick holds a fixed phase between runs (B1 follow-up and cable-swap sweeps, 2026-11-23:
+    port A 8.8 ms, port B 7.2 / 4.3 ms, then both 3.2 ms after re-plugging the motors, one power-up)."""
+    a, b = LineClock(nominal_period), LineClock(nominal_period)
+    if not (a.update(ref_times) and b.update(other_times)):
+        return None
+    return (b.t_ref - a.t_ref) % a.period
+
+
 class Pacer:
     """The loop's tick times. Locked: two ticks per HAT line period, at `offset` s after each half-period
     point of the LineClock grid, so every command lands at the same phase of the HAT's pulse ticks.
@@ -296,7 +309,8 @@ class Safety:
         n = max(1, int(round(lc.STALL_S / dt)))
         self._stall = [deque(maxlen=n), deque(maxlen=n)]   # speed in the duty's direction, while |duty| is high
         self.wrong_way_ticks = [0, 0]
-        self.runaway_ticks = 0
+        m = max(1, int(round(lc.RUNAWAY_S / dt)))
+        self._runaway = [deque(maxlen=m), deque(maxlen=m)]  # each wheel's signed speed over the last RUNAWAY_S
         self.vin_low = 0
         self._last_vin_t = None
         self.first_vin_t = None
@@ -344,14 +358,18 @@ class Safety:
                                        if abs(d) >= self.stall_duty and d * w < 0 and abs(w) > 5.0 else 0)
             if self.wrong_way_ticks[i] * self.dt >= 0.2:
                 return f"{side} wheel turns against its duty (duty {d:+.2f}, {w:+.2f} rad/s): sign error?"
-        # Runaway: both wheels near the no-load speed the same way for RUNAWAY_S. On the floor that is past
-        # 0.59 m/s for 1.5 s, beyond anything the scenario asks; lifted while armed (held upright, so no tilt
-        # trip) the free wheels spin up to the no-load speed and the stall trip can't see it (review G11).
-        wl, wr = speeds
-        fast = min(abs(wl), abs(wr)) >= lc.RUNAWAY_SPEED and wl * wr > 0
-        self.runaway_ticks = self.runaway_ticks + 1 if fast else 0
-        if self.runaway_ticks * self.dt >= lc.RUNAWAY_S:
-            return f"wheels running away ({wl:+.1f}, {wr:+.1f} rad/s for {lc.RUNAWAY_S} s): lifted?"
+        # Runaway: both wheels' MEAN speed over the last RUNAWAY_S near the no-load speed, the same way. On the
+        # floor that is past 0.59 m/s for 1.5 s, beyond anything the scenario asks; lifted while armed (held
+        # upright, so no tilt trip) the free wheels spin up to the no-load speed and the stall trip can't see it
+        # (review G11). A mean, because one encoder count per tick is 3.5 rad/s: at 19.4 rad/s, 4.4% of ticks read
+        # under 17 and reset a per-tick counter, which delayed the trip to ~4 s (bench A5, 2026-11-23).
+        for q, w in zip(self._runaway, speeds):
+            q.append(w)
+        ql, qr = self._runaway
+        if len(ql) == ql.maxlen:
+            ml, mr = sum(ql) / len(ql), sum(qr) / len(qr)
+            if min(abs(ml), abs(mr)) >= lc.RUNAWAY_SPEED and ml * mr > 0:
+                return f"wheels running away (mean {ml:+.1f}, {mr:+.1f} rad/s over {lc.RUNAWAY_S} s): lifted?"
         return None
 
 

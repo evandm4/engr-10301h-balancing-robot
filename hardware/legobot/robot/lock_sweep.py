@@ -50,11 +50,15 @@ def main():
     if not clock.update(hat.line_times(ref_port)):
         hat.close()
         raise SystemExit("could not lock to the HAT's lines")
+    other_port = cm.SIDE_PORT["right" if a.ref_side == "left" else "left"]
+    lag = control.port_lag(hat.line_times(ref_port), hat.line_times(other_port), clock.period)
+    lag_text = "unknown" if lag is None else f"{lag * 1e3:.2f} ms"
     plan = [o / 1000.0 for o in a.offsets_ms for _ in range(a.trials)]
     random.shuffle(plan)
     base = cm.base_path(a.outdir, cm.stamp(), "lock_sweep")
     rows = []
-    print(f"vin {vin:.2f} V, pwmparams {cfg.PWMPARAMS}, line period {clock.period * 1e3:.4f} ms; {len(plan)} trials")
+    print(f"vin {vin:.2f} V, pwmparams {cfg.PWMPARAMS}, line period {clock.period * 1e3:.4f} ms, "
+          f"other port's lines lag the grid by {lag_text}; {len(plan)} trials")
     try:
         for n, offset in enumerate(plan):
             cm.check_fault(hat)
@@ -88,7 +92,8 @@ def main():
             w.writerows(rows)
 
     lines = [f"lock sweep {a.side} (grid: {a.ref_side} port's lines), duty {a.duty}, pwmparams {cfg.PWMPARAMS}, vin {vin:.2f} V, "
-             f"line period {clock.period * 1e3:.4f} ms", "offset ms   n   t_d mean   sd    (ms)"]
+             f"line period {clock.period * 1e3:.4f} ms, other port's lines lag the grid by {lag_text} (at start)",
+             "offset ms   n   t_d mean   sd    (ms)"]
     best = None
     for o in sorted(set(r[0] for r in rows)):
         td = [r[2] for r in rows if r[0] == o and r[6]]

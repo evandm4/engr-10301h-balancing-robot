@@ -1,0 +1,26 @@
+reason: IMU read failed 2 times in a row: [Errno 121] Remote I/O error (injected)
+armed at: 0.5067068339999992
+vin at start: 8.0
+watchdog priority: SCHED_FIFO 51
+reader priority: SCHED_FIFO 49
+loop priority: SCHED_FIFO 50
+memory locked: True
+gyro bias: 0.046614280308512675
+gyro sd at rest: 0.002396916790739127
+accel |g| ratio: 1.0063185259721872
+line period at start: 10.00028 ms (+28 ppm vs nominal)
+line lock: command write phase 6.50 ms, tick offset 0.30 ms
+wheels 1 s after stop (deg/s): [0.0, 0.0]
+IMU read errors: 2
+line period at end: 10.00148 ms (+148 ppm vs nominal)
+run: 1.00 s, 202 ticks
+period: mean 4.998  sd 0.037  p50 5.001  p99 5.027  max 5.042 ms (n=201)
+lateness: mean 0.001  sd 0.005  p50 0.000  p99 0.004  max 0.075 ms (n=202)
+overruns (> 7.5 ms late): 0
+compute (IMU read to command sent): mean 1.154  sd 0.220  p50 1.233  p99 1.786  max 1.895 ms (n=202)
+IMU read: mean 0.582  sd 0.086  p50 0.638  p99 0.744  max 0.748 ms (n=202)
+ticks locked to the HAT's lines: 202 of 202
+command write phase after the line grid, mod 5 ms: mean 1.219  sd 0.153  p50 1.299  p99 1.575  max 1.645 ms (n=202)
+motor data age at the tick, left: mean 2.697  sd 2.588  p50 4.659  p99 6.029  max 9.811 ms (n=202)
+motor data age at the tick, right: mean 4.837  sd 2.600  p50 4.433  p99 8.184  max 8.257 ms (n=202)
+pitch: mean -0.0285 sd 0.0009 rad; |duty| max 0.30

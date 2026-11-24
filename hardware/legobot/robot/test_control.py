@@ -9,6 +9,7 @@ import os
 import sys
 from collections import namedtuple
 
+import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # hardware/legobot
@@ -103,9 +104,15 @@ def test_runaway_trip_catches_free_spinning_wheels(cfg):
     s = control.Safety(dt)
     out = [s.check(k * dt, 0.0, (0.6, 0.6), (19.0, 18.5), **ok) for k in range(n)]
     assert all(o is None for o in out[:-1]) and "running away" in out[-1]
-    s = control.Safety(dt)                        # a transient overshoot shorter than RUNAWAY_S doesn't trip
-    out = [s.check(k * dt, 0.0, (0.6, 0.6), (19.0, 19.0) if k < n - 5 else (12.0, 12.0), **ok) for k in range(n + 50)]
-    assert all(o is None for o in out)
+    s = control.Safety(dt)                        # bench A5: one count per tick is 3.5 rad/s, so at ~19.4 rad/s some
+    rng = np.random.default_rng(0)                # ticks read under 17; they mustn't hold the trip off (2026-11-23)
+    counts = 3.49 * rng.choice([4, 5, 6, 7], size=(n, 2), p=[0.044, 0.30, 0.50, 0.156])
+    assert (counts < lc.RUNAWAY_SPEED).mean() > 0.03 and counts.mean() > 19.0
+    out = [s.check(k * dt, 0.0, (-0.6, -0.6), tuple(-counts[k]), **ok) for k in range(n)]
+    assert all(o is None for o in out[:-1]) and "running away" in out[-1]
+    s = control.Safety(dt)                        # bursts near no-load while cruising at 11.6 rad/s don't trip
+    burst = lambda k: (19.0, 19.0) if (k * dt) % 1.0 < 0.5 else (11.6, 11.6)
+    assert all(s.check(k * dt, 0.0, (0.6, 0.6), burst(k), **{**ok, "vin_reading": (k * dt, 7.6)}) is None for k in range(4 * n))
     s = control.Safety(dt)                        # turning on the spot (wheels opposite) is not a runaway
     assert all(s.check(k * dt, 0.0, (0.6, -0.6), (19.0, -19.0), **ok) is None for k in range(n + 50))
 
@@ -227,8 +234,7 @@ def test_closed_loop_tracks_the_scenario(tmp_path, controller):
 
 
 @pytest.mark.parametrize("inject, expect", [("loop", "loop stalled"), ("stale", "stale"), ("vin", "battery"),
-                                            ("fault", "fault"), ("imu", "IMU read failed 2 times"),
-                                            ("unlock", "lost the lock")])
+                                            ("fault", "fault"), ("imu", "IMU read failed 2 times")])
 def test_injected_trips(tmp_path, inject, expect):
     reason = balance.main(["--sim", "--seconds", "3", "--inject", inject, "--outdir", str(tmp_path)])
     assert expect in reason
@@ -305,3 +311,26 @@ def test_every_robot_module_compiles():
     for path in glob.glob(os.path.join(here, "*.py")) + glob.glob(os.path.join(here, "measure", "*.py")):
         with open(path, encoding="utf-8") as f:
             compile(f.read(), path, "exec")
+
+
+def test_port_lag_reads_the_offset_between_the_two_ports_line_grids():
+    """B1 (2026-11-23): each port streams on its own grid, and the lag between them changes per run."""
+    rng = np.random.default_rng(1)
+    period = 0.0099984
+    left = 3.0 + period * np.arange(300) + rng.exponential(0.0006, 300)
+    right = 3.0 + 0.0042 + period * np.arange(300) + rng.exponential(0.0006, 300)
+    lag = control.port_lag(list(left), list(right), 0.010)
+    assert abs(lag - 0.0042) < 0.0005
+    assert control.port_lag(list(left[:10]), list(right), 0.010) is None
+
+
+def test_losing_the_line_lock_falls_back_to_the_pi_clock(tmp_path):
+    """Bench B1: the lock can't fix the wait to a pulse, so losing it is logged, not a trip. The run goes
+    on, ticking on the Pi's clock, and the summary says how often it was lost."""
+    reason = balance.main(["--sim", "--sim-noise", "--seconds", "3", "--inject", "unlock", "--outdir", str(tmp_path)])
+    assert reason == "done"
+    summary = next(tmp_path.glob("*_summary.txt")).read_text()
+    assert "line lock lost while armed: 1 times" in summary
+    raw = next(tmp_path.glob("*_raw.csv")).read_text().splitlines()
+    locked = [int(row.split(",")[raw[0].split(",").index("locked")]) for row in raw[1:]]
+    assert 1 in locked and locked[-1] == 0          # locked before the injection, Pi clock after

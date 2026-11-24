@@ -1,0 +1,14 @@
+reason: not armed within 30 s
+armed at: None
+vin at start: 8.01
+watchdog priority: SCHED_FIFO 51
+reader priority: SCHED_FIFO 49
+loop priority: SCHED_FIFO 50
+memory locked: True
+gyro bias: 0.046331163922215944
+gyro sd at rest: 0.0038487545973927063
+accel |g| ratio: 1.0076438133367371
+line period at start: 10.00165 ms (+165 ppm vs nominal)
+line lock: command write phase 6.50 ms, tick offset 0.30 ms
+wheels 1 s after stop (deg/s): [0.0, 0.0]
+line period at end: 10.00111 ms (+111 ppm vs nominal)

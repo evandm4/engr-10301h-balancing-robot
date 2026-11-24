@@ -16,6 +16,9 @@ CPU = 3                    # pin the loop (and the threads it starts) to this co
 # In slow PWM the HAT's 10 ms pulse ticks are locked to its 100 Hz data lines (C3, measure/tick_lock.py),
 # so the loop runs two ticks per line period at a fixed phase of that grid (control.LineClock, Pacer) and
 # each command reaches the HAT at the same point before a pulse tick. --no-line-lock runs on the Pi's clock.
+# Bench B1 (2026-11-23) then showed the pulse ticks wander against the lines, so the lock doesn't fix the
+# wait to a pulse (the simulator draws it at random). It still steadies the motor data's age, so the loop
+# uses it when it has it and falls back to the Pi's clock when it doesn't; arming doesn't wait for it.
 LINE_LOCK = True
 LINE_WRITE_PHASE_S = 0.0065  # s after the grid's line (lower envelope of the left port's arrivals) at which the
                            # command write starts. robot.lock_sweep, 2026-11-23 (duty 1.0 steps, sawtooth fits): the
@@ -60,8 +63,8 @@ WATCHDOG_S = 0.10          # a separate thread coasts the motors if the loop has
 WATCHDOG_REPEAT_S = 0.05   # ...and keeps re-sending the coast at this interval until the run ends, so a command
                            # the stuck loop finishes writing after the first coast can't leave a motor driven
 IMU_ERROR_LIMIT = 2        # consecutive failed IMU reads (I2C errors) before tripping; one is bridged with the last sample
-RUNAWAY_SPEED = 17.0       # rad/s: both wheels at least this fast the same way (no-load is ~19.6 at 7.4 V; the
-RUNAWAY_S = 1.5            # scenario cruises at 11.6) for this long: lifted while armed, or running away
+RUNAWAY_SPEED = 17.0       # rad/s: both wheels' mean speed at least this, the same way (no-load is ~19.6 at 7.4 V;
+RUNAWAY_S = 1.5            # the scenario cruises at 11.6) over this window: lifted while armed, or running away
 
 # ---- logging (D5) ----
 LOG_DIR = "logs"
