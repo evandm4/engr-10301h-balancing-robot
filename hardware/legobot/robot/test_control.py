@@ -411,3 +411,697 @@ def test_losing_the_line_lock_falls_back_to_the_pi_clock(tmp_path):
     raw = next(tmp_path.glob("*_raw.csv")).read_text().splitlines()
     locked = [int(row.split(",")[raw[0].split(",").index("locked")]) for row in raw[1:]]
     assert 1 in locked and locked[-1] == 0          # locked before the injection, Pi clock after
+
+
+# ----------------------------------------------------------------- policy-on-robot tests (P1-P6, P8) ---
+def _sha256_file(path):
+    import hashlib
+    from pathlib import Path
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _copy_bundle(src, dst):
+    import shutil
+    from pathlib import Path
+    dst = Path(dst)
+    shutil.copytree(src, dst)
+    return dst
+
+
+def _refresh_manifest_hashes(bundle_dir):
+    """Recompute manifest.json sha256 and files_sha256 after a deliberate test mutation."""
+    from pathlib import Path
+    bundle_dir = Path(bundle_dir)
+    mpath = bundle_dir / "manifest.json"
+    manifest = json.loads(mpath.read_text())
+    manifest["sha256"] = _sha256_file(bundle_dir / "final.npz")
+    if isinstance(manifest.get("files_sha256"), dict):
+        for fname in list(manifest["files_sha256"]):
+            fpath = bundle_dir / fname
+            if fpath.is_file():
+                manifest["files_sha256"][fname] = _sha256_file(fpath)
+    mpath.write_text(json.dumps(manifest))
+    return manifest
+
+
+def _rewrite_npz(src, dst, **overrides):
+    """Copy every array in `src` .npz to `dst`, applying key overrides."""
+    with np.load(src) as data:
+        arrays = {k: data[k] for k in data.files}
+    arrays.update(overrides)
+    np.savez(dst, **arrays)
+    return dst
+
+
+@pytest.fixture(scope="module")
+def synthetic_bundles(tmp_path_factory, cfg):
+    """Export the three synthetic bundles (l_pid, a_warm_zero, b1_zero) once per module via P1's exporter."""
+    control.import_config()
+    import export_policy
+    root = tmp_path_factory.mktemp("policies")
+    out = {"root": root}
+    for name in ("l_pid", "a_warm_zero", "b1_zero"):
+        out[name] = export_policy.export_bundle(synthetic=name, name=name, out_root=root, cfg=cfg,
+                                                envelope_seeds=1, seed=0)
+    return out
+
+
+# ---- 1. L-PID through robot code ~= PID through robot code -----------------------------------------
+def test_l_pid_through_robot_code_is_close_to_hand_pid(tmp_path, cfg, synthetic_bundles):
+    """P6: PID-equivalent linear policy (leaky, frozen integrators) vs hand-tuned PID through sim_hw."""
+    from balance_sim import load_trajectory
+
+    d_pid, d_lin = tmp_path / "pid", tmp_path / "l_pid"
+    common = ["--sim", "--sim-noise", "--sim-pitch", "0.02", "--seconds", "10"]
+    r_pid_reason = balance.main(common + ["--controller", "hand", "--outdir", str(d_pid), "--label", "pid"])
+    r_lin_reason = balance.main(common + ["--controller", str(synthetic_bundles["l_pid"]),
+                                          "--outdir", str(d_lin), "--label", "l_pid"])
+    assert r_pid_reason == "done" and r_lin_reason == "done"
+
+    r_pid, _ = load_trajectory(next(d_pid.glob("*_run.csv")))
+    r_lin, _ = load_trajectory(next(d_lin.glob("*_run.csv")))
+    assert not r_pid.fell and not r_lin.fell
+    assert abs(r_lin.states[:, 2]).max() < 0.15
+    assert abs(r_lin.states[r_lin.t > 5.0, 1].mean()) < 0.15
+
+    # Close, not identical (leaky/frozen integrators vs PID anti-windup can drift slightly in phase under noise)
+    n = min(len(r_pid.t), len(r_lin.t))
+    pitch_rms_diff = float(np.sqrt(np.mean((r_lin.states[:n, 2] - r_pid.states[:n, 2]) ** 2)))
+    vel_rms_diff = float(np.sqrt(np.mean((r_lin.states[:n, 1] - r_pid.states[:n, 1]) ** 2)))
+    vel_rms_pid = float(np.sqrt(np.mean(r_pid.states[:n, 1] ** 2)))
+    vel_rms_lin = float(np.sqrt(np.mean(r_lin.states[:n, 1] ** 2)))
+    assert pitch_rms_diff < 0.05
+    assert vel_rms_diff < 0.25
+    assert abs(vel_rms_lin - vel_rms_pid) < 0.10
+    cost_pid, cost_lin = cfg.score(r_pid), cfg.score(r_lin)
+    assert cost_pid > 0.0 and abs(cost_lin / cost_pid - 1.0) < 0.35
+
+
+# ---- 2. B1 with zero output layer == reference PID bit-for-bit (catches Problem 1) -----------------
+@pytest.mark.parametrize("goal, seconds", [("still", "5"), ("scenario", "15")])
+def test_b1_zero_equals_hand_pid_bit_for_bit(tmp_path, cfg, synthetic_bundles, goal, seconds):
+    """P6 + Problem 1: residual B1 with zero output layer equals the reference PID bit-for-bit on both
+    --goal still and --goal scenario (goal must reach PolicyController.base, not just PolicyController)."""
+    from balance_sim import load_trajectory
+
+    c, _ = control.build_controller(cfg, str(synthetic_bundles["b1_zero"]), goal=goal)
+    assert c.base is not None
+    if goal == "still":
+        assert c.goal == 0.0 and c.base.goal == 0.0
+    else:
+        assert callable(c.goal) and callable(c.base.goal)
+
+    d_pid, d_b1 = tmp_path / f"pid_{goal}", tmp_path / f"b1_{goal}"
+    common = ["--sim", "--sim-noise", "--goal", goal, "--seconds", seconds]
+    reason_pid = balance.main(common + ["--controller", "hand", "--outdir", str(d_pid), "--label", "pid"])
+    reason_b1 = balance.main(common + ["--controller", str(synthetic_bundles["b1_zero"]),
+                                       "--outdir", str(d_b1), "--label", "b1_zero"])
+    assert reason_pid == "done" and reason_b1 == "done"
+
+    r_pid, _ = load_trajectory(next(d_pid.glob("*_run.csv")))
+    r_b1, _ = load_trajectory(next(d_b1.glob("*_run.csv")))
+    np.testing.assert_array_equal(r_b1.t, r_pid.t)
+    np.testing.assert_array_equal(r_b1.states, r_pid.states)
+    np.testing.assert_array_equal(r_b1.torques, r_pid.torques)
+    np.testing.assert_array_equal(r_b1.velocity_goal, r_pid.velocity_goal)
+    np.testing.assert_array_equal(r_b1.pitch_reference, r_pid.pitch_reference)
+
+
+# ---- 3. A-warm with zero output layer == L bit-for-bit ---------------------------------------------
+@pytest.mark.parametrize("goal, seconds", [("still", "5"), ("scenario", "15")])
+def test_a_warm_zero_equals_l_pid_bit_for_bit(tmp_path, synthetic_bundles, goal, seconds):
+    """P6: A-warm with zero output layer produces bit-identical trajectories and torques to L."""
+    from balance_sim import load_trajectory
+
+    d_lin, d_warm = tmp_path / f"l_{goal}", tmp_path / f"warm_{goal}"
+    common = ["--sim", "--sim-noise", "--goal", goal, "--seconds", seconds]
+    reason_lin = balance.main(common + ["--controller", str(synthetic_bundles["l_pid"]),
+                                        "--outdir", str(d_lin), "--label", "l_pid"])
+    reason_warm = balance.main(common + ["--controller", str(synthetic_bundles["a_warm_zero"]),
+                                         "--outdir", str(d_warm), "--label", "a_warm_zero"])
+    assert reason_lin == "done" and reason_warm == "done"
+
+    r_lin, _ = load_trajectory(next(d_lin.glob("*_run.csv")))
+    r_warm, _ = load_trajectory(next(d_warm.glob("*_run.csv")))
+    np.testing.assert_array_equal(r_warm.t, r_lin.t)
+    np.testing.assert_array_equal(r_warm.states, r_lin.states)
+    np.testing.assert_array_equal(r_warm.torques, r_lin.torques)
+    np.testing.assert_array_equal(r_warm.velocity_goal, r_lin.velocity_goal)
+
+
+# ---- 4. Closed-loop balance & scenario tracking with policy:<name> lookup --------------------------
+def test_closed_loop_balances_and_tracks_policy_by_name(tmp_path, cfg, synthetic_bundles, monkeypatch):
+    """P2c + P6: policy:<name> resolves via lc.POLICIES_DIR (and repo results/legobot/policies/),
+    balances standing still, and tracks the forward cruise in --goal scenario."""
+    from pathlib import Path
+    from balance_sim import load_trajectory
+
+    # 1) Lookup via lc.POLICIES_DIR
+    monkeypatch.setattr(lc, "POLICIES_DIR", str(synthetic_bundles["root"]))
+    d_still, d_scen = tmp_path / "still", tmp_path / "scenario"
+    reason_still = balance.main(["--sim", "--sim-noise", "--sim-pitch", "0.02", "--controller", "policy:l_pid",
+                                 "--seconds", "10", "--outdir", str(d_still), "--label", "l_pid_still"])
+    assert reason_still == "done"
+    r_still, meta_still = load_trajectory(next(d_still.glob("*_run.csv")))
+    assert meta_still["source"] == "sim_hw" and not r_still.fell
+    assert abs(r_still.states[:, 2]).max() < 0.15
+    assert abs(r_still.states[r_still.t > 5.0, 1].mean()) < 0.15
+
+    reason_scen = balance.main(["--sim", "--sim-noise", "--goal", "scenario", "--controller", "policy:l_pid",
+                                "--seconds", "20", "--outdir", str(d_scen), "--label", "l_pid_scen"])
+    assert reason_scen == "done"
+    r_scen, _ = load_trajectory(next(d_scen.glob("*_run.csv")))
+    assert not r_scen.fell
+    cruise = (r_scen.t > 5.0) & (r_scen.t < 9.0)
+    goal_v = r_scen.velocity_goal[cruise].mean()
+    assert goal_v > 0.1
+    assert 0.5 * goal_v < r_scen.states[cruise, 1].mean() < 1.3 * goal_v
+
+    # 2) Fallback lookup via <repo_root>/results/legobot/policies/<name> when not in lc.POLICIES_DIR
+    repo_l_pid = Path(__file__).resolve().parents[3] / "results" / "legobot" / "policies" / "l_pid"
+    if repo_l_pid.is_dir():
+        monkeypatch.setattr(lc, "POLICIES_DIR", str(tmp_path / "empty_policies"))
+        b = control.load_policy_bundle("policy:l_pid", cfg, allow_config_mismatch=True)
+        assert Path(b["bundle_dir"]).resolve() == repo_l_pid.resolve()
+
+
+def test_quick_l_exported_bundle_balances_tracks_and_replays(tmp_path, monkeypatch):
+    """P1 + P4b + P6 + P2-3: the committed quick_l bundle balances, tracks --goal scenario, and replays <= 1e-12
+    (uses --allow-config-mismatch so future legobot_config.py edits don't break the test)."""
+    from pathlib import Path
+    from balance_sim import load_trajectory
+    from robot import replay_policy
+
+    repo_quick_l = Path(__file__).resolve().parents[3] / "results" / "legobot" / "policies" / "quick_l"
+    if not repo_quick_l.is_dir():
+        pytest.skip(f"no exported quick_l bundle at {repo_quick_l}")
+    monkeypatch.setattr(lc, "POLICIES_DIR", str(tmp_path / "empty_policies"))
+
+    d_still, d_scen = tmp_path / "ql_still", tmp_path / "ql_scen"
+    reason_still = balance.main(["--sim", "--sim-noise", "--sim-pitch", "0.02", "--controller", "policy:quick_l",
+                                 "--allow-config-mismatch", "--seconds", "10", "--outdir", str(d_still),
+                                 "--label", "quick_l_still"])
+    assert reason_still == "done"
+    r_still, _ = load_trajectory(next(d_still.glob("*_run.csv")))
+    assert not r_still.fell and abs(r_still.states[:, 2]).max() < 0.20
+
+    reason_scen = balance.main(["--sim", "--sim-noise", "--goal", "scenario", "--controller", "policy:quick_l",
+                                "--allow-config-mismatch", "--seconds", "20", "--outdir", str(d_scen),
+                                "--label", "quick_l_scen"])
+    assert reason_scen == "done"
+    (run_scen,) = d_scen.glob("*_run.csv")
+    r_scen, _ = load_trajectory(run_scen)
+    assert not r_scen.fell
+    cruise = (r_scen.t > 5.0) & (r_scen.t < 9.0)
+    goal_v = r_scen.velocity_goal[cruise].mean()
+    assert goal_v > 0.1 and 0.5 * goal_v < r_scen.states[cruise, 1].mean() < 1.3 * goal_v
+
+    rep = replay_policy.replay_log(run_scen)
+    assert rep["n_ticks"] > 100 and rep["max_torque_diff"] <= 1e-12
+
+
+# ---- 5. Bundle validation, refusals & startup self-test (P2a-P2d, P3b) -----------------------------
+def test_bundle_round_trip_and_self_test(tmp_path, cfg):
+    """P1 + P2a + P2d + P3b: export_bundle -> load_policy_bundle -> build_controller -> self_test_policy."""
+    control.import_config()
+    import export_policy
+
+    bdir = export_policy.export_bundle(synthetic="l_pid", name="roundtrip_l", out_root=tmp_path, cfg=cfg,
+                                       envelope_seeds=1)
+    bundle = control.load_policy_bundle(bdir, cfg)
+    assert bundle["name"] == "roundtrip_l" and bundle["kind"] == "linear"
+    assert not bundle["unchecked"] and bundle["config_differences"] == []
+    assert bundle["sha256"] == _sha256_file(bdir / "final.npz")
+
+    controller, desc = control.build_controller(cfg, str(bdir), goal="still")
+    assert desc["kind"] == "policy" and desc["policy_kind"] == "linear"
+    assert desc["bundle_name"] == "roundtrip_l" and desc["sha256"] == bundle["sha256"]
+    assert desc["n_params"] == bundle["spec"].n_params and not desc["unchecked"]
+    # desc must stay plain JSON-serializable metadata
+    json.dumps(desc)
+
+    st = control.self_test_policy(controller, bundle["golden"], cfg=cfg)
+    assert st["n_ticks"] == len(bundle["golden"]["states"]) and st["n_ticks"] >= 300
+    assert st["max_torque_err"] <= lc.GOLDEN_TOL
+    assert st["compute_lead_s"] >= lc.COMPUTE_LEAD_S
+    assert st["compute_lead_s"] == pytest.approx(lc.COMPUTE_LEAD_S + max(0.0, st["p99_s"] - st["pid_p99_s"]))
+
+
+def test_bare_npz_requires_allow_unchecked(tmp_path, cfg, synthetic_bundles):
+    """P2a: bare .npz refused without --allow-unchecked, accepted with --allow-unchecked."""
+    import shutil
+    bare = tmp_path / "bare_l_pid.npz"
+    shutil.copyfile(synthetic_bundles["l_pid"] / "final.npz", bare)
+
+    with pytest.raises(ValueError):
+        control.load_policy_bundle(bare, cfg)
+    with pytest.raises(SystemExit):
+        balance.main(["--sim", "--controller", str(bare), "--seconds", "1", "--outdir", str(tmp_path / "refused")])
+
+    bundle = control.load_policy_bundle(bare, cfg, allow_unchecked=True)
+    assert bundle["unchecked"] is True and bundle["kind"] == "linear"
+    reason = balance.main(["--sim", "--controller", str(bare), "--allow-unchecked",
+                           "--seconds", "1", "--outdir", str(tmp_path / "accepted")])
+    assert reason == "done"
+
+
+def test_corrupt_wrong_obs_sha_and_unknown_kind_refused(tmp_path, cfg, synthetic_bundles):
+    """P2a + H5 + M5: corrupt .npz, wrong observations list, sha256 mismatch (final.npz and snapshot.json),
+    path traversal, NaN weights (C1), and unknown kind ('gru') refused with ValueError."""
+    # Corrupt .npz -> wrapped as ValueError (M5)
+    corrupt = tmp_path / "corrupt.npz"
+    corrupt.write_bytes(b"definitely not a zip/npz archive")
+    with pytest.raises(ValueError):
+        control.load_policy_bundle(corrupt, cfg, allow_unchecked=True)
+
+    # Path traversal in policy:<name> refused
+    with pytest.raises(ValueError):
+        control.load_policy_bundle("policy:../l_pid", cfg)
+
+    # Wrong observations list
+    src_npz = synthetic_bundles["l_pid"] / "final.npz"
+    with np.load(src_npz) as f:
+        bad_obs = np.array([f"bad_{k}" for k in range(len(f["observations"]))])
+    wrong_obs_npz = _rewrite_npz(src_npz, tmp_path / "wrong_obs.npz", observations=bad_obs)
+    with pytest.raises(ValueError, match="(?i)observation"):
+        control.load_policy_bundle(wrong_obs_npz, cfg, allow_unchecked=True)
+
+    # sha256 mismatch in manifest.json (final.npz)
+    bad_sha = _copy_bundle(synthetic_bundles["l_pid"], tmp_path / "bad_sha")
+    manifest = json.loads((bad_sha / "manifest.json").read_text())
+    manifest["sha256"] = "0" * 64
+    (bad_sha / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="(?i)sha256|hash|checksum"):
+        control.load_policy_bundle(bad_sha, cfg)
+
+    # H5: tampering with snapshot.json without updating files_sha256 is caught even with allow_config_mismatch
+    tampered_snap = _copy_bundle(synthetic_bundles["l_pid"], tmp_path / "tampered_snap")
+    snap_t = json.loads((tampered_snap / "snapshot.json").read_text())
+    snap_t["config"]["timing"]["control_dt_s"] = 0.010
+    (tampered_snap / "snapshot.json").write_text(json.dumps(snap_t))
+    with pytest.raises(ValueError, match="(?i)sha256"):
+        control.load_policy_bundle(tampered_snap, cfg, allow_config_mismatch=True)
+
+    # P2-1: deleting files_sha256 from manifest.json must NOT bypass file integrity checks
+    missing_fsha = _copy_bundle(synthetic_bundles["l_pid"], tmp_path / "missing_fsha")
+    m_nof = json.loads((missing_fsha / "manifest.json").read_text())
+    m_nof.pop("files_sha256", None)
+    (missing_fsha / "manifest.json").write_text(json.dumps(m_nof))
+    with pytest.raises(ValueError, match="(?i)files_sha256|sha256"):
+        control.load_policy_bundle(missing_fsha, cfg, allow_config_mismatch=True)
+
+    # C1: NaN weights in .npz refused by load_policy_bundle
+    with np.load(src_npz) as f:
+        nan_params = f["params"].copy()
+    nan_params[0] = np.nan
+    nan_npz = _rewrite_npz(src_npz, tmp_path / "nan_params.npz", params=nan_params)
+    with pytest.raises(ValueError, match="(?i)finite|nan"):
+        control.load_policy_bundle(nan_npz, cfg, allow_unchecked=True)
+
+    # Unknown kind ("gru") in manifest.json
+    gru_bundle = _copy_bundle(synthetic_bundles["l_pid"], tmp_path / "gru_bundle")
+    m_gru = json.loads((gru_bundle / "manifest.json").read_text())
+    m_gru["kind"] = "gru"
+    (gru_bundle / "manifest.json").write_text(json.dumps(m_gru))
+    with pytest.raises(ValueError, match="(?i)gru|kind"):
+        control.load_policy_bundle(gru_bundle, cfg)
+
+    # Unknown kind ("gru") in bare .npz
+    gru_npz = _rewrite_npz(src_npz, tmp_path / "gru_kind.npz", kind=np.array("gru"))
+    with pytest.raises(ValueError):
+        control.load_policy_bundle(gru_npz, cfg, allow_unchecked=True)
+
+    gru_key_npz = _rewrite_npz(src_npz, tmp_path / "gru_key.npz", gru=np.zeros(4))
+    with pytest.raises(ValueError):
+        control.load_policy_bundle(gru_key_npz, cfg, allow_unchecked=True)
+
+
+def test_config_mismatch_max_torque_and_ff_gain_refusals(tmp_path, cfg, synthetic_bundles):
+    """P2b + P2c: config mismatch refused unless --allow-config-mismatch (and logged);
+    max_torque mismatch ALWAYS refused; --ff-gain refused for policies."""
+    # 1) control_dt_s mismatch refused
+    bad_dt = _copy_bundle(synthetic_bundles["l_pid"], tmp_path / "bad_dt")
+    snap = json.loads((bad_dt / "snapshot.json").read_text())
+    snap["config"]["timing"]["control_dt_s"] = 0.010
+    (bad_dt / "snapshot.json").write_text(json.dumps(snap))
+    _refresh_manifest_hashes(bad_dt)
+    with pytest.raises(ValueError, match="control_dt_s"):
+        control.load_policy_bundle(bad_dt, cfg)
+    with pytest.raises(SystemExit):
+        balance.main(["--sim", "--controller", str(bad_dt), "--seconds", "1", "--outdir", str(tmp_path / "o_dt")])
+
+    # 2) voltage_feedforward_gain mismatch refused by default, accepted and logged with --allow-config-mismatch
+    bad_ff = _copy_bundle(synthetic_bundles["l_pid"], tmp_path / "bad_ff")
+    snap_ff = json.loads((bad_ff / "snapshot.json").read_text())
+    snap_ff["config"]["actuator"]["voltage_feedforward_gain"] = 0.85
+    (bad_ff / "snapshot.json").write_text(json.dumps(snap_ff))
+    _refresh_manifest_hashes(bad_ff)
+    with pytest.raises(ValueError, match="voltage_feedforward_gain"):
+        control.load_policy_bundle(bad_ff, cfg)
+
+    loaded_ff = control.load_policy_bundle(bad_ff, cfg, allow_config_mismatch=True)
+    assert "actuator.voltage_feedforward_gain" in loaded_ff["config_differences"]
+    assert loaded_ff["feedforward_gain"] == pytest.approx(0.85)
+
+    out_ff = tmp_path / "o_ff"
+    reason = balance.main(["--sim", "--controller", str(bad_ff), "--allow-config-mismatch",
+                           "--seconds", "1", "--outdir", str(out_ff)])
+    assert reason == "done"
+    summary_text = next(out_ff.glob("*_summary.txt")).read_text()
+    assert "voltage_feedforward_gain" in summary_text
+
+    # 3) max_torque mismatch refused EVEN WITH allow_config_mismatch=True (bare .npz and bundle)
+    bad_tau_npz = _rewrite_npz(synthetic_bundles["l_pid"] / "final.npz", tmp_path / "bad_tau.npz",
+                               max_torque=cfg.robot.max_torque * 0.5)
+    with pytest.raises(ValueError, match="(?i)torque"):
+        control.load_policy_bundle(bad_tau_npz, cfg, allow_unchecked=True, allow_config_mismatch=True)
+
+    bad_tau_bundle = _copy_bundle(synthetic_bundles["l_pid"], tmp_path / "bad_tau_bundle")
+    _rewrite_npz(bad_tau_bundle / "final.npz", bad_tau_bundle / "final.npz", max_torque=cfg.robot.max_torque * 0.5)
+    _refresh_manifest_hashes(bad_tau_bundle)
+    with pytest.raises(ValueError, match="(?i)torque"):
+        control.load_policy_bundle(bad_tau_bundle, cfg, allow_config_mismatch=True)
+
+    # 4) --ff-gain refused for policies
+    with pytest.raises(ValueError):
+        control.build_controller(cfg, str(synthetic_bundles["l_pid"]), ff_gain_override=1.0)
+    with pytest.raises(SystemExit):
+        balance.main(["--sim", "--controller", str(synthetic_bundles["l_pid"]), "--ff-gain", "1.0",
+                      "--seconds", "1", "--outdir", str(tmp_path / "o_ff_refused")])
+
+
+def test_self_test_catches_perturbed_weights_and_restores_state(tmp_path, cfg, synthetic_bundles):
+    """P2d + C1 + H3 + M1: self_test_policy fails on perturbed linear weights and NaN weights,
+    restores controller.goal and controller.base.goal, resets integrators, and blocks arming in balance.main."""
+    # 1) Goal & integrator restoration on B1 for both goal='still' and goal='scenario'
+    b1_bundle = control.load_policy_bundle(synthetic_bundles["b1_zero"], cfg)
+    for goal in ("still", "scenario"):
+        c, _ = control.build_controller(cfg, str(synthetic_bundles["b1_zero"]), goal=goal)
+        orig_goal, orig_base_goal = c.goal, c.base.goal
+        st = control.self_test_policy(c, b1_bundle["golden"], cfg=cfg)
+        assert st["max_torque_err"] <= lc.GOLDEN_TOL
+        assert c.goal is orig_goal and c.base.goal is orig_base_goal
+        assert c._int_v == 0.0 and c._int_theta == 0.0 and c._time == 0.0
+        assert c.base.pitch_pid._integral == 0.0 and c.base._integral == 0.0 and c.base._time == 0.0
+
+    # 2) Perturbed in-memory weight fails self_test_policy and STILL restores goal & resets integrators
+    l_bundle = control.load_policy_bundle(synthetic_bundles["l_pid"], cfg)
+    c_l, _ = control.build_controller(cfg, str(synthetic_bundles["l_pid"]), goal="scenario")
+    orig_l_goal = c_l.goal
+    c_l.linear[0] += 1e-2
+    with pytest.raises(ValueError):
+        control.self_test_policy(c_l, l_bundle["golden"], cfg=cfg)
+    assert c_l.goal is orig_l_goal
+    assert c_l._int_v == 0.0 and c_l._int_theta == 0.0 and c_l._time == 0.0
+
+    # 3) C1: NaN weight in controller MUST fail self_test_policy (never silently pass NaN > tol)
+    c_nan, _ = control.build_controller(cfg, str(synthetic_bundles["l_pid"]), goal="still")
+    c_nan.linear[0] = float("nan")
+    with pytest.raises(ValueError):
+        control.self_test_policy(c_nan, l_bundle["golden"], cfg=cfg)
+
+    # 4) Perturbed final.npz with updated hashes passes integrity check but fails startup self-test in balance.main
+    perturbed = _copy_bundle(synthetic_bundles["l_pid"], tmp_path / "perturbed_bundle")
+    with np.load(perturbed / "final.npz") as f:
+        p_mod = f["params"].copy()
+    p_mod[0] += 1e-2
+    _rewrite_npz(perturbed / "final.npz", perturbed / "final.npz", params=p_mod)
+    _refresh_manifest_hashes(perturbed)
+    with pytest.raises(SystemExit):
+        balance.main(["--sim", "--controller", str(perturbed), "--seconds", "1", "--outdir", str(tmp_path / "o_pert")])
+
+
+# ---- 6. Logging, animate.py, & replay_policy (P4a-P4c) ---------------------------------------------
+@pytest.mark.parametrize("bundle_key, expected_n_obs", [("l_pid", 11), ("b1_zero", 13)])
+def test_policy_logging_summary_and_animate_compatibility(tmp_path, cfg, synthetic_bundles, bundle_key, expected_n_obs):
+    """P4a + P4c: policy _raw.csv has 11/13 obs_* + pre_clip/saturated/integrators_frozen/residual_torque,
+    _summary.txt has provenance + saturation + envelope lines, and _run.csv works with load_trajectory
+    and simulation/animate.py RunAnimation."""
+    import csv
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from balance_sim import load_trajectory
+    from balance_sim.policy import OBSERVATIONS, RESIDUAL_INPUTS
+    import animate
+
+    bdir = synthetic_bundles[bundle_key]
+    bundle = control.load_policy_bundle(bdir, cfg)
+    out = tmp_path / bundle_key
+    reason = balance.main(["--sim", "--sim-noise", "--goal", "scenario", "--controller", str(bdir),
+                           "--seconds", "3", "--outdir", str(out), "--label", bundle_key])
+    assert reason == "done"
+
+    # Check _raw.csv schema and values
+    (raw_csv,) = out.glob("*_raw.csv")
+    with open(raw_csv, newline="") as f:
+        reader = csv.DictReader(f)
+        obs_names = OBSERVATIONS + (RESIDUAL_INPUTS if bundle_key == "b1_zero" else ())
+        assert len(obs_names) == expected_n_obs
+        expected_cols = list(balance.RAW_COLUMNS) + [f"obs_{n}" for n in obs_names] + [
+            "pre_clip", "saturated", "integrators_frozen", "residual_torque"
+        ]
+        assert reader.fieldnames == expected_cols
+        rows = list(reader)
+    pre_arm = [r for r in rows if r["phase"] == "0"]
+    armed = [r for r in rows if r["phase"] == "1" and r["pre_clip"] != ""]
+    assert pre_arm and armed
+    assert all(r["pre_clip"] == "" and r["obs_v_meas"] == "" for r in pre_arm)
+    for r in armed[:5]:
+        for n in obs_names:
+            assert math.isfinite(float(r[f"obs_{n}"]))
+        assert math.isfinite(float(r["pre_clip"]))
+        assert r["saturated"] in ("0", "1")
+        assert r["integrators_frozen"] in ("0", "1")
+        assert math.isfinite(float(r["residual_torque"]))
+
+    # Check _summary.txt lines (P2e, P4c)
+    summary = next(out.glob("*_summary.txt")).read_text()
+    assert bundle["name"] in summary and bundle["kind"] in summary and bundle["sha256"] in summary
+    assert "saturated:" in summary and "integrators frozen:" in summary
+    assert "envelope" in summary.lower()
+
+    # Check _run.csv with load_trajectory and animate.RunAnimation
+    (run_csv,) = out.glob("*_run.csv")
+    result, meta = load_trajectory(run_csv)
+    assert meta["controller"]["bundle_name"] == bundle["name"]
+    assert meta["controller"]["sha256"] == bundle["sha256"]
+    runs = animate.runs_from_csv([run_csv])
+    viewer = animate.RunAnimation(runs, robot=cfg.build_robot_params(), pushes=())
+    try:
+        artists = viewer.draw(0)
+        assert len(artists) > 0
+        viewer.draw(viewer.n_frames - 1)
+    finally:
+        plt.close(viewer.fig)
+
+
+def test_replay_policy_on_normal_tripped_and_perturbed_logs(tmp_path, synthetic_bundles):
+    """P4b: replay_policy.replay_log matches tick-for-tick (<= 1e-12) on normal and tripped runs,
+    and raises ValueError if a logged torque in _run.csv is perturbed by 1e-6."""
+    from robot import replay_policy
+
+    # 1) Normal "done" scenario run (B1 residual exercises base PID + policy state)
+    out_ok = tmp_path / "ok"
+    reason = balance.main(["--sim", "--sim-noise", "--goal", "scenario",
+                           "--controller", str(synthetic_bundles["b1_zero"]),
+                           "--seconds", "4", "--outdir", str(out_ok), "--label", "b1_ok"])
+    assert reason == "done"
+    (run_ok,) = out_ok.glob("*_run.csv")
+    rep_ok = replay_policy.replay_log(run_ok)
+    assert rep_ok["n_ticks"] > 100 and rep_ok["max_torque_diff"] <= 1e-12
+
+    # 2) Tripped run: tilt trip (duty capped low)
+    out_tilt = tmp_path / "tilt"
+    reason_tilt = balance.main(["--sim", "--duty-cap", "0.02", "--sim-pitch", "0.045",
+                                "--controller", str(synthetic_bundles["l_pid"]),
+                                "--seconds", "10", "--outdir", str(out_tilt), "--label", "l_tilt"])
+    assert reason_tilt.startswith("tilt")
+    (run_tilt,) = out_tilt.glob("*_run.csv")
+    rep_tilt = replay_policy.replay_log(run_tilt)
+    assert rep_tilt["n_ticks"] > 0 and rep_tilt["max_torque_diff"] <= 1e-12
+
+    # 3) Tripped run: --inject ood + --envelope-trip
+    out_ood = tmp_path / "ood"
+    reason_ood = balance.main(["--sim", "--controller", str(synthetic_bundles["l_pid"]),
+                               "--envelope-trip", "2.0", "--inject", "ood", "--inject-at", "0.5",
+                               "--seconds", "3", "--outdir", str(out_ood), "--label", "l_ood"])
+    assert "envelope" in reason_ood
+    (run_ood,) = out_ood.glob("*_run.csv")
+    rep_ood = replay_policy.replay_log(run_ood)
+    assert rep_ood["n_ticks"] > 0 and rep_ood["max_torque_diff"] <= 1e-12
+
+    # 4) Perturb one logged torque in _run.csv by 1e-6 -> replay_log must raise ValueError
+    lines = run_ok.read_text().splitlines()
+    header = lines[1].split(",")
+    t_idx = header.index("torque")
+    row_idx = min(20, len(lines) - 1)
+    fields = lines[row_idx].split(",")
+    fields[t_idx] = repr(float(fields[t_idx]) + 1e-6)
+    lines[row_idx] = ",".join(fields)
+    run_ok.write_text("\n".join(lines) + "\n")
+    with pytest.raises(ValueError):
+        replay_policy.replay_log(run_ok)
+
+
+# ---- 7. Envelope monitor & trip (P5a) --------------------------------------------------------------
+def test_envelope_monitor_and_ood_trip(tmp_path, cfg, synthetic_bundles):
+    """P5a: --envelope-trip trips ~0.1 s after --inject ood; without --envelope-trip it logs excursions
+    without tripping on envelope; --envelope-trip / --inject ood refused for non-policy controllers."""
+    from balance_sim import load_trajectory
+
+    # Unit check on EnvelopeMonitor: brief spike resets counter, sustained excursion trips at trip_s
+    bundle = control.load_policy_bundle(synthetic_bundles["l_pid"], cfg)
+    dt = cfg.timing.control_dt_s
+    n_trip = max(1, int(round(lc.ENVELOPE_TRIP_S / dt)))
+    mon = control.EnvelopeMonitor(bundle["envelope"], dt, trip_k=2.0)
+    in_bounds = np.zeros(len(bundle["envelope"]["observation_names"]))
+    ood_vec = in_bounds.copy()
+    ood_vec[0] = 10.0 * max(1.0, bundle["envelope"]["observations"]["v_meas"]["max_abs"])
+    for _ in range(n_trip - 1):
+        assert mon.observe(ood_vec) is None
+    assert mon.observe(in_bounds) is None          # one in-bounds tick resets the streak
+    out = [mon.observe(ood_vec) for _ in range(n_trip)]
+    assert all(x is None for x in out[:-1]) and out[-1] is not None
+    assert "envelope" in out[-1].lower() and "v_meas" in out[-1]
+    assert any("envelope" in line.lower() for line in mon.summary_lines())
+
+    # Closed loop WITH --envelope-trip 2.0 and --inject ood
+    out_trip = tmp_path / "trip"
+    reason_trip = balance.main(["--sim", "--controller", str(synthetic_bundles["l_pid"]),
+                                "--envelope-trip", "2.0", "--inject", "ood", "--inject-at", "1.0",
+                                "--seconds", "3", "--outdir", str(out_trip), "--label", "env_trip"])
+    assert "envelope" in reason_trip.lower()
+    r_trip, _ = load_trajectory(next(out_trip.glob("*_run.csv")))
+    assert 1.05 <= float(r_trip.t[-1]) <= 1.30
+
+    # H4: --inject ood WITHOUT --envelope-trip is refused (must require --envelope-trip AND sim/bench/no-drive)
+    with pytest.raises(SystemExit):
+        balance.main(["--sim", "--controller", str(synthetic_bundles["l_pid"]),
+                      "--inject", "ood", "--inject-at", "1.0",
+                      "--seconds", "2", "--outdir", str(tmp_path / "ood_no_trip")])
+
+    # P4c: WITHOUT --envelope-trip, a tightened envelope logs OOD excursions without tripping on envelope
+    tight = _copy_bundle(synthetic_bundles["l_pid"], tmp_path / "tight_env")
+    env_data = json.loads((tight / "envelope.json").read_text())
+    env_data["observations"]["theta_meas"] = {"p00_1": -1e-4, "p99_9": 1e-4, "max_abs": 1e-4}
+    (tight / "envelope.json").write_text(json.dumps(env_data))
+    _refresh_manifest_hashes(tight)
+    out_log = tmp_path / "log_only"
+    reason_log = balance.main(["--sim", "--sim-noise", "--controller", str(tight),
+                               "--seconds", "2", "--outdir", str(out_log), "--label", "env_log"])
+    assert reason_log == "done"
+    summary_log = next(out_log.glob("*_summary.txt")).read_text()
+    assert "envelope" in summary_log.lower() and "theta_meas" in summary_log
+
+    # Refused for PID (no envelope)
+    with pytest.raises(SystemExit):
+        balance.main(["--sim", "--controller", "hand", "--envelope-trip", "2.0",
+                      "--seconds", "1", "--outdir", str(tmp_path / "pid_env")])
+    with pytest.raises(SystemExit):
+        balance.main(["--sim", "--controller", "hand", "--inject", "ood", "--envelope-trip", "2.0",
+                      "--seconds", "1", "--outdir", str(tmp_path / "pid_ood")])
+
+
+def test_non_finite_torque_or_duty_in_live_loop_trips_and_coasts(tmp_path, cfg, monkeypatch):
+    """H1 + P2-2: NaN torque or NaN duty must trip and coast immediately (never clamp to +duty_cap),
+    and Feedforward.set_supply rejects non-finite or <= 0 voltage."""
+    import csv
+
+    ff = control.Feedforward(cfg)
+    good_supply = ff.supply
+    for bad_vin in (float("nan"), float("inf"), 0.0, -7.6):
+        assert ff.set_supply(bad_vin) is False
+        assert ff.supply == good_supply
+
+    # 1) NaN torque from controller
+    orig_act = control.Brain.act
+    calls = []
+
+    def nan_torque_after_10(self, *args):
+        calls.append(1)
+        if len(calls) == 10:
+            return float("nan"), float("nan"), float("nan")
+        return orig_act(self, *args)
+
+    monkeypatch.setattr(control.Brain, "act", nan_torque_after_10)
+    d1 = tmp_path / "nan_torque"
+    reason = balance.main(["--sim", "--seconds", "3", "--outdir", str(d1), "--label", "nan_trip"])
+    assert "non-finite" in reason.lower()
+    rows = list(csv.DictReader(open(next(d1.glob("*_raw.csv")))))
+    assert float(rows[-1]["duty_left"]) == 0.0 and float(rows[-1]["duty_right"]) == 0.0
+    monkeypatch.undo()
+
+    # 2) P2-2: finite torque but NaN duty from feedforward must NOT clamp to +duty_cap in Brain.act
+    orig_duties = control.Feedforward.duties
+    dcalls = []
+
+    def nan_duty_after_10(self, torque, wl, wr):
+        dcalls.append(1)
+        if len(dcalls) == 10:
+            return float("nan"), 0.0
+        return orig_duties(self, torque, wl, wr)
+
+    monkeypatch.setattr(control.Feedforward, "duties", nan_duty_after_10)
+    d2 = tmp_path / "nan_duty"
+    reason2 = balance.main(["--sim", "--seconds", "3", "--outdir", str(d2), "--label", "nan_duty"])
+    assert "non-finite" in reason2.lower()
+    rows2 = list(csv.DictReader(open(next(d2.glob("*_raw.csv")))))
+    assert float(rows2[-1]["duty_left"]) == 0.0 and float(rows2[-1]["duty_right"]) == 0.0
+
+
+# ---- 8. Comparison hooks: score_trajectory & generate_run_sheet (P8) -------------------------------
+def test_score_run_and_counterbalanced_run_sheet(tmp_path, cfg, synthetic_bundles):
+    """P8: score_trajectory matches cfg.score(result) including duration scaling on fallen runs;
+    generate_run_sheet counterbalances controller order across blocks."""
+    from dataclasses import replace
+    from balance_sim import load_trajectory
+    from robot import score_run
+
+    # 1) Normal completed run
+    out_ok = tmp_path / "score_ok"
+    reason_ok = balance.main(["--sim", "--sim-noise", "--controller", str(synthetic_bundles["l_pid"]),
+                              "--seconds", "5", "--outdir", str(out_ok), "--label", "l_score"])
+    assert reason_ok == "done"
+    (run_ok,) = out_ok.glob("*_run.csv")
+    res_ok, _ = load_trajectory(run_ok)
+    s_ok = score_run.score_trajectory(run_ok, cfg=cfg)
+    assert not s_ok["fell"] and s_ok["complete"] is True
+    assert s_ok["cost"] == pytest.approx(cfg.score(res_ok))
+    assert s_ok["duration"] == pytest.approx(5.0)
+
+    # 2) Fallen run: duration must equal --seconds (10.0) for fall penalty scaling, and override works
+    out_fall = tmp_path / "score_fall"
+    reason_fall = balance.main(["--sim", "--duty-cap", "0.02", "--sim-pitch", "0.045",
+                                "--seconds", "10", "--outdir", str(out_fall), "--label", "fall_score"])
+    assert reason_fall.startswith("tilt")
+    (run_fall,) = out_fall.glob("*_run.csv")
+    res_fall, _ = load_trajectory(run_fall)
+    assert res_fall.fell and res_fall.duration == pytest.approx(10.0)
+    s_fall = score_run.score_trajectory(run_fall, cfg=cfg)
+    assert s_fall["fell"] and s_fall["complete"] is True and s_fall["cost"] == pytest.approx(cfg.score(res_fall))
+    s_fall_20 = score_run.score_trajectory(run_fall, cfg=cfg, duration=20.0)
+    assert s_fall_20["duration"] == pytest.approx(20.0)
+    assert s_fall_20["cost"] == pytest.approx(cfg.score(replace(res_fall, duration=20.0)))
+    assert s_fall_20["cost"] > s_fall["cost"]       # same fall time out of a longer planned run -> larger penalty
+
+    # 3) Early non-fall abort (e.g. stale trip) is marked complete=False (M6)
+    out_abort = tmp_path / "score_abort"
+    reason_abort = balance.main(["--sim", "--inject", "stale", "--seconds", "5",
+                                 "--outdir", str(out_abort), "--label", "abort_score"])
+    assert "stale" in reason_abort
+    s_abort = score_run.score_trajectory(next(out_abort.glob("*_run.csv")), cfg=cfg)
+    assert not s_abort["fell"] and s_abort["complete"] is False
+
+    # 4) Counterbalanced run sheet (ABBA across blocks balances average run index across controllers)
+    ctrls = ["hand", "policy:l_pid", "policy:b1_zero"]
+    sheet = score_run.generate_run_sheet(ctrls, blocks=4, goal="scenario", seconds=20.0, alternate=True)
+    assert len(sheet) == 12
+    assert [e["run_index"] for e in sheet] == list(range(1, 13))
+    assert [e["controller"] for e in sheet[:3]] == ctrls
+    assert [e["controller"] for e in sheet[3:6]] == list(reversed(ctrls))
+    assert [e["controller"] for e in sheet[6:9]] == ctrls
+    assert [e["controller"] for e in sheet[9:12]] == list(reversed(ctrls))
+    mean_indices = {c: np.mean([e["run_index"] for e in sheet if e["controller"] == c]) for c in ctrls}
+    assert len({round(v, 9) for v in mean_indices.values()}) == 1
+    assert all("robot.balance" in e["command"] and "--label" in e["command"] for e in sheet)

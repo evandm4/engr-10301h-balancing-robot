@@ -1,0 +1,11 @@
+{
+  "method": "residual",
+  "synthetic": "b1_zero",
+  "n_params": 513,
+  "reference_gains": [
+    2.5,
+    1.5,
+    0.2,
+    0.5
+  ]
+}
