@@ -315,3 +315,12 @@ stagnation stop. Both trees are pinned at `4582fe7` with clean trees. Later merg
 | Desktop Pavilion, RTX 3080 | 0, 2, 4, 6, 8 | clone `C:\balancebot\engr-10301h-balancing-robot` | `e26-desktop` (Scheduled Task, -AtStartup) | 2026-11-25 13:31:40 | legobot 646/9 skip, robot 62/1 skip | 19.7 s (gen 1) |
 
 Each seed takes ~651 generations at ~19 s, plus the checkpoint dev scoring: about 3.5 h per seed, ~18 h per queue.
+
+**Machine move (Evan, 2026-11-25 14:17).** The desktop runs only seed 0, then switches to B1 (MLP residual) training.
+Its unstarted seeds 2, 4, 6, 8 moved to the laptop. They use the same command and the same pinned worktree at
+`4582fe7`, in the follow-on queue `e26-laptop-b`, launched 14:20. Its first job waits for `e26-laptop` to write
+`QUEUE_DONE.txt`, so the laptop never runs two GPU jobs at once. The planned split is now **desktop: 0; laptop: 1, 3, 5,
+7, 9, 2, 4, 6, 8**. The laptop ETA is ~9 × 3.5 h from 12:04, about Thu 19:30. The desktop may take back the last
+one or two seeds. Any such move will be recorded here, and the machine of every run must be disclosed with the E2.6
+selection: it decides the even/odd = desktop/laptop parity check, since the even seeds are now mostly on the laptop.
+
