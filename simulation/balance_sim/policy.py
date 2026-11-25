@@ -272,6 +272,7 @@ class PolicyController(Controller):
 
     def observation(self, state: np.ndarray, dt: float) -> np.ndarray:
         """Advance the integrators and return the raw (unscaled) OBSERVATIONS for this tick."""
+        dt = float(dt)          # as in update()
         v, theta, theta_dot = float(state[1]), float(state[2]), float(state[3])
         goal = self.goal_velocity(self._time)
         error_v = goal - v
@@ -307,6 +308,9 @@ class PolicyController(Controller):
         return 0.0 if self.base is None else self.base.pitch_reference()
 
     def update(self, state: np.ndarray, dt: float) -> float:
+        # A Python float, so a numpy float32 dt can't make the integrators (and _time) float32 under NumPy 2's
+        # scalar promotion (NEP 50); a no-op for a float or float64 dt. FastPolicyController does the same.
+        dt = float(dt)
         frozen = self._saturated
         raw = self.observation(state, dt)
         if self.base is None:
@@ -356,7 +360,7 @@ def compile_forward(spec: PolicySpec, linear, layers) -> Tuple[Callable[[Sequenc
     lines = ["def forward(raw):"]
     xs = []
     for k, i in enumerate(spec.input_indices):
-        lines.append(f"    x{k} = raw[{i}] * {_float_literal(inv[i])}")
+        lines.append(f"    x{k} = raw[{int(i)}] * {_float_literal(inv[i])}")
         xs.append(f"x{k}")
     out = None
     if linear is not None:
@@ -410,14 +414,17 @@ class FastPolicyController(PolicyController):
         if getattr(self, "_compiled_key", None) != key:
             self._forward, self.forward_source = compile_forward(self.spec, self.linear, self.layers)
             self._compiled_key = key
-        self._leak = self.spec.leak_rate
-        self._limit_v, self._limit_theta = self.spec.integral_limits
-        self._output_scale = self.spec.output_scale
+        self._leak = float(self.spec.leak_rate)
+        self._limit_v, self._limit_theta = (float(v) for v in self.spec.integral_limits)
+        self._output_scale = float(self.spec.output_scale)
 
     def forward(self, raw) -> float:
-        return self._forward(raw)
+        """z for one raw observation vector, as PolicyController.forward: any sequence of numbers (a numpy
+        float32 array included); the entries become Python floats first, so the arithmetic is float64."""
+        return float(self._forward([float(x) for x in raw]))
 
     def update(self, state, dt: float) -> float:
+        dt = float(dt)          # as PolicyController.update: a float32 dt must not make the integrators float32
         frozen = self._saturated
         v, theta, theta_dot = float(state[1]), float(state[2]), float(state[3])
         goal = self.goal_velocity(self._time)

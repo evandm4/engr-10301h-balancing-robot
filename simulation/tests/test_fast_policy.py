@@ -121,3 +121,32 @@ def test_weights_changed_in_place_are_recompiled_at_reset():
     fast.linear[0] = math.nan
     fast.reset()
     assert math.isnan(fast.forward([0.1] * len(fast.last_raw)))
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_float32_dt_state_and_raw_stay_bit_identical(kind):
+    """Review F3: under NumPy 2's scalar promotion (NEP 50) a numpy float32 dt made the integrators float32, and
+    the fast forward then multiplied float32 raw entries by its float64 literals in float32 (the reference
+    float()s every entry first). Both controllers now take dt as a Python float and the fast public forward()
+    float()s its raw entries, so float32 inputs give the same float64 bits as float64 ones."""
+    spec = SPECS[kind]
+    rng = np.random.default_rng(zlib.crc32(f"float32 {kind}".encode()))
+    params = rng.normal(0.0, 0.5, spec.n_params)
+    ref, fast = _pair(spec, params, 0.17)
+    ref64, _ = _pair(spec, params, 0.17)
+    dt32 = np.float32(DT)
+    for k in range(400):
+        state = rng.normal(0.0, [0.1, 0.6, 0.25, 2.0]).astype(np.float32)
+        u_ref, u_fast = ref.update(state, dt32), fast.update(state, dt32)
+        _assert_same_tick(ref, fast, u_ref, u_fast, k)
+        assert u_fast == u_ref and fast.last_raw == ref.last_raw.tolist()
+        assert type(u_fast) is float and type(fast._int_v) is float and type(fast._int_theta) is float
+        assert type(ref._int_v) is float and type(ref._time) is float and type(fast._time) is float
+        # the same as a float64 dt of the float32 value (dt is coerced, not computed with in float32)
+        assert ref64.update(state.astype(float), float(dt32)) == u_ref
+    n_raw = len(ref.last_raw)
+    for _ in range(300):
+        raw = rng.normal(0.0, 1.0, n_raw).astype(np.float32)
+        z_fast = fast.forward(raw)
+        assert type(z_fast) is float and z_fast == PolicyController.forward(ref, raw)
+        assert z_fast == fast.forward(raw.astype(float).tolist())
