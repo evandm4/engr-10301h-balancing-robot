@@ -1,0 +1,4178 @@
+{
+  "timestamp": "2026-11-25 09:20:22",
+  "provenance": {
+    "git_commit": "2cae67fd0f31fbf8da57397206daf861ad7e0f12",
+    "git_dirty": false,
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "hostname": "Evans-G16",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "gpu": null
+  },
+  "settings": {
+    "commits": [
+      "ecb666e"
+    ],
+    "train_seeds": 150,
+    "allow_partial": false,
+    "best": "cma-sample",
+    "include_entries": [],
+    "n_finalists": 3,
+    "duration_s": 60.0,
+    "backend": "numpy",
+    "dtype": "float64",
+    "device": null,
+    "bootstrap": 10000,
+    "dry_run": false,
+    "seeds_override": null,
+    "start_pitches_rad": [
+      0.05000019241113355,
+      -0.15000057723340066,
+      0.29999940913754936
+    ],
+    "latency_range_s": [
+      0.0075,
+      0.0125
+    ],
+    "argv": []
+  },
+  "best_reading": "'best' = the run's CMA-ES best sample (comparison.json entry 'cma-es': the lowest training objective the CMA-ES search saw), alongside 'cma-es (mean)'; E1_NOTES.md 5.4 ('cma-es (mean) and best-sample finalists'). DE and random search are excluded unless --best overall / --include-entry.",
+  "runs": [
+    {
+      "folder": "20261124-221728",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261124-221728",
+      "recipe": "mid",
+      "run_seed": 0,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Evans-G16",
+      "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-24 22:17:30",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261124-223248",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261124-223248",
+      "recipe": "warm",
+      "run_seed": 0,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Evans-G16",
+      "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-24 22:32:49",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261124-225114",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261124-225114",
+      "recipe": "mid",
+      "run_seed": 2,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Evans-G16",
+      "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-24 22:51:16",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261124-230414",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261124-230414",
+      "recipe": "warm",
+      "run_seed": 2,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Evans-G16",
+      "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-24 23:04:16",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261124-232122",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261124-232122",
+      "recipe": "mid",
+      "run_seed": 4,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Evans-G16",
+      "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-24 23:21:24",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261124-233352",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261124-233352",
+      "recipe": "warm",
+      "run_seed": 4,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Evans-G16",
+      "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-24 23:33:53",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261124-235048",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261124-235048",
+      "recipe": "mid",
+      "run_seed": 6,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Evans-G16",
+      "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-24 23:50:49",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261125-000342",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261125-000342",
+      "recipe": "warm",
+      "run_seed": 6,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Evans-G16",
+      "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-25 00:03:43",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261125-002118",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261125-002118",
+      "recipe": "mid",
+      "run_seed": 8,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Evans-G16",
+      "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-25 00:21:20",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261125-003400",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261125-003400",
+      "recipe": "warm",
+      "run_seed": 8,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Evans-G16",
+      "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-25 00:34:02",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261125-005218",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261125-005218",
+      "recipe": "mid",
+      "run_seed": 9,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Evans-G16",
+      "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-25 00:52:20",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261125-010459",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261125-010459",
+      "recipe": "warm",
+      "run_seed": 9,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Evans-G16",
+      "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-25 01:05:01",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261125-011141",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261125-011141",
+      "recipe": "mid",
+      "run_seed": 1,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Pavilion",
+      "gpu": "NVIDIA GeForce RTX 3080",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-25 01:11:41",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261125-012204",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261125-012204",
+      "recipe": "mid",
+      "run_seed": 7,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Evans-G16",
+      "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-25 01:22:05",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261125-012608",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261125-012608",
+      "recipe": "warm",
+      "run_seed": 1,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Pavilion",
+      "gpu": "NVIDIA GeForce RTX 3080",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-25 01:26:09",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261125-013447",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261125-013447",
+      "recipe": "warm",
+      "run_seed": 7,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Evans-G16",
+      "gpu": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-25 01:34:49",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261125-014616",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261125-014616",
+      "recipe": "mid",
+      "run_seed": 3,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Pavilion",
+      "gpu": "NVIDIA GeForce RTX 3080",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-25 01:46:17",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261125-020041",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261125-020041",
+      "recipe": "warm",
+      "run_seed": 3,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Pavilion",
+      "gpu": "NVIDIA GeForce RTX 3080",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-25 02:00:42",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261125-022048",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261125-022048",
+      "recipe": "mid",
+      "run_seed": 5,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Pavilion",
+      "gpu": "NVIDIA GeForce RTX 3080",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-25 02:20:49",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    },
+    {
+      "folder": "20261125-023515",
+      "path": "C:\\Users\\Evan\\OneDrive - purdue.edu\\Desktop\\Antigravity\\engr-10301h-balancing-robot\\results\\legobot\\batch_tuning\\20261125-023515",
+      "recipe": "warm",
+      "run_seed": 5,
+      "git_commit": "ecb666ef5f3f21c02c3f5a39bc8fe31a2334ad5c",
+      "git_dirty": null,
+      "git_dirty_reading": "clean*",
+      "hostname": "Pavilion",
+      "gpu": "NVIDIA GeForce RTX 3080",
+      "n_train_seeds": 150,
+      "search_dtype": "float64",
+      "timestamp": "2026-11-25 02:35:15",
+      "flags": [],
+      "notes": [
+        "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean"
+      ]
+    }
+  ],
+  "git_dirty_reading_note": {
+    "clean*": "git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty `git status --porcelain` was recorded as None; fixed after ecb666e): read as clean",
+    "unknown": "git_dirty None and no commit recorded: a design problem"
+  },
+  "excluded_runs": [
+    {
+      "folder": "20261124-032414",
+      "git_commit": "59065a3487bd6b4567d3665295d118efb5aa23ad",
+      "reasons": [
+        "commit 59065a348 not in ['ecb666e']",
+        "50 training seeds, not 150"
+      ]
+    },
+    {
+      "folder": "20261124-034505",
+      "git_commit": "59065a3487bd6b4567d3665295d118efb5aa23ad",
+      "reasons": [
+        "commit 59065a348 not in ['ecb666e']",
+        "50 training seeds, not 150"
+      ]
+    },
+    {
+      "folder": "20261124-040107",
+      "git_commit": "59065a3487bd6b4567d3665295d118efb5aa23ad",
+      "reasons": [
+        "commit 59065a348 not in ['ecb666e']",
+        "50 training seeds, not 150"
+      ]
+    },
+    {
+      "folder": "20261124-041714",
+      "git_commit": "59065a3487bd6b4567d3665295d118efb5aa23ad",
+      "reasons": [
+        "commit 59065a348 not in ['ecb666e']",
+        "50 training seeds, not 150"
+      ]
+    }
+  ],
+  "design_problems": [],
+  "machines": [
+    "Evans-G16 / NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+    "Pavilion / NVIDIA GeForce RTX 3080"
+  ],
+  "candidates": [
+    {
+      "label": "PID, CMA-mid (mean) / s0",
+      "run": "20261124-221728",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.4184122092564886,
+        7.458293931202373,
+        0.1574228508983607,
+        0.39833993764959363
+      ],
+      "train_objective": 73.23843837836499,
+      "recorded_dev_objective": 83.83282231035973,
+      "recorded_dev_falls": 4
+    },
+    {
+      "label": "PID, CMA-mid / s0",
+      "run": "20261124-221728",
+      "entry": "cma-es",
+      "gains": [
+        2.422172050401031,
+        7.042753873061009,
+        0.1546571235507574,
+        0.4017274452487704
+      ],
+      "train_objective": 71.97076592954237,
+      "recorded_dev_objective": 95.31514045198986,
+      "recorded_dev_falls": 5
+    },
+    {
+      "label": "PID, CMA-warm (mean) / s0",
+      "run": "20261124-223248",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.368359806397808,
+        7.86480738930048,
+        0.15577616491859064,
+        0.40493902388140574
+      ],
+      "train_objective": 80.38173596127346,
+      "recorded_dev_objective": 95.49722051410788,
+      "recorded_dev_falls": 5
+    },
+    {
+      "label": "PID, CMA-warm / s0",
+      "run": "20261124-223248",
+      "entry": "cma-es",
+      "gains": [
+        2.3581802333906077,
+        7.455437239254876,
+        0.1555605253445095,
+        0.40957541944168074
+      ],
+      "train_objective": 79.81954780273212,
+      "recorded_dev_objective": 83.28916423075461,
+      "recorded_dev_falls": 4
+    },
+    {
+      "label": "PID, CMA-mid (mean) / s2",
+      "run": "20261124-225114",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.4123728133978015,
+        9.409770964070816,
+        0.15745575716954524,
+        0.3882363767063454
+      ],
+      "train_objective": 92.43580169344479,
+      "recorded_dev_objective": 83.80209163524245,
+      "recorded_dev_falls": 4
+    },
+    {
+      "label": "PID, CMA-mid / s2",
+      "run": "20261124-225114",
+      "entry": "cma-es",
+      "gains": [
+        2.4167634594245593,
+        9.982082747614625,
+        0.15647801736227746,
+        0.38002238409292843
+      ],
+      "train_objective": 61.8749080258701,
+      "recorded_dev_objective": 96.33245363518843,
+      "recorded_dev_falls": 5
+    },
+    {
+      "label": "PID, CMA-warm (mean) / s2",
+      "run": "20261124-230414",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.3552115823862083,
+        7.881043227335104,
+        0.15809476333283534,
+        0.41196448350622394
+      ],
+      "train_objective": 76.98492843096338,
+      "recorded_dev_objective": 121.7117605108558,
+      "recorded_dev_falls": 7
+    },
+    {
+      "label": "PID, CMA-warm / s2",
+      "run": "20261124-230414",
+      "entry": "cma-es",
+      "gains": [
+        2.4093475466910217,
+        8.067371853286783,
+        0.15404919462094832,
+        0.39750493063621223
+      ],
+      "train_objective": 76.69605280996159,
+      "recorded_dev_objective": 107.91306048455374,
+      "recorded_dev_falls": 6
+    },
+    {
+      "label": "PID, CMA-mid (mean) / s4",
+      "run": "20261124-232122",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.4237399562016892,
+        8.16421776124733,
+        0.15745209855981218,
+        0.3945603209240851
+      ],
+      "train_objective": 58.035255349171,
+      "recorded_dev_objective": 71.43041156039715,
+      "recorded_dev_falls": 3
+    },
+    {
+      "label": "PID, CMA-mid / s4",
+      "run": "20261124-232122",
+      "entry": "cma-es",
+      "gains": [
+        2.5836799626053217,
+        9.95837420276005,
+        0.17076070532787352,
+        0.3822596289976826
+      ],
+      "train_objective": 82.15552852016584,
+      "recorded_dev_objective": 90.30785408804758,
+      "recorded_dev_falls": 4
+    },
+    {
+      "label": "PID, CMA-warm (mean) / s4",
+      "run": "20261124-233352",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.42192010716568,
+        8.551757490260988,
+        0.15987549580769833,
+        0.38975760877163484
+      ],
+      "train_objective": 85.02076349126664,
+      "recorded_dev_objective": 97.66406210361947,
+      "recorded_dev_falls": 5
+    },
+    {
+      "label": "PID, CMA-warm / s4",
+      "run": "20261124-233352",
+      "entry": "cma-es",
+      "gains": [
+        2.484725518542338,
+        9.855043631547321,
+        0.16689180557167388,
+        0.3733165100574168
+      ],
+      "train_objective": 70.77484908142617,
+      "recorded_dev_objective": 100.2550682353084,
+      "recorded_dev_falls": 5
+    },
+    {
+      "label": "PID, CMA-mid (mean) / s6",
+      "run": "20261124-235048",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.365698285339926,
+        8.086562114014775,
+        0.15840126683219224,
+        0.4058874295433349
+      ],
+      "train_objective": 73.5860820358985,
+      "recorded_dev_objective": 108.93493184552955,
+      "recorded_dev_falls": 6
+    },
+    {
+      "label": "PID, CMA-mid / s6",
+      "run": "20261124-235048",
+      "entry": "cma-es",
+      "gains": [
+        2.346277783061033,
+        8.414920929975137,
+        0.16430634079200107,
+        0.42715783672608565
+      ],
+      "train_objective": 65.62023925523312,
+      "recorded_dev_objective": 124.51541949826496,
+      "recorded_dev_falls": 7
+    },
+    {
+      "label": "PID, CMA-warm (mean) / s6",
+      "run": "20261125-000342",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.387457135829149,
+        8.285777555944945,
+        0.15906182010403044,
+        0.4008701782356203
+      ],
+      "train_objective": 85.13849229115426,
+      "recorded_dev_objective": 96.80851004610298,
+      "recorded_dev_falls": 5
+    },
+    {
+      "label": "PID, CMA-warm / s6",
+      "run": "20261125-000342",
+      "entry": "cma-es",
+      "gains": [
+        2.3737237532703337,
+        7.448974066061319,
+        0.1549656672157766,
+        0.40760650314555497
+      ],
+      "train_objective": 80.05098046074279,
+      "recorded_dev_objective": 83.28281967057644,
+      "recorded_dev_falls": 4
+    },
+    {
+      "label": "PID, CMA-mid (mean) / s8",
+      "run": "20261125-002118",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.394217581530409,
+        7.879126611218329,
+        0.1566376270660609,
+        0.40447457307357954
+      ],
+      "train_objective": 72.87747999059644,
+      "recorded_dev_objective": 83.80680235454633,
+      "recorded_dev_falls": 4
+    },
+    {
+      "label": "PID, CMA-mid / s8",
+      "run": "20261125-002118",
+      "entry": "cma-es",
+      "gains": [
+        2.3770301745633144,
+        7.933472608064069,
+        0.15928324439781588,
+        0.40115448502034073
+      ],
+      "train_objective": 69.36839921951523,
+      "recorded_dev_objective": 84.31030983217744,
+      "recorded_dev_falls": 4
+    },
+    {
+      "label": "PID, CMA-warm (mean) / s8",
+      "run": "20261125-003400",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.4256685752848184,
+        8.545511091315095,
+        0.1568451536297913,
+        0.38967968440509887
+      ],
+      "train_objective": 91.48170600082719,
+      "recorded_dev_objective": 83.74062001805306,
+      "recorded_dev_falls": 4
+    },
+    {
+      "label": "PID, CMA-warm / s8",
+      "run": "20261125-003400",
+      "entry": "cma-es",
+      "gains": [
+        2.479137312709624,
+        8.65615519987218,
+        0.15874998052508424,
+        0.3755734653990607
+      ],
+      "train_objective": 69.70643891749033,
+      "recorded_dev_objective": 109.79231895120385,
+      "recorded_dev_falls": 6
+    },
+    {
+      "label": "PID, CMA-mid (mean) / s9",
+      "run": "20261125-005218",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.4371548783834207,
+        8.294792326852047,
+        0.15818765089600556,
+        0.38903940788602226
+      ],
+      "train_objective": 88.82743596212292,
+      "recorded_dev_objective": 97.03119128059518,
+      "recorded_dev_falls": 5
+    },
+    {
+      "label": "PID, CMA-mid / s9",
+      "run": "20261125-005218",
+      "entry": "cma-es",
+      "gains": [
+        2.439991176919811,
+        8.177400584779523,
+        0.15917953633410278,
+        0.3917309642436339
+      ],
+      "train_objective": 65.1915934746315,
+      "recorded_dev_objective": 109.41105779218827,
+      "recorded_dev_falls": 6
+    },
+    {
+      "label": "PID, CMA-warm (mean) / s9",
+      "run": "20261125-010459",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.390754330677246,
+        9.070691549975736,
+        0.15611443883473192,
+        0.39207857021832776
+      ],
+      "train_objective": 81.05165878382637,
+      "recorded_dev_objective": 96.06364937800593,
+      "recorded_dev_falls": 5
+    },
+    {
+      "label": "PID, CMA-warm / s9",
+      "run": "20261125-010459",
+      "entry": "cma-es",
+      "gains": [
+        2.4096351888750114,
+        9.121404628548525,
+        0.15676327861664588,
+        0.3884859955192934
+      ],
+      "train_objective": 65.43875393442758,
+      "recorded_dev_objective": 108.91209005809417,
+      "recorded_dev_falls": 6
+    },
+    {
+      "label": "PID, CMA-mid (mean) / s1",
+      "run": "20261125-011141",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.4358619549052727,
+        9.999671857438464,
+        0.161053244375109,
+        0.3892234641722046
+      ],
+      "train_objective": 84.6963173057723,
+      "recorded_dev_objective": 98.23520148902482,
+      "recorded_dev_falls": 5
+    },
+    {
+      "label": "PID, CMA-mid / s1",
+      "run": "20261125-011141",
+      "entry": "cma-es",
+      "gains": [
+        2.4509553220863247,
+        9.996805049296967,
+        0.1606911199802054,
+        0.38144060864260776
+      ],
+      "train_objective": 69.8078109213467,
+      "recorded_dev_objective": 122.7177326167921,
+      "recorded_dev_falls": 7
+    },
+    {
+      "label": "PID, CMA-mid (mean) / s7",
+      "run": "20261125-012204",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.4020829317667345,
+        8.253625325311765,
+        0.15688165062788995,
+        0.40108844264485133
+      ],
+      "train_objective": 69.67326925323897,
+      "recorded_dev_objective": 133.83408344605886,
+      "recorded_dev_falls": 8
+    },
+    {
+      "label": "PID, CMA-mid / s7",
+      "run": "20261125-012204",
+      "entry": "cma-es",
+      "gains": [
+        2.4127363612081543,
+        7.962467344856688,
+        0.16457792801605045,
+        0.41795094073832195
+      ],
+      "train_objective": 77.30319794414797,
+      "recorded_dev_objective": 87.04092906646152,
+      "recorded_dev_falls": 4
+    },
+    {
+      "label": "PID, CMA-warm (mean) / s1",
+      "run": "20261125-012608",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.285385355228078,
+        6.191118730569003,
+        0.15448543922017746,
+        0.4435828907575368
+      ],
+      "train_objective": 90.75411313043983,
+      "recorded_dev_objective": 107.85390722293317,
+      "recorded_dev_falls": 6
+    },
+    {
+      "label": "PID, CMA-warm / s1",
+      "run": "20261125-012608",
+      "entry": "cma-es",
+      "gains": [
+        2.2583561426565666,
+        6.174794882445678,
+        0.15608467841083196,
+        0.4378619681315839
+      ],
+      "train_objective": 76.88176010443884,
+      "recorded_dev_objective": 82.90711155321436,
+      "recorded_dev_falls": 4
+    },
+    {
+      "label": "PID, CMA-warm (mean) / s7",
+      "run": "20261125-013447",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.3475233723813527,
+        7.770465816434047,
+        0.15985603429232573,
+        0.41698227251162756
+      ],
+      "train_objective": 57.15381026628874,
+      "recorded_dev_objective": 97.07176747645077,
+      "recorded_dev_falls": 5
+    },
+    {
+      "label": "PID, CMA-warm / s7",
+      "run": "20261125-013447",
+      "entry": "cma-es",
+      "gains": [
+        2.3743650091187782,
+        7.579716353753778,
+        0.15191376621085237,
+        0.41048063645041094
+      ],
+      "train_objective": 64.97893505111377,
+      "recorded_dev_objective": 120.14832441893573,
+      "recorded_dev_falls": 7
+    },
+    {
+      "label": "PID, CMA-mid (mean) / s3",
+      "run": "20261125-014616",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.4271691592215214,
+        8.492459339368471,
+        0.15939170369979808,
+        0.3917165969589128
+      ],
+      "train_objective": 77.08294940684338,
+      "recorded_dev_objective": 109.8704861637315,
+      "recorded_dev_falls": 6
+    },
+    {
+      "label": "PID, CMA-mid / s3",
+      "run": "20261125-014616",
+      "entry": "cma-es",
+      "gains": [
+        2.4206755989724074,
+        8.00763378192718,
+        0.1566363674876853,
+        0.3892596114319187
+      ],
+      "train_objective": 72.27851651211344,
+      "recorded_dev_objective": 96.14676773351435,
+      "recorded_dev_falls": 5
+    },
+    {
+      "label": "PID, CMA-warm (mean) / s3",
+      "run": "20261125-020041",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.3685765239117833,
+        7.164705966457195,
+        0.15852803422630649,
+        0.4201515862465678
+      ],
+      "train_objective": 110.94222328941791,
+      "recorded_dev_objective": 97.18567225250764,
+      "recorded_dev_falls": 5
+    },
+    {
+      "label": "PID, CMA-warm / s3",
+      "run": "20261125-020041",
+      "entry": "cma-es",
+      "gains": [
+        2.379149427056302,
+        6.763263051213512,
+        0.15469279182827186,
+        0.4198109721740971
+      ],
+      "train_objective": 57.3875428369453,
+      "recorded_dev_objective": 95.4439878518026,
+      "recorded_dev_falls": 5
+    },
+    {
+      "label": "PID, CMA-mid (mean) / s5",
+      "run": "20261125-022048",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.402602147042365,
+        7.449477821163592,
+        0.15778196962297011,
+        0.4117543983354823
+      ],
+      "train_objective": 80.45487573957291,
+      "recorded_dev_objective": 109.15438448813977,
+      "recorded_dev_falls": 6
+    },
+    {
+      "label": "PID, CMA-mid / s5",
+      "run": "20261125-022048",
+      "entry": "cma-es",
+      "gains": [
+        2.348035952374566,
+        7.40642530846512,
+        0.1605350194926132,
+        0.42453500153726836
+      ],
+      "train_objective": 58.25970473141834,
+      "recorded_dev_objective": 109.38044888773351,
+      "recorded_dev_falls": 6
+    },
+    {
+      "label": "PID, CMA-warm (mean) / s5",
+      "run": "20261125-023515",
+      "entry": "cma-es (mean)",
+      "gains": [
+        2.3706455524204326,
+        7.431185043489606,
+        0.1590199609626769,
+        0.41665347451208923
+      ],
+      "train_objective": 89.05237134671671,
+      "recorded_dev_objective": 84.6525940151188,
+      "recorded_dev_falls": 4
+    },
+    {
+      "label": "PID, CMA-warm / s5",
+      "run": "20261125-023515",
+      "entry": "cma-es",
+      "gains": [
+        2.414282645418583,
+        7.543135989245266,
+        0.15480965956088988,
+        0.4029937436076459
+      ],
+      "train_objective": 64.52856815546218,
+      "recorded_dev_objective": 95.79703425924886,
+      "recorded_dev_falls": 5
+    }
+  ],
+  "baseline_gains": {
+    "PID, model-based": [
+      1.9796769192699448,
+      5.236019498934128,
+      0.1509013128652891,
+      0.5152520198827069
+    ],
+    "PID, hand-tuned": [
+      2.5,
+      1.5,
+      0.2,
+      0.5
+    ]
+  },
+  "dev": {
+    "seeds": [
+      5000,
+      5049
+    ],
+    "n_seeds": 50,
+    "n_scenarios": 150,
+    "elapsed_s": 46.55,
+    "ranking": [
+      "PID, CMA-mid (mean) / s4",
+      "PID, CMA-warm / s1",
+      "PID, CMA-warm / s6",
+      "PID, CMA-warm / s0",
+      "PID, CMA-warm (mean) / s8",
+      "PID, CMA-mid (mean) / s2",
+      "PID, CMA-mid (mean) / s8",
+      "PID, CMA-mid (mean) / s0",
+      "PID, CMA-mid / s8",
+      "PID, CMA-warm (mean) / s5",
+      "PID, CMA-mid / s7",
+      "PID, CMA-mid / s4",
+      "PID, CMA-mid / s0",
+      "PID, CMA-warm / s3",
+      "PID, CMA-warm (mean) / s0",
+      "PID, CMA-warm / s5",
+      "PID, CMA-warm (mean) / s9",
+      "PID, CMA-mid / s3",
+      "PID, CMA-mid / s2",
+      "PID, CMA-warm (mean) / s6",
+      "PID, CMA-mid (mean) / s9",
+      "PID, CMA-warm (mean) / s7",
+      "PID, CMA-warm (mean) / s3",
+      "PID, CMA-warm (mean) / s4",
+      "PID, CMA-mid (mean) / s1",
+      "PID, CMA-warm / s4",
+      "PID, model-based",
+      "PID, CMA-warm (mean) / s1",
+      "PID, CMA-warm / s2",
+      "PID, CMA-warm / s9",
+      "PID, CMA-mid (mean) / s6",
+      "PID, CMA-mid (mean) / s5",
+      "PID, CMA-mid / s5",
+      "PID, CMA-mid / s9",
+      "PID, CMA-warm / s8",
+      "PID, CMA-mid (mean) / s3",
+      "PID, CMA-warm / s7",
+      "PID, CMA-warm (mean) / s2",
+      "PID, CMA-mid / s1",
+      "PID, CMA-mid / s6",
+      "PID, CMA-mid (mean) / s7",
+      "PID, hand-tuned"
+    ],
+    "stats": {
+      "PID, model-based": {
+        "objective": 106.8422390625144,
+        "mean_cost": 106.8422390625144,
+        "median_cost": 27.97613594655813,
+        "worst_cost": 1998.5776826875397,
+        "falls": 6,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.014818521114898016,
+          0.08502781471819877
+        ],
+        "median_ratio_vs_model_based": 1.0,
+        "ratio_95ci": [
+          1.0,
+          1.0
+        ],
+        "scenarios_better": 0,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 0,
+          "only_reference_fell": 0,
+          "p_value": 1.0
+        }
+      },
+      "PID, hand-tuned": {
+        "objective": 253.00298511008063,
+        "mean_cost": 253.00298511008063,
+        "median_cost": 61.59259238387578,
+        "worst_cost": 1953.1708562883696,
+        "falls": 15,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.05705743483624696,
+          0.15956788512757702
+        ],
+        "median_ratio_vs_model_based": 2.0531660035647237,
+        "ratio_95ci": [
+          1.9616494496848187,
+          2.322304557013106
+        ],
+        "scenarios_better": 6,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 14,
+          "only_reference_fell": 5,
+          "p_value": 0.063568115234375
+        }
+      },
+      "PID, CMA-mid (mean) / s0": {
+        "objective": 83.83282231035973,
+        "mean_cost": 83.83282231035973,
+        "median_cost": 31.21457442989767,
+        "worst_cost": 1998.4235646742438,
+        "falls": 4,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.007312546398008252,
+          0.06686787667748939
+        ],
+        "median_ratio_vs_model_based": 1.1044484824985503,
+        "ratio_95ci": [
+          1.0927062738613915,
+          1.1181005710981116
+        ],
+        "scenarios_better": 19,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 1,
+          "only_reference_fell": 3,
+          "p_value": 0.625
+        }
+      },
+      "PID, CMA-mid / s0": {
+        "objective": 95.31514045198986,
+        "mean_cost": 95.31514045198986,
+        "median_cost": 30.375497157186295,
+        "worst_cost": 1998.3981924680527,
+        "falls": 5,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.01091018646891129,
+          0.07607232253734687
+        ],
+        "median_ratio_vs_model_based": 1.0738618478446624,
+        "ratio_95ci": [
+          1.0618578735296036,
+          1.0953891179852195
+        ],
+        "scenarios_better": 31,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 2,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm (mean) / s0": {
+        "objective": 95.49722051410788,
+        "mean_cost": 95.49722051410788,
+        "median_cost": 30.144952199466644,
+        "worst_cost": 1998.5066325818393,
+        "falls": 5,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.01091018646891129,
+          0.07607232253734687
+        ],
+        "median_ratio_vs_model_based": 1.0683130422193161,
+        "ratio_95ci": [
+          1.0578461454070327,
+          1.0861220248381114
+        ],
+        "scenarios_better": 21,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 1,
+          "only_reference_fell": 2,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm / s0": {
+        "objective": 83.28916423075461,
+        "mean_cost": 83.28916423075461,
+        "median_cost": 30.82816687188031,
+        "worst_cost": 1998.4784089459579,
+        "falls": 4,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.007312546398008252,
+          0.06686787667748939
+        ],
+        "median_ratio_vs_model_based": 1.0807099126055484,
+        "ratio_95ci": [
+          1.0694593862185844,
+          1.0917273062131652
+        ],
+        "scenarios_better": 29,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 0,
+          "only_reference_fell": 2,
+          "p_value": 0.5
+        }
+      },
+      "PID, CMA-mid (mean) / s2": {
+        "objective": 83.80209163524245,
+        "mean_cost": 83.80209163524245,
+        "median_cost": 31.523474313901488,
+        "worst_cost": 1998.6030126139406,
+        "falls": 4,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.007312546398008252,
+          0.06686787667748939
+        ],
+        "median_ratio_vs_model_based": 1.108025961797527,
+        "ratio_95ci": [
+          1.0960635440831434,
+          1.1309376793960297
+        ],
+        "scenarios_better": 17,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 1,
+          "only_reference_fell": 3,
+          "p_value": 0.625
+        }
+      },
+      "PID, CMA-mid / s2": {
+        "objective": 96.33245363518843,
+        "mean_cost": 96.33245363518843,
+        "median_cost": 31.49336283263005,
+        "worst_cost": 1998.6108165923447,
+        "falls": 5,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.01091018646891129,
+          0.07607232253734687
+        ],
+        "median_ratio_vs_model_based": 1.1114178836140445,
+        "ratio_95ci": [
+          1.0893085031872896,
+          1.1318075765434
+        ],
+        "scenarios_better": 19,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 1,
+          "only_reference_fell": 2,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm (mean) / s2": {
+        "objective": 121.7117605108558,
+        "mean_cost": 121.7117605108558,
+        "median_cost": 31.336527989733455,
+        "worst_cost": 1998.5524477852032,
+        "falls": 7,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.018965569634577503,
+          0.0937858649877965
+        ],
+        "median_ratio_vs_model_based": 1.1063429996819745,
+        "ratio_95ci": [
+          1.0925102724781013,
+          1.122271846205099
+        ],
+        "scenarios_better": 16,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 3,
+          "only_reference_fell": 2,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm / s2": {
+        "objective": 107.91306048455374,
+        "mean_cost": 107.91306048455374,
+        "median_cost": 30.0580319944972,
+        "worst_cost": 1998.505537557976,
+        "falls": 6,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.014818521114898016,
+          0.08502781471819877
+        ],
+        "median_ratio_vs_model_based": 1.081996500736535,
+        "ratio_95ci": [
+          1.0562431364198557,
+          1.0921999882601217
+        ],
+        "scenarios_better": 35,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 2,
+          "only_reference_fell": 2,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-mid (mean) / s4": {
+        "objective": 71.43041156039715,
+        "mean_cost": 71.43041156039715,
+        "median_cost": 30.82530013540127,
+        "worst_cost": 1998.4962691602486,
+        "falls": 3,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.004143625281220548,
+          0.05733422228820578
+        ],
+        "median_ratio_vs_model_based": 1.1009823802107275,
+        "ratio_95ci": [
+          1.08812658866732,
+          1.119728519838981
+        ],
+        "scenarios_better": 21,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 0,
+          "only_reference_fell": 3,
+          "p_value": 0.25
+        }
+      },
+      "PID, CMA-mid / s4": {
+        "objective": 90.30785408804758,
+        "mean_cost": 90.30785408804758,
+        "median_cost": 36.795111882070486,
+        "worst_cost": 1998.653642866471,
+        "falls": 4,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.007312546398008252,
+          0.06686787667748939
+        ],
+        "median_ratio_vs_model_based": 1.3093008643695687,
+        "ratio_95ci": [
+          1.2908779325134119,
+          1.3262692892736467
+        ],
+        "scenarios_better": 5,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 1,
+          "only_reference_fell": 3,
+          "p_value": 0.625
+        }
+      },
+      "PID, CMA-warm (mean) / s4": {
+        "objective": 97.66406210361947,
+        "mean_cost": 97.66406210361947,
+        "median_cost": 31.86900055928869,
+        "worst_cost": 1998.5021006837278,
+        "falls": 5,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.01091018646891129,
+          0.07607232253734687
+        ],
+        "median_ratio_vs_model_based": 1.1470844202307522,
+        "ratio_95ci": [
+          1.1222330863828067,
+          1.1580202106793651
+        ],
+        "scenarios_better": 10,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 1,
+          "only_reference_fell": 2,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm / s4": {
+        "objective": 100.2550682353084,
+        "mean_cost": 100.2550682353084,
+        "median_cost": 34.58791705217878,
+        "worst_cost": 1998.4812595216556,
+        "falls": 5,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.01091018646891129,
+          0.07607232253734687
+        ],
+        "median_ratio_vs_model_based": 1.2366342349380328,
+        "ratio_95ci": [
+          1.2144523905957412,
+          1.2475488837713797
+        ],
+        "scenarios_better": 7,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 2,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-mid (mean) / s6": {
+        "objective": 108.93493184552955,
+        "mean_cost": 108.93493184552955,
+        "median_cost": 31.95873116553121,
+        "worst_cost": 1998.5384519533827,
+        "falls": 6,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.014818521114898016,
+          0.08502781471819877
+        ],
+        "median_ratio_vs_model_based": 1.1102553790147245,
+        "ratio_95ci": [
+          1.0973012501731612,
+          1.1296442803818734
+        ],
+        "scenarios_better": 16,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 3,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-mid / s6": {
+        "objective": 124.51541949826496,
+        "mean_cost": 124.51541949826496,
+        "median_cost": 33.689663511433295,
+        "worst_cost": 1998.7156228329407,
+        "falls": 7,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.018965569634577503,
+          0.0937858649877965
+        ],
+        "median_ratio_vs_model_based": 1.1865729290482288,
+        "ratio_95ci": [
+          1.1709349433499971,
+          1.2118781419967597
+        ],
+        "scenarios_better": 3,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 4,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm (mean) / s6": {
+        "objective": 96.80851004610298,
+        "mean_cost": 96.80851004610298,
+        "median_cost": 31.492460885190994,
+        "worst_cost": 1998.5383342310697,
+        "falls": 5,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.01091018646891129,
+          0.07607232253734687
+        ],
+        "median_ratio_vs_model_based": 1.125497909639708,
+        "ratio_95ci": [
+          1.1075157786153258,
+          1.139985785620976
+        ],
+        "scenarios_better": 14,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 2,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm / s6": {
+        "objective": 83.28281967057644,
+        "mean_cost": 83.28281967057644,
+        "median_cost": 30.470266659182357,
+        "worst_cost": 1998.473633956435,
+        "falls": 4,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.007312546398008252,
+          0.06686787667748939
+        ],
+        "median_ratio_vs_model_based": 1.069090850953946,
+        "ratio_95ci": [
+          1.0553931616613976,
+          1.0910966930881343
+        ],
+        "scenarios_better": 27,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 1,
+          "only_reference_fell": 3,
+          "p_value": 0.625
+        }
+      },
+      "PID, CMA-mid (mean) / s8": {
+        "objective": 83.80680235454633,
+        "mean_cost": 83.80680235454633,
+        "median_cost": 31.260510029789515,
+        "worst_cost": 1998.5208200990237,
+        "falls": 4,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.007312546398008252,
+          0.06686787667748939
+        ],
+        "median_ratio_vs_model_based": 1.0931965127278747,
+        "ratio_95ci": [
+          1.0804869040208138,
+          1.097987747423724
+        ],
+        "scenarios_better": 22,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 1,
+          "only_reference_fell": 3,
+          "p_value": 0.625
+        }
+      },
+      "PID, CMA-mid / s8": {
+        "objective": 84.31030983217744,
+        "mean_cost": 84.31030983217744,
+        "median_cost": 31.370054342069974,
+        "worst_cost": 1998.4833589601972,
+        "falls": 4,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.007312546398008252,
+          0.06686787667748939
+        ],
+        "median_ratio_vs_model_based": 1.1229762125105016,
+        "ratio_95ci": [
+          1.1038165697058244,
+          1.1346681141603878
+        ],
+        "scenarios_better": 13,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 1,
+          "only_reference_fell": 3,
+          "p_value": 0.625
+        }
+      },
+      "PID, CMA-warm (mean) / s8": {
+        "objective": 83.74062001805306,
+        "mean_cost": 83.74062001805306,
+        "median_cost": 31.29498778876471,
+        "worst_cost": 1998.5098137356351,
+        "falls": 4,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.007312546398008252,
+          0.06686787667748939
+        ],
+        "median_ratio_vs_model_based": 1.104524765721482,
+        "ratio_95ci": [
+          1.0935524923579127,
+          1.1200637651897147
+        ],
+        "scenarios_better": 21,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 1,
+          "only_reference_fell": 3,
+          "p_value": 0.625
+        }
+      },
+      "PID, CMA-warm / s8": {
+        "objective": 109.79231895120385,
+        "mean_cost": 109.79231895120385,
+        "median_cost": 32.28198330552178,
+        "worst_cost": 1998.4313687762183,
+        "falls": 6,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.014818521114898016,
+          0.08502781471819877
+        ],
+        "median_ratio_vs_model_based": 1.1403012078523291,
+        "ratio_95ci": [
+          1.121815932926364,
+          1.1510984928981922
+        ],
+        "scenarios_better": 17,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 3,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-mid (mean) / s9": {
+        "objective": 97.03119128059518,
+        "mean_cost": 97.03119128059518,
+        "median_cost": 32.16956466288485,
+        "worst_cost": 1998.474227076627,
+        "falls": 5,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.01091018646891129,
+          0.07607232253734687
+        ],
+        "median_ratio_vs_model_based": 1.1228836134713456,
+        "ratio_95ci": [
+          1.1083807875210043,
+          1.1382423060835465
+        ],
+        "scenarios_better": 14,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 2,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-mid / s9": {
+        "objective": 109.41105779218827,
+        "mean_cost": 109.41105779218827,
+        "median_cost": 32.48464831106349,
+        "worst_cost": 1998.480821401102,
+        "falls": 6,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.014818521114898016,
+          0.08502781471819877
+        ],
+        "median_ratio_vs_model_based": 1.1309056634711872,
+        "ratio_95ci": [
+          1.1104995615358981,
+          1.1491576383846405
+        ],
+        "scenarios_better": 13,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 3,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm (mean) / s9": {
+        "objective": 96.06364937800593,
+        "mean_cost": 96.06364937800593,
+        "median_cost": 31.084597441772402,
+        "worst_cost": 1998.5803270288343,
+        "falls": 5,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.01091018646891129,
+          0.07607232253734687
+        ],
+        "median_ratio_vs_model_based": 1.100240329779465,
+        "ratio_95ci": [
+          1.0805261738984564,
+          1.1123078622033549
+        ],
+        "scenarios_better": 24,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 2,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm / s9": {
+        "objective": 108.91209005809417,
+        "mean_cost": 108.91209005809417,
+        "median_cost": 31.370872734804273,
+        "worst_cost": 1998.5676030655789,
+        "falls": 6,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.014818521114898016,
+          0.08502781471819877
+        ],
+        "median_ratio_vs_model_based": 1.1063349383412682,
+        "ratio_95ci": [
+          1.0919076511059178,
+          1.1156095243628628
+        ],
+        "scenarios_better": 23,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 2,
+          "only_reference_fell": 2,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-mid (mean) / s1": {
+        "objective": 98.23520148902482,
+        "mean_cost": 98.23520148902482,
+        "median_cost": 32.77600583234798,
+        "worst_cost": 1998.6935916967147,
+        "falls": 5,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.01091018646891129,
+          0.07607232253734687
+        ],
+        "median_ratio_vs_model_based": 1.1692015106567861,
+        "ratio_95ci": [
+          1.1437066082970677,
+          1.1775483824603532
+        ],
+        "scenarios_better": 7,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 1,
+          "only_reference_fell": 2,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-mid / s1": {
+        "objective": 122.7177326167921,
+        "mean_cost": 122.7177326167921,
+        "median_cost": 32.79847602608582,
+        "worst_cost": 1998.6365098834588,
+        "falls": 7,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.018965569634577503,
+          0.0937858649877965
+        ],
+        "median_ratio_vs_model_based": 1.1493383657739136,
+        "ratio_95ci": [
+          1.1331127423841718,
+          1.164706451858518
+        ],
+        "scenarios_better": 8,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 4,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-mid (mean) / s7": {
+        "objective": 133.83408344605886,
+        "mean_cost": 133.83408344605886,
+        "median_cost": 31.526437385661175,
+        "worst_cost": 1998.5506941154497,
+        "falls": 8,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.02330381019647,
+          0.10238189602332377
+        ],
+        "median_ratio_vs_model_based": 1.10844470890122,
+        "ratio_95ci": [
+          1.0967607633396628,
+          1.116872791560478
+        ],
+        "scenarios_better": 16,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 3,
+          "only_reference_fell": 1,
+          "p_value": 0.625
+        }
+      },
+      "PID, CMA-mid / s7": {
+        "objective": 87.04092906646152,
+        "mean_cost": 87.04092906646152,
+        "median_cost": 33.62183110350833,
+        "worst_cost": 1998.6217346190294,
+        "falls": 4,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.007312546398008252,
+          0.06686787667748939
+        ],
+        "median_ratio_vs_model_based": 1.191059015358317,
+        "ratio_95ci": [
+          1.1745860688597747,
+          1.2118549736691437
+        ],
+        "scenarios_better": 6,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 1,
+          "only_reference_fell": 3,
+          "p_value": 0.625
+        }
+      },
+      "PID, CMA-warm (mean) / s1": {
+        "objective": 107.85390722293317,
+        "mean_cost": 107.85390722293317,
+        "median_cost": 30.118712337237362,
+        "worst_cost": 1998.499131540988,
+        "falls": 6,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.014818521114898016,
+          0.08502781471819877
+        ],
+        "median_ratio_vs_model_based": 1.066271683504042,
+        "ratio_95ci": [
+          1.0461458438690792,
+          1.072981101324255
+        ],
+        "scenarios_better": 27,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 3,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm / s1": {
+        "objective": 82.90711155321436,
+        "mean_cost": 82.90711155321436,
+        "median_cost": 29.945920071946826,
+        "worst_cost": 1998.4281656965163,
+        "falls": 4,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.007312546398008252,
+          0.06686787667748939
+        ],
+        "median_ratio_vs_model_based": 1.0748772115682912,
+        "ratio_95ci": [
+          1.058721611446376,
+          1.0868980239600738
+        ],
+        "scenarios_better": 30,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 1,
+          "only_reference_fell": 3,
+          "p_value": 0.625
+        }
+      },
+      "PID, CMA-warm (mean) / s7": {
+        "objective": 97.07176747645077,
+        "mean_cost": 97.07176747645077,
+        "median_cost": 31.57915559904918,
+        "worst_cost": 1998.5674876557703,
+        "falls": 5,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.01091018646891129,
+          0.07607232253734687
+        ],
+        "median_ratio_vs_model_based": 1.1246403113562617,
+        "ratio_95ci": [
+          1.115560931536277,
+          1.1368437964525744
+        ],
+        "scenarios_better": 13,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 1,
+          "only_reference_fell": 2,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm / s7": {
+        "objective": 120.14832441893573,
+        "mean_cost": 120.14832441893573,
+        "median_cost": 30.028000853476357,
+        "worst_cost": 1998.5239845627527,
+        "falls": 7,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.018965569634577503,
+          0.0937858649877965
+        ],
+        "median_ratio_vs_model_based": 1.057707218948094,
+        "ratio_95ci": [
+          1.0387214187653329,
+          1.0709315989904817
+        ],
+        "scenarios_better": 38,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 4,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-mid (mean) / s3": {
+        "objective": 109.8704861637315,
+        "mean_cost": 109.8704861637315,
+        "median_cost": 31.627857722360794,
+        "worst_cost": 1998.5152828865973,
+        "falls": 6,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.014818521114898016,
+          0.08502781471819877
+        ],
+        "median_ratio_vs_model_based": 1.128264679149109,
+        "ratio_95ci": [
+          1.1124242676899705,
+          1.146911043106079
+        ],
+        "scenarios_better": 13,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 3,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-mid / s3": {
+        "objective": 96.14676773351435,
+        "mean_cost": 96.14676773351435,
+        "median_cost": 31.11702886748032,
+        "worst_cost": 1998.428260148621,
+        "falls": 5,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.01091018646891129,
+          0.07607232253734687
+        ],
+        "median_ratio_vs_model_based": 1.1049819324373882,
+        "ratio_95ci": [
+          1.0840994302065565,
+          1.1209246703210938
+        ],
+        "scenarios_better": 26,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 2,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm (mean) / s3": {
+        "objective": 97.18567225250764,
+        "mean_cost": 97.18567225250764,
+        "median_cost": 31.509148512894374,
+        "worst_cost": 1998.5218810139877,
+        "falls": 5,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.01091018646891129,
+          0.07607232253734687
+        ],
+        "median_ratio_vs_model_based": 1.11437030615759,
+        "ratio_95ci": [
+          1.0953307436704551,
+          1.1379660958051183
+        ],
+        "scenarios_better": 13,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 2,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm / s3": {
+        "objective": 95.4439878518026,
+        "mean_cost": 95.4439878518026,
+        "median_cost": 30.303793596188576,
+        "worst_cost": 1998.4748212821726,
+        "falls": 5,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.01091018646891129,
+          0.07607232253734687
+        ],
+        "median_ratio_vs_model_based": 1.0786242665520895,
+        "ratio_95ci": [
+          1.0663854814807103,
+          1.0883859053798197
+        ],
+        "scenarios_better": 28,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 2,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-mid (mean) / s5": {
+        "objective": 109.15438448813977,
+        "mean_cost": 109.15438448813977,
+        "median_cost": 31.604616859873545,
+        "worst_cost": 1998.5221956330174,
+        "falls": 6,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.014818521114898016,
+          0.08502781471819877
+        ],
+        "median_ratio_vs_model_based": 1.113908278744949,
+        "ratio_95ci": [
+          1.099114136701492,
+          1.1283906884684647
+        ],
+        "scenarios_better": 17,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 2,
+          "only_reference_fell": 2,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-mid / s5": {
+        "objective": 109.38044888773351,
+        "mean_cost": 109.38044888773351,
+        "median_cost": 31.749945674438855,
+        "worst_cost": 1998.5733742750344,
+        "falls": 6,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.014818521114898016,
+          0.08502781471819877
+        ],
+        "median_ratio_vs_model_based": 1.1349077707567035,
+        "ratio_95ci": [
+          1.122763772275747,
+          1.1541277963668561
+        ],
+        "scenarios_better": 11,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 3,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm (mean) / s5": {
+        "objective": 84.6525940151188,
+        "mean_cost": 84.6525940151188,
+        "median_cost": 31.069278058311518,
+        "worst_cost": 1998.5335926768983,
+        "falls": 4,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.007312546398008252,
+          0.06686787667748939
+        ],
+        "median_ratio_vs_model_based": 1.1158658446306666,
+        "ratio_95ci": [
+          1.098423960260329,
+          1.1356078331506558
+        ],
+        "scenarios_better": 13,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 1,
+          "only_reference_fell": 3,
+          "p_value": 0.625
+        }
+      },
+      "PID, CMA-warm / s5": {
+        "objective": 95.79703425924886,
+        "mean_cost": 95.79703425924886,
+        "median_cost": 30.68733484854443,
+        "worst_cost": 1998.4779966662816,
+        "falls": 5,
+        "scenarios": 150,
+        "fall_rate_95ci": [
+          0.01091018646891129,
+          0.07607232253734687
+        ],
+        "median_ratio_vs_model_based": 1.0815670735593699,
+        "ratio_95ci": [
+          1.0677778524014276,
+          1.0866528055384244
+        ],
+        "scenarios_better": 28,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 2,
+          "only_reference_fell": 3,
+          "p_value": 1.0
+        }
+      }
+    },
+    "max_abs_diff_vs_recorded_dev_objective": 0.0
+  },
+  "finalists": [
+    "PID, CMA-mid (mean) / s4",
+    "PID, CMA-warm / s1",
+    "PID, CMA-warm / s6"
+  ],
+  "confirm": {
+    "seeds": [
+      6000000,
+      6000099
+    ],
+    "n_seeds": 100,
+    "is_d2_slice": true,
+    "n_scenarios": 300,
+    "elapsed_s": 14.88,
+    "stats": {
+      "PID, model-based": {
+        "objective": 112.95898957501828,
+        "mean_cost": 112.95898957501828,
+        "median_cost": 28.212497161151685,
+        "worst_cost": 1999.0658329804733,
+        "falls": 13,
+        "scenarios": 300,
+        "fall_rate_95ci": [
+          0.02327184100468237,
+          0.0729614642202821
+        ],
+        "median_ratio_vs_model_based": 1.0,
+        "ratio_95ci": [
+          1.0,
+          1.0
+        ],
+        "scenarios_better": 0,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 0,
+          "only_reference_fell": 0,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-mid (mean) / s4": {
+        "objective": 121.41560535597746,
+        "mean_cost": 121.41560535597746,
+        "median_cost": 31.801012205158706,
+        "worst_cost": 1998.9892469959848,
+        "falls": 14,
+        "scenarios": 300,
+        "fall_rate_95ci": [
+          0.025744649467230946,
+          0.0770598381063587
+        ],
+        "median_ratio_vs_model_based": 1.108622493268116,
+        "ratio_95ci": [
+          1.1010094060269942,
+          1.1207014683024488
+        ],
+        "scenarios_better": 34,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 6,
+          "only_reference_fell": 5,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm / s6": {
+        "objective": 108.02008929419829,
+        "mean_cost": 108.02008929419829,
+        "median_cost": 31.04033616206805,
+        "worst_cost": 1998.969173639492,
+        "falls": 12,
+        "scenarios": 300,
+        "fall_rate_95ci": [
+          0.020836576306413706,
+          0.0688289881894961
+        ],
+        "median_ratio_vs_model_based": 1.0801438606293736,
+        "ratio_95ci": [
+          1.0692866464225017,
+          1.0894625092482237
+        ],
+        "scenarios_better": 42,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 4,
+          "only_reference_fell": 5,
+          "p_value": 1.0
+        }
+      },
+      "PID, CMA-warm / s1": {
+        "objective": 95.38214256003585,
+        "mean_cost": 95.38214256003585,
+        "median_cost": 30.36949245851575,
+        "worst_cost": 1998.864429744438,
+        "falls": 10,
+        "scenarios": 300,
+        "fall_rate_95ci": [
+          0.016098167562619323,
+          0.0604453222012656
+        ],
+        "median_ratio_vs_model_based": 1.073897183219727,
+        "ratio_95ci": [
+          1.0614231425114347,
+          1.0799289567679051
+        ],
+        "scenarios_better": 42,
+        "mcnemar_vs_model_based": {
+          "only_this_fell": 3,
+          "only_reference_fell": 6,
+          "p_value": 0.5078125
+        }
+      }
+    }
+  },
+  "decision": {
+    "rule": "D3 (E2_PLAN.md, written before the runs): adopt a tuned finalist only if, on the confirm slice (6,000,000-6,000,099 x 3 tilts, 60 s), (a) its paired per-scenario median-cost ratio to model-based has a 95% bootstrap CI entirely below 1, and (b) McNemar does not show more falls. 'Shows more falls' := the finalist fell in more discordant scenarios than model-based (only_this_fell > only_reference_fell, i.e. more falls in total on the same scenarios) AND the exact two-sided McNemar p < 0.05. Otherwise model-based. If several finalists qualify, the one with the lowest DEV objective is adopted: the confirm tier accepts or rejects, it never chooses among candidates. No multiplicity correction across finalists.",
+    "alpha": 0.05,
+    "verdicts": {
+      "PID, CMA-mid (mean) / s4": {
+        "ratio_ci_below_1": false,
+        "shows_more_falls": false,
+        "qualifies": false,
+        "why_not": [
+          "ratio CI upper 1.1207 >= 1"
+        ]
+      },
+      "PID, CMA-warm / s1": {
+        "ratio_ci_below_1": false,
+        "shows_more_falls": false,
+        "qualifies": false,
+        "why_not": [
+          "ratio CI upper 1.0799 >= 1"
+        ]
+      },
+      "PID, CMA-warm / s6": {
+        "ratio_ci_below_1": false,
+        "shows_more_falls": false,
+        "qualifies": false,
+        "why_not": [
+          "ratio CI upper 1.0895 >= 1"
+        ]
+      }
+    },
+    "qualifying_in_dev_order": [],
+    "adopted": "PID, model-based",
+    "adopted_is_model_based": true,
+    "why": "no finalist qualifies under D3, so the reference is model-based",
+    "n_finalists_tested": 3
+  },
+  "reference": {
+    "label": "PID, model-based",
+    "kind": "cascaded",
+    "gains": {
+      "kp": 1.9796769192699448,
+      "ki": 5.236019498934128,
+      "kd": 0.1509013128652891,
+      "kv_p": 0.5152520198827069
+    },
+    "source_run": null,
+    "source_entry": null
+  },
+  "config": {
+    "name": "legobot",
+    "robot": {
+      "body_mass": 0.362,
+      "body_com_height": 0.06,
+      "body_inertia": 0.00088,
+      "wheel_mass": 0.078,
+      "wheel_radius": 0.0345,
+      "wheel_inertia": 6e-05,
+      "max_torque": 0.9,
+      "wheel_friction": 0.0017,
+      "coulomb_friction": 0.045,
+      "coulomb_friction_speed": 1.0,
+      "gravity": 9.81,
+      "gearbox_backlash": 0.04014257279586958,
+      "coupling_backlash": 0.019198621771937627
+    },
+    "actuator": {
+      "model": "slow_pwm",
+      "voltage_feedforward": true,
+      "voltage_feedforward_gain": 1.0,
+      "pwm_tick_s": 0.01,
+      "pwm_tick_phase": 0.25,
+      "pwm_tick_locked": false,
+      "gear_ratio": 1.0,
+      "torque_constant": 0.348,
+      "resistance": 4.4,
+      "supply_voltage": 7.6,
+      "current_limit": 2.5,
+      "n_motors": 2,
+      "gear_efficiency": 0.739,
+      "rotor_inertia": 0.000545
+    },
+    "sensor": {
+      "pitch_std": 0.016,
+      "pitch_bias": 0.015,
+      "pitch_rate_std": 0.017,
+      "pitch_rate_bias": 0.003,
+      "position_std": 0.001,
+      "velocity_std": 0.025,
+      "model": "imu",
+      "imu_height": 0.1,
+      "filter_time_constant": 0.5,
+      "encoder_counts": 360,
+      "encoder_period_s": 0.01,
+      "encoder_delay_s": 0.005
+    },
+    "timing": {
+      "latency_s": 0.01,
+      "dt_s": 0.0025,
+      "demo_dt_s": 0.001,
+      "control_dt_s": 0.005,
+      "fall_angle_deg": 60.0
+    },
+    "controller": {
+      "max_lean_deg": 25.0,
+      "pitch_integral_limit": 1.0,
+      "velocity_integral_limit": 0.5,
+      "hand_tuned_gains": [
+        2.5,
+        1.5,
+        0.2,
+        0.5
+      ],
+      "design_inner_speed": 2.0,
+      "design_inner_damping": 1.0,
+      "design_integral_ratio": 0.3,
+      "design_outer_fraction": 0.3333333333333333
+    },
+    "cost": {
+      "pitch_limit_rad": 0.3,
+      "velocity_limit": 0.06,
+      "torque_limit": 0.09,
+      "fall_penalty": 1000.0,
+      "pitch_reference": "upright",
+      "velocity_weight": 25.0,
+      "effort_weight": 11.11111111111111
+    },
+    "scenario": {
+      "duration_s": 20.0,
+      "goal_steps": [
+        [
+          2.0,
+          0.4,
+          1.25
+        ],
+        [
+          9.5,
+          -0.15,
+          2.4
+        ],
+        [
+          14.0,
+          0.0,
+          2.0
+        ]
+      ],
+      "goal_transition_s": 2.5,
+      "pushes": [
+        [
+          5.5,
+          0.05,
+          0.71
+        ],
+        [
+          7.5,
+          0.05,
+          -0.71
+        ]
+      ],
+      "validation_duration_s": 60.0,
+      "start_pitches_deg": [
+        2.8648,
+        -8.5944,
+        17.1887
+      ],
+      "train_seeds": [
+        1,
+        2,
+        3
+      ],
+      "validation_seeds": [
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109
+      ]
+    },
+    "search": {
+      "kp_min_factor": 1.1,
+      "kp_max": 30.0,
+      "ki_max": 10.0,
+      "kd_max": 1.0,
+      "kv_p_max": 2.0
+    },
+    "lqr": {
+      "w_pitch_bounds": [
+        1e-06,
+        100.0
+      ],
+      "w_velocity_bounds": [
+        1e-06,
+        100.0
+      ],
+      "w_pitch_rate_bounds": [
+        1e-08,
+        1.0
+      ],
+      "w_integral_bounds": [
+        0.001,
+        1000.0
+      ],
+      "direct_gain_scale": 100.0,
+      "w_pitch_fixed": 0.0,
+      "w_velocity_fixed": 0.0,
+      "w_pitch_rate_fixed": 0.0,
+      "direct_commands_scale": 0.0,
+      "direct_integral_bounds": [
+        0.001,
+        10.0
+      ],
+      "direct_max_spectral_radius": 0.999
+    },
+    "robustness": {
+      "n_train_seeds": 50,
+      "validation_seeds": [
+        3000,
+        3001,
+        3002,
+        3003,
+        3004,
+        3005,
+        3006,
+        3007,
+        3008,
+        3009,
+        3010,
+        3011,
+        3012,
+        3013,
+        3014,
+        3015,
+        3016,
+        3017,
+        3018,
+        3019,
+        3020,
+        3021,
+        3022,
+        3023,
+        3024,
+        3025,
+        3026,
+        3027,
+        3028,
+        3029,
+        3030,
+        3031,
+        3032,
+        3033,
+        3034,
+        3035,
+        3036,
+        3037,
+        3038,
+        3039,
+        3040,
+        3041,
+        3042,
+        3043,
+        3044,
+        3045,
+        3046,
+        3047,
+        3048,
+        3049,
+        3050,
+        3051,
+        3052,
+        3053,
+        3054,
+        3055,
+        3056,
+        3057,
+        3058,
+        3059,
+        3060,
+        3061,
+        3062,
+        3063,
+        3064,
+        3065,
+        3066,
+        3067,
+        3068,
+        3069,
+        3070,
+        3071,
+        3072,
+        3073,
+        3074,
+        3075,
+        3076,
+        3077,
+        3078,
+        3079,
+        3080,
+        3081,
+        3082,
+        3083,
+        3084,
+        3085,
+        3086,
+        3087,
+        3088,
+        3089,
+        3090,
+        3091,
+        3092,
+        3093,
+        3094,
+        3095,
+        3096,
+        3097,
+        3098,
+        3099
+      ],
+      "smoke_seeds": [
+        5000,
+        5001,
+        5002,
+        5003,
+        5004,
+        5005,
+        5006,
+        5007,
+        5008,
+        5009
+      ],
+      "dev_seeds": [
+        5000,
+        5001,
+        5002,
+        5003,
+        5004,
+        5005,
+        5006,
+        5007,
+        5008,
+        5009,
+        5010,
+        5011,
+        5012,
+        5013,
+        5014,
+        5015,
+        5016,
+        5017,
+        5018,
+        5019,
+        5020,
+        5021,
+        5022,
+        5023,
+        5024,
+        5025,
+        5026,
+        5027,
+        5028,
+        5029,
+        5030,
+        5031,
+        5032,
+        5033,
+        5034,
+        5035,
+        5036,
+        5037,
+        5038,
+        5039,
+        5040,
+        5041,
+        5042,
+        5043,
+        5044,
+        5045,
+        5046,
+        5047,
+        5048,
+        5049
+      ],
+      "dev_extended_seeds": [
+        5050,
+        5051,
+        5052,
+        5053,
+        5054,
+        5055,
+        5056,
+        5057,
+        5058,
+        5059,
+        5060,
+        5061,
+        5062,
+        5063,
+        5064,
+        5065,
+        5066,
+        5067,
+        5068,
+        5069,
+        5070,
+        5071,
+        5072,
+        5073,
+        5074,
+        5075,
+        5076,
+        5077,
+        5078,
+        5079,
+        5080,
+        5081,
+        5082,
+        5083,
+        5084,
+        5085,
+        5086,
+        5087,
+        5088,
+        5089,
+        5090,
+        5091,
+        5092,
+        5093,
+        5094,
+        5095,
+        5096,
+        5097,
+        5098,
+        5099,
+        5100,
+        5101,
+        5102,
+        5103,
+        5104,
+        5105,
+        5106,
+        5107,
+        5108,
+        5109,
+        5110,
+        5111,
+        5112,
+        5113,
+        5114,
+        5115,
+        5116,
+        5117,
+        5118,
+        5119,
+        5120,
+        5121,
+        5122,
+        5123,
+        5124,
+        5125,
+        5126,
+        5127,
+        5128,
+        5129,
+        5130,
+        5131,
+        5132,
+        5133,
+        5134,
+        5135,
+        5136,
+        5137,
+        5138,
+        5139,
+        5140,
+        5141,
+        5142,
+        5143,
+        5144,
+        5145,
+        5146,
+        5147,
+        5148,
+        5149
+      ],
+      "confirm_seeds": [
+        6000000,
+        6000001,
+        6000002,
+        6000003,
+        6000004,
+        6000005,
+        6000006,
+        6000007,
+        6000008,
+        6000009,
+        6000010,
+        6000011,
+        6000012,
+        6000013,
+        6000014,
+        6000015,
+        6000016,
+        6000017,
+        6000018,
+        6000019,
+        6000020,
+        6000021,
+        6000022,
+        6000023,
+        6000024,
+        6000025,
+        6000026,
+        6000027,
+        6000028,
+        6000029,
+        6000030,
+        6000031,
+        6000032,
+        6000033,
+        6000034,
+        6000035,
+        6000036,
+        6000037,
+        6000038,
+        6000039,
+        6000040,
+        6000041,
+        6000042,
+        6000043,
+        6000044,
+        6000045,
+        6000046,
+        6000047,
+        6000048,
+        6000049,
+        6000050,
+        6000051,
+        6000052,
+        6000053,
+        6000054,
+        6000055,
+        6000056,
+        6000057,
+        6000058,
+        6000059,
+        6000060,
+        6000061,
+        6000062,
+        6000063,
+        6000064,
+        6000065,
+        6000066,
+        6000067,
+        6000068,
+        6000069,
+        6000070,
+        6000071,
+        6000072,
+        6000073,
+        6000074,
+        6000075,
+        6000076,
+        6000077,
+        6000078,
+        6000079,
+        6000080,
+        6000081,
+        6000082,
+        6000083,
+        6000084,
+        6000085,
+        6000086,
+        6000087,
+        6000088,
+        6000089,
+        6000090,
+        6000091,
+        6000092,
+        6000093,
+        6000094,
+        6000095,
+        6000096,
+        6000097,
+        6000098,
+        6000099
+      ],
+      "fall_rate_seeds": [
+        6000,
+        6001,
+        6002,
+        6003,
+        6004,
+        6005,
+        6006,
+        6007,
+        6008,
+        6009,
+        6010,
+        6011,
+        6012,
+        6013,
+        6014,
+        6015,
+        6016,
+        6017,
+        6018,
+        6019,
+        6020,
+        6021,
+        6022,
+        6023,
+        6024,
+        6025,
+        6026,
+        6027,
+        6028,
+        6029,
+        6030,
+        6031,
+        6032,
+        6033,
+        6034,
+        6035,
+        6036,
+        6037,
+        6038,
+        6039,
+        6040,
+        6041,
+        6042,
+        6043,
+        6044,
+        6045,
+        6046,
+        6047,
+        6048,
+        6049,
+        6050,
+        6051,
+        6052,
+        6053,
+        6054,
+        6055,
+        6056,
+        6057,
+        6058,
+        6059,
+        6060,
+        6061,
+        6062,
+        6063,
+        6064,
+        6065,
+        6066,
+        6067,
+        6068,
+        6069,
+        6070,
+        6071,
+        6072,
+        6073,
+        6074,
+        6075,
+        6076,
+        6077,
+        6078,
+        6079,
+        6080,
+        6081,
+        6082,
+        6083,
+        6084,
+        6085,
+        6086,
+        6087,
+        6088,
+        6089,
+        6090,
+        6091,
+        6092,
+        6093,
+        6094,
+        6095,
+        6096,
+        6097,
+        6098,
+        6099,
+        6100,
+        6101,
+        6102,
+        6103,
+        6104,
+        6105,
+        6106,
+        6107,
+        6108,
+        6109,
+        6110,
+        6111,
+        6112,
+        6113,
+        6114,
+        6115,
+        6116,
+        6117,
+        6118,
+        6119,
+        6120,
+        6121,
+        6122,
+        6123,
+        6124,
+        6125,
+        6126,
+        6127,
+        6128,
+        6129,
+        6130,
+        6131,
+        6132,
+        6133,
+        6134,
+        6135,
+        6136,
+        6137,
+        6138,
+        6139,
+        6140,
+        6141,
+        6142,
+        6143,
+        6144,
+        6145,
+        6146,
+        6147,
+        6148,
+        6149,
+        6150,
+        6151,
+        6152,
+        6153,
+        6154,
+        6155,
+        6156,
+        6157,
+        6158,
+        6159,
+        6160,
+        6161,
+        6162,
+        6163,
+        6164,
+        6165,
+        6166,
+        6167,
+        6168,
+        6169,
+        6170,
+        6171,
+        6172,
+        6173,
+        6174,
+        6175,
+        6176,
+        6177,
+        6178,
+        6179,
+        6180,
+        6181,
+        6182,
+        6183,
+        6184,
+        6185,
+        6186,
+        6187,
+        6188,
+        6189,
+        6190,
+        6191,
+        6192,
+        6193,
+        6194,
+        6195,
+        6196,
+        6197,
+        6198,
+        6199,
+        6200,
+        6201,
+        6202,
+        6203,
+        6204,
+        6205,
+        6206,
+        6207,
+        6208,
+        6209,
+        6210,
+        6211,
+        6212,
+        6213,
+        6214,
+        6215,
+        6216,
+        6217,
+        6218,
+        6219,
+        6220,
+        6221,
+        6222,
+        6223,
+        6224,
+        6225,
+        6226,
+        6227,
+        6228,
+        6229,
+        6230,
+        6231,
+        6232,
+        6233,
+        6234,
+        6235,
+        6236,
+        6237,
+        6238,
+        6239,
+        6240,
+        6241,
+        6242,
+        6243,
+        6244,
+        6245,
+        6246,
+        6247,
+        6248,
+        6249,
+        6250,
+        6251,
+        6252,
+        6253,
+        6254,
+        6255,
+        6256,
+        6257,
+        6258,
+        6259,
+        6260,
+        6261,
+        6262,
+        6263,
+        6264,
+        6265,
+        6266,
+        6267,
+        6268,
+        6269,
+        6270,
+        6271,
+        6272,
+        6273,
+        6274,
+        6275,
+        6276,
+        6277,
+        6278,
+        6279,
+        6280,
+        6281,
+        6282,
+        6283,
+        6284,
+        6285,
+        6286,
+        6287,
+        6288,
+        6289,
+        6290,
+        6291,
+        6292,
+        6293,
+        6294,
+        6295,
+        6296,
+        6297,
+        6298,
+        6299,
+        6300,
+        6301,
+        6302,
+        6303,
+        6304,
+        6305,
+        6306,
+        6307,
+        6308,
+        6309,
+        6310,
+        6311,
+        6312,
+        6313,
+        6314,
+        6315,
+        6316,
+        6317,
+        6318,
+        6319,
+        6320,
+        6321,
+        6322,
+        6323,
+        6324,
+        6325,
+        6326,
+        6327,
+        6328,
+        6329,
+        6330,
+        6331,
+        6332,
+        6333,
+        6334,
+        6335,
+        6336,
+        6337,
+        6338,
+        6339,
+        6340,
+        6341,
+        6342,
+        6343,
+        6344,
+        6345,
+        6346,
+        6347,
+        6348,
+        6349,
+        6350,
+        6351,
+        6352,
+        6353,
+        6354,
+        6355,
+        6356,
+        6357,
+        6358,
+        6359,
+        6360,
+        6361,
+        6362,
+        6363,
+        6364,
+        6365,
+        6366,
+        6367,
+        6368,
+        6369,
+        6370,
+        6371,
+        6372,
+        6373,
+        6374,
+        6375,
+        6376,
+        6377,
+        6378,
+        6379,
+        6380,
+        6381,
+        6382,
+        6383,
+        6384,
+        6385,
+        6386,
+        6387,
+        6388,
+        6389,
+        6390,
+        6391,
+        6392,
+        6393,
+        6394,
+        6395,
+        6396,
+        6397,
+        6398,
+        6399,
+        6400,
+        6401,
+        6402,
+        6403,
+        6404,
+        6405,
+        6406,
+        6407,
+        6408,
+        6409,
+        6410,
+        6411,
+        6412,
+        6413,
+        6414,
+        6415,
+        6416,
+        6417,
+        6418,
+        6419,
+        6420,
+        6421,
+        6422,
+        6423,
+        6424,
+        6425,
+        6426,
+        6427,
+        6428,
+        6429,
+        6430,
+        6431,
+        6432,
+        6433,
+        6434,
+        6435,
+        6436,
+        6437,
+        6438,
+        6439,
+        6440,
+        6441,
+        6442,
+        6443,
+        6444,
+        6445,
+        6446,
+        6447,
+        6448,
+        6449,
+        6450,
+        6451,
+        6452,
+        6453,
+        6454,
+        6455,
+        6456,
+        6457,
+        6458,
+        6459,
+        6460,
+        6461,
+        6462,
+        6463,
+        6464,
+        6465,
+        6466,
+        6467,
+        6468,
+        6469,
+        6470,
+        6471,
+        6472,
+        6473,
+        6474,
+        6475,
+        6476,
+        6477,
+        6478,
+        6479,
+        6480,
+        6481,
+        6482,
+        6483,
+        6484,
+        6485,
+        6486,
+        6487,
+        6488,
+        6489,
+        6490,
+        6491,
+        6492,
+        6493,
+        6494,
+        6495,
+        6496,
+        6497,
+        6498,
+        6499,
+        6500,
+        6501,
+        6502,
+        6503,
+        6504,
+        6505,
+        6506,
+        6507,
+        6508,
+        6509,
+        6510,
+        6511,
+        6512,
+        6513,
+        6514,
+        6515,
+        6516,
+        6517,
+        6518,
+        6519,
+        6520,
+        6521,
+        6522,
+        6523,
+        6524,
+        6525,
+        6526,
+        6527,
+        6528,
+        6529,
+        6530,
+        6531,
+        6532,
+        6533,
+        6534,
+        6535,
+        6536,
+        6537,
+        6538,
+        6539,
+        6540,
+        6541,
+        6542,
+        6543,
+        6544,
+        6545,
+        6546,
+        6547,
+        6548,
+        6549,
+        6550,
+        6551,
+        6552,
+        6553,
+        6554,
+        6555,
+        6556,
+        6557,
+        6558,
+        6559,
+        6560,
+        6561,
+        6562,
+        6563,
+        6564,
+        6565,
+        6566,
+        6567,
+        6568,
+        6569,
+        6570,
+        6571,
+        6572,
+        6573,
+        6574,
+        6575,
+        6576,
+        6577,
+        6578,
+        6579,
+        6580,
+        6581,
+        6582,
+        6583,
+        6584,
+        6585,
+        6586,
+        6587,
+        6588,
+        6589,
+        6590,
+        6591,
+        6592,
+        6593,
+        6594,
+        6595,
+        6596,
+        6597,
+        6598,
+        6599,
+        6600,
+        6601,
+        6602,
+        6603,
+        6604,
+        6605,
+        6606,
+        6607,
+        6608,
+        6609,
+        6610,
+        6611,
+        6612,
+        6613,
+        6614,
+        6615,
+        6616,
+        6617,
+        6618,
+        6619,
+        6620,
+        6621,
+        6622,
+        6623,
+        6624,
+        6625,
+        6626,
+        6627,
+        6628,
+        6629,
+        6630,
+        6631,
+        6632,
+        6633,
+        6634,
+        6635,
+        6636,
+        6637,
+        6638,
+        6639,
+        6640,
+        6641,
+        6642,
+        6643,
+        6644,
+        6645,
+        6646,
+        6647,
+        6648,
+        6649,
+        6650,
+        6651,
+        6652,
+        6653,
+        6654,
+        6655,
+        6656,
+        6657,
+        6658,
+        6659,
+        6660,
+        6661,
+        6662,
+        6663,
+        6664,
+        6665,
+        6666,
+        6667,
+        6668,
+        6669,
+        6670,
+        6671,
+        6672,
+        6673,
+        6674,
+        6675,
+        6676,
+        6677,
+        6678,
+        6679,
+        6680,
+        6681,
+        6682,
+        6683,
+        6684,
+        6685,
+        6686,
+        6687,
+        6688,
+        6689,
+        6690,
+        6691,
+        6692,
+        6693,
+        6694,
+        6695,
+        6696,
+        6697,
+        6698,
+        6699,
+        6700,
+        6701,
+        6702,
+        6703,
+        6704,
+        6705,
+        6706,
+        6707,
+        6708,
+        6709,
+        6710,
+        6711,
+        6712,
+        6713,
+        6714,
+        6715,
+        6716,
+        6717,
+        6718,
+        6719,
+        6720,
+        6721,
+        6722,
+        6723,
+        6724,
+        6725,
+        6726,
+        6727,
+        6728,
+        6729,
+        6730,
+        6731,
+        6732,
+        6733,
+        6734,
+        6735,
+        6736,
+        6737,
+        6738,
+        6739,
+        6740,
+        6741,
+        6742,
+        6743,
+        6744,
+        6745,
+        6746,
+        6747,
+        6748,
+        6749,
+        6750,
+        6751,
+        6752,
+        6753,
+        6754,
+        6755,
+        6756,
+        6757,
+        6758,
+        6759,
+        6760,
+        6761,
+        6762,
+        6763,
+        6764,
+        6765,
+        6766,
+        6767,
+        6768,
+        6769,
+        6770,
+        6771,
+        6772,
+        6773,
+        6774,
+        6775,
+        6776,
+        6777,
+        6778,
+        6779,
+        6780,
+        6781,
+        6782,
+        6783,
+        6784,
+        6785,
+        6786,
+        6787,
+        6788,
+        6789,
+        6790,
+        6791,
+        6792,
+        6793,
+        6794,
+        6795,
+        6796,
+        6797,
+        6798,
+        6799,
+        6800,
+        6801,
+        6802,
+        6803,
+        6804,
+        6805,
+        6806,
+        6807,
+        6808,
+        6809,
+        6810,
+        6811,
+        6812,
+        6813,
+        6814,
+        6815,
+        6816,
+        6817,
+        6818,
+        6819,
+        6820,
+        6821,
+        6822,
+        6823,
+        6824,
+        6825,
+        6826,
+        6827,
+        6828,
+        6829,
+        6830,
+        6831,
+        6832,
+        6833,
+        6834,
+        6835,
+        6836,
+        6837,
+        6838,
+        6839,
+        6840,
+        6841,
+        6842,
+        6843,
+        6844,
+        6845,
+        6846,
+        6847,
+        6848,
+        6849,
+        6850,
+        6851,
+        6852,
+        6853,
+        6854,
+        6855,
+        6856,
+        6857,
+        6858,
+        6859,
+        6860,
+        6861,
+        6862,
+        6863,
+        6864,
+        6865,
+        6866,
+        6867,
+        6868,
+        6869,
+        6870,
+        6871,
+        6872,
+        6873,
+        6874,
+        6875,
+        6876,
+        6877,
+        6878,
+        6879,
+        6880,
+        6881,
+        6882,
+        6883,
+        6884,
+        6885,
+        6886,
+        6887,
+        6888,
+        6889,
+        6890,
+        6891,
+        6892,
+        6893,
+        6894,
+        6895,
+        6896,
+        6897,
+        6898,
+        6899,
+        6900,
+        6901,
+        6902,
+        6903,
+        6904,
+        6905,
+        6906,
+        6907,
+        6908,
+        6909,
+        6910,
+        6911,
+        6912,
+        6913,
+        6914,
+        6915,
+        6916,
+        6917,
+        6918,
+        6919,
+        6920,
+        6921,
+        6922,
+        6923,
+        6924,
+        6925,
+        6926,
+        6927,
+        6928,
+        6929,
+        6930,
+        6931,
+        6932,
+        6933,
+        6934,
+        6935,
+        6936,
+        6937,
+        6938,
+        6939,
+        6940,
+        6941,
+        6942,
+        6943,
+        6944,
+        6945,
+        6946,
+        6947,
+        6948,
+        6949,
+        6950,
+        6951,
+        6952,
+        6953,
+        6954,
+        6955,
+        6956,
+        6957,
+        6958,
+        6959,
+        6960,
+        6961,
+        6962,
+        6963,
+        6964,
+        6965,
+        6966,
+        6967,
+        6968,
+        6969,
+        6970,
+        6971,
+        6972,
+        6973,
+        6974,
+        6975,
+        6976,
+        6977,
+        6978,
+        6979,
+        6980,
+        6981,
+        6982,
+        6983,
+        6984,
+        6985,
+        6986,
+        6987,
+        6988,
+        6989,
+        6990,
+        6991,
+        6992,
+        6993,
+        6994,
+        6995,
+        6996,
+        6997,
+        6998,
+        6999
+      ],
+      "retired_seeds": [
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        1000,
+        1001,
+        1002,
+        1003,
+        1004,
+        1005,
+        1006,
+        1007,
+        1008,
+        1009,
+        1010,
+        1011,
+        1012,
+        1013,
+        1014,
+        1015,
+        1016,
+        1017,
+        1018,
+        1019,
+        1020,
+        1021,
+        1022,
+        1023,
+        1024,
+        1025,
+        1026,
+        1027,
+        1028,
+        1029,
+        1030,
+        1031,
+        1032,
+        1033,
+        1034,
+        1035,
+        1036,
+        1037,
+        1038,
+        1039,
+        1040,
+        1041,
+        1042,
+        1043,
+        1044,
+        1045,
+        1046,
+        1047,
+        1048,
+        1049,
+        1050,
+        1051,
+        1052,
+        1053,
+        1054,
+        1055,
+        1056,
+        1057,
+        1058,
+        1059,
+        1060,
+        1061,
+        1062,
+        1063,
+        1064,
+        1065,
+        1066,
+        1067,
+        1068,
+        1069,
+        1070,
+        1071,
+        1072,
+        1073,
+        1074,
+        1075,
+        1076,
+        1077,
+        1078,
+        1079,
+        1080,
+        1081,
+        1082,
+        1083,
+        1084,
+        1085,
+        1086,
+        1087,
+        1088,
+        1089,
+        1090,
+        1091,
+        1092,
+        1093,
+        1094,
+        1095,
+        1096,
+        1097,
+        1098,
+        1099,
+        2000,
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008,
+        2009,
+        2010,
+        2011,
+        2012,
+        2013,
+        2014,
+        2015,
+        2016,
+        2017,
+        2018,
+        2019,
+        2020,
+        2021,
+        2022,
+        2023,
+        2024,
+        2025,
+        2026,
+        2027,
+        2028,
+        2029,
+        2030,
+        2031,
+        2032,
+        2033,
+        2034,
+        2035,
+        2036,
+        2037,
+        2038,
+        2039,
+        2040,
+        2041,
+        2042,
+        2043,
+        2044,
+        2045,
+        2046,
+        2047,
+        2048,
+        2049,
+        2050,
+        2051,
+        2052,
+        2053,
+        2054,
+        2055,
+        2056,
+        2057,
+        2058,
+        2059,
+        2060,
+        2061,
+        2062,
+        2063,
+        2064,
+        2065,
+        2066,
+        2067,
+        2068,
+        2069,
+        2070,
+        2071,
+        2072,
+        2073,
+        2074,
+        2075,
+        2076,
+        2077,
+        2078,
+        2079,
+        2080,
+        2081,
+        2082,
+        2083,
+        2084,
+        2085,
+        2086,
+        2087,
+        2088,
+        2089,
+        2090,
+        2091,
+        2092,
+        2093,
+        2094,
+        2095,
+        2096,
+        2097,
+        2098,
+        2099
+      ],
+      "fresh_seed_start": 1000000,
+      "randomize": [
+        [
+          "body_mass",
+          0.01
+        ],
+        [
+          "body_com_height",
+          0.08
+        ],
+        [
+          "body_inertia",
+          0.15
+        ],
+        [
+          "wheel_inertia",
+          0.2
+        ],
+        [
+          "rotor_inertia",
+          0.08
+        ],
+        [
+          "torque_constant",
+          0.03
+        ],
+        [
+          "resistance",
+          0.05
+        ],
+        [
+          "supply_voltage",
+          0.105
+        ],
+        [
+          "gear_efficiency",
+          0.02
+        ]
+      ],
+      "randomize_range": [
+        [
+          "wheel_friction",
+          0.0012,
+          0.0022
+        ],
+        [
+          "coulomb_friction",
+          0.03,
+          0.06
+        ],
+        [
+          "pitch_bias",
+          -0.015,
+          0.015
+        ],
+        [
+          "gearbox_backlash",
+          0.019198621771937627,
+          0.059341194567807204
+        ],
+        [
+          "coupling_backlash",
+          0.0,
+          0.04363323129985824
+        ],
+        [
+          "pwm_tick_phase",
+          0.0,
+          1.0
+        ]
+      ],
+      "latency_range_s": [
+        0.0075,
+        0.0125
+      ],
+      "max_total_backlash": 0.06981317007977318,
+      "robot_seed": 0,
+      "sensitivity_weight": 0.0,
+      "sensitivity_nudge_deg": 0.0057
+    },
+    "learning": {
+      "speed_scale": 0.4,
+      "velocity_error_scale": 0.3,
+      "pitch_scale": 0.3,
+      "pitch_rate_scale": 4.3,
+      "int_v_scale": 0.75,
+      "int_theta_scale": 0.35,
+      "command_scale": 0.6,
+      "output_scale": 0.6,
+      "t_leak_s": 10.0,
+      "integral_limits": [
+        1.0,
+        1.0
+      ],
+      "hidden": [
+        16,
+        16
+      ],
+      "full_cma_max_params": 600,
+      "linear_popsize": 256,
+      "mlp_popsize": 1332,
+      "residual_authority": 0.25,
+      "residual_setpoint_scale": 0.35,
+      "residual_int_theta_scale": 0.09,
+      "reference_pid_file": null,
+      "reference_pid_entry": "PID, hand-tuned",
+      "output_dir": "C:/balancebot_training",
+      "sigma0": [
+        [
+          "linear",
+          2.0
+        ],
+        [
+          "mlp",
+          0.5
+        ],
+        [
+          "warm",
+          0.5
+        ],
+        [
+          "residual",
+          0.5
+        ]
+      ],
+      "warm_linear_std": 0.1,
+      "init_output_std": 0.01,
+      "budget_robot_seconds": [
+        [
+          "linear",
+          1500000000.0
+        ],
+        [
+          "mlp",
+          6000000000.0
+        ],
+        [
+          "warm",
+          6000000000.0
+        ],
+        [
+          "residual",
+          6000000000.0
+        ]
+      ],
+      "checkpoints_robot_seconds": [
+        1000000.0,
+        3000000.0,
+        10000000.0,
+        30000000.0,
+        100000000.0,
+        300000000.0,
+        1000000000.0,
+        3000000000.0,
+        6000000000.0
+      ],
+      "pid_reference_evaluations": 9720,
+      "profiles": [
+        {
+          "name": "quick",
+          "n_train_seeds": 10,
+          "dev_tier": "smoke",
+          "dev_60s": false,
+          "max_generations": 30,
+          "stagnation_checkpoints": 0,
+          "float32": true
+        },
+        {
+          "name": "full",
+          "n_train_seeds": 50,
+          "dev_tier": "dev",
+          "dev_60s": true,
+          "max_generations": 100000,
+          "stagnation_checkpoints": 3,
+          "float32": true
+        }
+      ]
+    },
+    "derived": {
+      "fall_angle_rad": 1.0471975511965976,
+      "max_lean_rad": 0.4363323129985824,
+      "start_pitches_rad": [
+        0.05000019241113355,
+        -0.15000057723340066,
+        0.29999940913754936
+      ],
+      "critical_pitch_gain": 0.26752390800945197,
+      "critical_pitch_gain_kp_floor_robot": 0.2924385541424254,
+      "search_bounds": {
+        "kp": {
+          "low": 0.321682409556668,
+          "high": 30.0,
+          "log_scale": true
+        },
+        "ki": {
+          "low": 0.0,
+          "high": 10.0,
+          "log_scale": false
+        },
+        "kd": {
+          "low": 0.0,
+          "high": 1.0,
+          "log_scale": false
+        },
+        "kv_p": {
+          "low": 0.0,
+          "high": 2.0,
+          "log_scale": false
+        }
+      },
+      "motor_stall_torque_limit": 0.8884123636363633,
+      "motor_no_load_speed_rad_s": 21.839080459770116,
+      "reflected_rotor_inertia": 0.00109,
+      "cost_matched_lqr_gain": [
+        -3.5656033277405137,
+        -3.5115027082164225,
+        -0.3638047765459372,
+        0.0,
+        0.11580938066345266,
+        0.11631830929266954
+      ]
+    }
+  }
+}
