@@ -234,10 +234,22 @@ def test_control_period_must_be_a_whole_number_of_physics_steps():
 
 
 def test_results_record_their_provenance():
+    import json
+    import platform
+    import sys
+
     from tuning import provenance
 
     info = provenance()
-    assert set(info) >= {"git_commit", "git_dirty", "python", "numpy"}
+    assert set(info) >= {"git_commit", "git_dirty", "python", "numpy", "hostname", "gpu"}
+    # Which machine ran it (E2's runs are split between two machines), and its CUDA GPU when torch has one.
+    assert info["hostname"] == (platform.node() or None)
+    torch = sys.modules.get("torch")
+    if torch is not None and torch.cuda.is_available():
+        assert info["gpu"] == torch.cuda.get_device_name(0)
+    # Metadata only: not part of the config, so never config drift.
+    snap = CONFIG.snapshot()
+    assert "hostname" not in json.dumps(snap) and CONFIG.scoring_differences(snap) == []
 
 
 def test_fall_penalty_exceeds_any_non_fall_cost():

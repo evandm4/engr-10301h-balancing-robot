@@ -221,13 +221,14 @@ comparison.
    | Smoke | 5000-5009 (30; the first 10 dev seeds) | 20 s | unit tests, quick checks after each change |
    | Development | 5000-5049 (150) | 60 s, plus 20 s for the overfitting gap only | every hyperparameter, architecture and run-selection decision |
    | Extended dev | 5050-5149 (300) | 60 s (or 20 s) | confirming dev selections on scenarios they weren't picked on; never for selection |
+   | Confirm (LEGO E2, D2) | 6,000,000-6,000,099 (300) | 60 s | confirming E2's dev picks (registered 2026-11-24, because extended dev informed E1); never for selection |
    | Validation | 3000-3099 (300), frozen | 60 s | headline typical-cost numbers, once, on final controllers |
    | Fall-rate | 6000-6999 (3,000), frozen | 60 s | fall rates and the latency sweep, once, at the end |
 
    - Training stays 1-50. Retired or reserved, never reused: 100-109, 1000-1099, 2000-2099 (the
      previous validation set: results seen before the 2026-11-09 latency change), and >= 1,000,000
      (fresh seeds for the fresh-scenario ablations; 1,000,000-1,000,003 and 5,000,000-5,000,332 were
-     spent by the PR #10 review, so new experiments start above 6,000,000).
+     spent by the PR #10 review; 6,000,000-6,000,099 are the confirm tier, so new experiments start at 7,000,000).
    - Validation is scored only with `--final`, in every script: `compare_controllers.py`,
      `run_lqr_comparison.py` and `run_batch_tuning.py` check on dev otherwise and record which.
      Disclosed in the paper: the existing PID and LQR controllers were scored on the current

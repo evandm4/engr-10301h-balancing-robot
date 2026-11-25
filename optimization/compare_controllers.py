@@ -54,6 +54,9 @@ beating it.
 The validation and fall-rate tiers are frozen: used once, on final controllers. The script
 refuses them without --final, and nobody inspects per-scenario results there until every
 controller in the comparison is frozen. Use --tier dev (or smoke) while developing.
+--tier confirm (6,000,000-6,000,099, RobustnessSettings.confirm_seeds; registered for the LEGO E2
+plan's D2) needs no --final, but it is a confirmation tier, not a selection tier: it checks picks
+already made on dev (E2_PLAN.md D3's rule) and never chooses among candidates itself.
 
 From the project folder:
     python optimization/compare_controllers.py --tier dev --policies "L=C:/balancebot_training/pololu/neuroevolution/linear/*/final.npz"
@@ -86,7 +89,7 @@ from balance_sim import load_policy
 from batch_tuning import BatchEvaluator
 from tuning import provenance
 
-TIERS = ("smoke", "dev", "validation", "fall_rate")
+TIERS = ("smoke", "dev", "confirm", "validation", "fall_rate")
 FROZEN = ("validation", "fall_rate")
 SWEEP_BASELINE_MS = 10.0             # the design latency (TimingConfig.latency_s), inside the training range
 SWEEP_LATENCIES_MS = (SWEEP_BASELINE_MS,) + tuple(15.0 + 2.5 * i for i in range(13))   # 10, then 15, 17.5, ..., 45 ms
@@ -513,13 +516,15 @@ def sweep_by_method(entries, curves) -> dict:
 # ---- main -----------------------------------------------------------------------------------
 
 def tier_seeds(robust, tier: str) -> Tuple[int, ...]:
-    return tuple({"smoke": robust.smoke_seeds, "dev": robust.dev_seeds, "validation": robust.validation_seeds,
-                  "fall_rate": robust.fall_rate_seeds}[tier])
+    return tuple({"smoke": robust.smoke_seeds, "dev": robust.dev_seeds, "confirm": robust.confirm_seeds,
+                  "validation": robust.validation_seeds, "fall_rate": robust.fall_rate_seeds}[tier])
 
 
 def main(argv=None) -> Path:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--tier", choices=TIERS, default="dev")
+    parser.add_argument("--tier", choices=TIERS, default="dev",
+                        help="dev (or smoke) while developing; confirm checks dev picks (never selects); "
+                             "validation and fall_rate are frozen")
     parser.add_argument("--final", action="store_true", help="allow the frozen validation and fall-rate tiers")
     parser.add_argument("--existing", default=None,
                         help="comparison.json with the existing controllers (default: the robot's reference "

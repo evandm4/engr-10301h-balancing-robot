@@ -139,9 +139,7 @@ def main():
     if not args.plain:
         robustness = CONFIG.build_robustness()
         if args.seeds is not None:
-            reserved = (*robustness.validation_seeds, *robustness.dev_seeds, *robustness.dev_extended_seeds,
-                        *robustness.fall_rate_seeds, *robustness.retired_seeds)
-            robustness = replace(robustness, train_seeds=first_train_seeds(args.seeds, reserved))
+            robustness = replace(robustness, train_seeds=first_train_seeds(args.seeds, robustness.held_out_seeds))
         if args.no_randomize:
             robustness = replace(robustness, randomize=(), randomize_range=(), latency_range=None)
         if args.sensitivity_weight is not None:
@@ -259,6 +257,7 @@ def main():
     robust_snapshot = asdict(robustness) if robustness else None
     if CONFIG.name == "pololu" and robust_snapshot is not None:
         robust_snapshot.pop("dev_extended_seeds", None)
+        robust_snapshot.pop("confirm_seeds", None)
         robust_snapshot.pop("max_total_backlash", None)
     for s in searches.values():
         save_result(s, folder, extra={"config": snapshot, "robustness": robust_snapshot,

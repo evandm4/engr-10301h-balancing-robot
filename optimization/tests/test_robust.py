@@ -270,14 +270,51 @@ def test_dev_extended_seeds_are_registered_and_disjoint():
             replace(robust, dev_extended_seeds=(bad,))
 
 
+def test_confirm_seeds_are_registered_held_out_and_disjoint():
+    """E2's D2 confirmation tier: registered, never trained on, disjoint from every other tier and the retired
+    and PR #10-spent sets, and not drift for saved runs (NOT_SCORING; Pololu snapshots unchanged)."""
+    from batch_tuning import first_train_seeds
+    from config import POLOLU_CONFIG, load_config
+
+    for cfg in (CONFIG, load_config("legobot")):
+        robust = cfg.build_robustness()
+        assert robust.confirm_seeds == tuple(range(6_000_000, 6_000_100))
+        assert set(robust.confirm_seeds) <= set(robust.held_out_seeds)
+        for other in (robust.train_seeds, robust.smoke_seeds, robust.dev_seeds, robust.dev_extended_seeds,
+                      robust.validation_seeds, robust.fall_rate_seeds, robust.retired_seeds,
+                      range(1_000_000, 1_000_004), range(5_000_000, 5_000_333)):
+            assert not (set(robust.confirm_seeds) & set(other))
+        assert not (set(first_train_seeds(150, robust.held_out_seeds)) & set(robust.confirm_seeds))
+        for bad in (robust.train_seeds[0], robust.dev_seeds[-1], robust.dev_extended_seeds[0],
+                    robust.validation_seeds[0], robust.fall_rate_seeds[0], robust.retired_seeds[0]):
+            with pytest.raises(ValueError):
+                replace(robust, confirm_seeds=(bad,))
+    assert "robustness.confirm_seeds" in CONFIG.NOT_SCORING
+    assert "confirm_seeds" not in POLOLU_CONFIG.snapshot()["robustness"]
+    lego = load_config("legobot")
+    assert tuple(lego.snapshot()["robustness"]["confirm_seeds"]) == tuple(range(6_000_000, 6_000_100))
+    # A saved run from before the tier existed is still comparable.
+    old = lego.snapshot()
+    old["robustness"].pop("confirm_seeds")
+    assert lego.scoring_differences(old) == []
+
+
+def test_held_out_seeds_cover_every_evaluation_tier():
+    robust = CONFIG.build_robustness()
+    held = set(robust.held_out_seeds)
+    for tier in (robust.smoke_seeds, robust.dev_seeds, robust.dev_extended_seeds, robust.confirm_seeds,
+                 robust.validation_seeds, robust.fall_rate_seeds, robust.retired_seeds):
+        assert set(tier) <= held
+    assert not (set(robust.train_seeds) & held)
+
+
 def test_train_seeds_reject_and_skip_retired_seeds():
     from batch_tuning import first_train_seeds
 
     robust = CONFIG.build_robustness()
     with pytest.raises(ValueError, match="retired"):
         replace(robust, train_seeds=(1, 2, 100))
-    reserved = (*robust.validation_seeds, *robust.dev_seeds, *robust.dev_extended_seeds,
-                *robust.fall_rate_seeds, *robust.retired_seeds)
+    reserved = robust.held_out_seeds
     assert first_train_seeds(50, reserved) == tuple(range(1, 51))
     wide = first_train_seeds(150, reserved)
     assert len(wide) == 150 and wide[:99] == tuple(range(1, 100)) and wide[99] == 110

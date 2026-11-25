@@ -38,7 +38,7 @@ the policy-on-robot code). Follows `SOFTWARE_PLAN.md` phase E, `E1_NOTES.md` sec
 | # | Decision | Adopted | Why |
 |---|---|---|---|
 | D1 | How to stop fitting fall luck | **More training seeds, same cost:** `--seeds 150` (450 scenarios) for the PID searches and `--train-seeds 150` for L. A trimmed or median objective is the fallback, only if dev still shows fall-dominated selection | Same score for every method (fairness contract item 4); it cuts fall-count noise by about √3 without changing what is optimized. `first_train_seeds` already steps around the retired 100–109 |
-| D2 | Where to confirm dev picks | **A fresh slice:** 6,000,000–6,000,099 (300 scenarios, 60 s), registered as a tier before use | 5050–5149 already informed E1's "model-based stays a finalist" conclusion, so it's no longer clean for E2's choice |
+| D2 | Where to confirm dev picks | **A fresh slice:** 6,000,000–6,000,099 (300 scenarios, 60 s), registered as a tier before use (done in E2.0: `robustness.confirm_seeds`, `compare_controllers.py --tier confirm`) | 5050–5149 already informed E1's "model-based stays a finalist" conclusion, so it's no longer clean for E2's choice |
 | D3 | Rule for the reference PID | Adopt a tuned finalist only if, on the D2 slice, its paired median-cost ratio to model-based has a 95% CI below 1 **and** McNemar doesn't show more falls. Otherwise model-based | Written down before the runs, so the choice can't follow the results |
 | D4 | Latency range | Keep 7.5–12.5 ms. P3d measures the Pi's real read-to-command delay with the policy; revisit only if that falls outside the range | E1's 10–15 ms result didn't hold out of sample (`E1_NOTES.md` 5.2) |
 | D5 | Which LEGO controllers the final run covers | **Reference PID, model-based, hand-tuned and L.** A, A-warm and B1 on LEGO only if they are frozen by then; otherwise they are out of the LEGO comparison | The frozen tiers run once, on frozen controllers only. A controller added later can't be scored on them without breaking that rule |
@@ -63,15 +63,42 @@ of chaotic noise). Ask before committing; don't push.
 | E2.8 | **Final, once** (D5's controllers, `--final`): `compare_controllers.py --tier validation`, then `--tier fall_rate`, then `--latency-sweep`. Report every L run's validation score, not only the selected one's. No per-scenario inspection before this | S | Headline LEGO numbers |
 | E2.9 | **Record** commands, budgets, wall clock and results in `hardware/legobot/E2_NOTES.md`. Update `SOFTWARE_PLAN.md`'s E2 row and `ml-baselines-plan.md` section 13 | S | — |
 
-## 5. Compute (laptop, RTX 5070 Ti, float64; replace with E2.0's benchmark)
+## 5. Compute (measured in E2.0)
 
-| Job | Basis | Estimate |
-|---|---|---|
-| One PID search, 450 scenarios | E1: 21 min at 150 scenarios, at a 33 W GPU limit | about 1 h |
-| E2.1, 20 searches | | about 13–20 h (overnight runs, or the cluster) |
-| One L run, full profile | 4.2 s/gen in float32 at 150 scenarios (ml-baselines-plan 13), × ~2.7 for float64, × 3 for 450 scenarios. The 1.5 G robot-second cap bounds it at about 650 generations | about 4–6 h to the cap; less if the dev score stagnates |
-| E2.6, 10 L runs | | about 40–60 h: the cluster, or 3 seeds on the laptop (D6) |
-| E2.8 | 300 + 3,000 scenarios × 60 s × 4–5 controllers, NumPy float64 | a few hours |
+Measured 2026-11-24 on the laptop's RTX 5070 Ti Laptop GPU, float64, torch backend, 150 train seeds
+(450 scenarios × 20 s, chaos weight 0, so 450 simulations per evaluation), on AC power. The GPU ran at
+its ~105–110 W enforced limit (99% utilization, ~2.8 GHz) during the searches; E1's 33 W limit didn't
+recur. Raw logs and the two short benchmark runs: the E2.0 agent's scratch folder (not in `results/`).
+
+| Piece | Measured |
+|---|---|
+| Startup: first evaluator call (CUDA graph capture) | about 20 s per run |
+| DE generation (pop 96, midpoint) | 8.9 s |
+| DE generation (pop 24, warm start `--de-pop 6`) | 7.5 s (latency-bound: small batches don't fill the GPU) |
+| CMA-ES generation (pop 120) | 11.9 s |
+| Random search (budget = the larger search's evals, batched) | about 0.06 s/eval (3,600 evals ≈ 3.5–4 min) |
+| End-of-run checks (6 candidates × train/ref/dev in NumPy float64 on the CPU) and plots | about 110 s per run, fixed |
+| L generation (pop 256, linear, float64) | 32 s; 2.304 M robot-s/gen, so 651 generations to the 1.5 G cap |
+| L fixed overhead (startup, checkpoint dev checks) | about 2 min, plus a few minutes over a run's ~9 checkpoints |
+
+| Job | Estimate (laptop alone) |
+|---|---|
+| One PID search, midpoint (DE 31 gens + CMA 30 gens + random 3,600 + checks) | about 16 min |
+| One PID search, warm start (`--de-iters 2 --de-pop 6`, CMA 30 gens + random 3,600 + checks) | about 12 min |
+| E2.1, 20 searches (10 + 10) | about 4.7 h |
+| One L run, full profile, to the cap | about 5.9 h; less if the dev score stagnates |
+| E2.6, 10 L runs | about 59 h; 3 seeds ≈ 18 h (D6) |
+| E2.8 | 300 + 3,000 scenarios × 60 s × 4–5 controllers, NumPy float64: a few hours |
+
+Basis of the earlier estimates, for comparison: E1 took 21 min per search at 150 scenarios under a 33 W limit
+(the guess was about 1 h at 450); L was guessed at 4.2 s/gen float32 × 2.7 × 3 ≈ 34 s/gen, which held (32 s).
+
+One job per GPU: two concurrent 120-candidate evaluations took 24.5 s each against 11.9 s solo, which is
+no gain in throughput (the GPU is already saturated at 450 scenarios), so queue jobs rather than overlap them.
+
+A second machine, Evan's desktop (RTX 3080 12 GB, Ryzen 7 5700X3D), will share the E2.1 and E2.6 runs over SSH,
+so wall clock divides roughly in two. Each run records its `hostname` and `gpu` in its provenance (metadata, not
+config drift), so results show which machine produced them.
 
 ## 6. Hardware track, in parallel
 

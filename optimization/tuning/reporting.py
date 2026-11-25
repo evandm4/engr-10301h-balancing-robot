@@ -13,7 +13,10 @@ from .optimizers import TuningResult
 
 def provenance() -> dict:
     """What produced a result: the git commit (and whether the tree had uncommitted
-    changes), Python, and the versions of the numerical libraries in use."""
+    changes), Python, the versions of the numerical libraries in use, and the machine: its
+    hostname and the CUDA GPU (None unless torch is loaded with CUDA), since runs of one
+    search are split across machines (E2: the laptop's RTX 5070 Ti and the desktop's RTX 3080).
+    Metadata only: none of it is in snapshot()'s config, so it never counts as config drift."""
     root = Path(__file__).resolve().parents[2]
 
     def git(*args):
@@ -25,14 +28,14 @@ def provenance() -> dict:
 
     status = git("status", "--porcelain", "--untracked-files=no")
     info = {"git_commit": git("rev-parse", "HEAD"), "git_dirty": None if status is None else bool(status),
-            "python": platform.python_version(), "platform": platform.platform()}
+            "python": platform.python_version(), "platform": platform.platform(),
+            "hostname": platform.node() or None}
     for name in ("numpy", "scipy", "cma", "torch"):
         module = sys.modules.get(name)
         if module is not None:
             info[name] = getattr(module, "__version__", None)
     torch = sys.modules.get("torch")
-    if torch is not None and torch.cuda.is_available():
-        info["gpu"] = torch.cuda.get_device_name(0)
+    info["gpu"] = torch.cuda.get_device_name(0) if torch is not None and torch.cuda.is_available() else None
     return info
 
 
@@ -58,7 +61,7 @@ def save_result(result: TuningResult, folder, extra: dict = None) -> Path:
         extra = dict(extra)
         if robot_name == "pololu" and isinstance(extra.get("robustness"), dict):
             extra["robustness"] = {k: v for k, v in extra["robustness"].items()
-                                   if k not in ("dev_extended_seeds", "max_total_backlash")}
+                                   if k not in ("dev_extended_seeds", "confirm_seeds", "max_total_backlash")}
         summary.update(extra)
     json_path = folder / f"{result.method}.json"
     json_path.write_text(json.dumps(summary, indent=2))

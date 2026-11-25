@@ -173,9 +173,7 @@ def main():
     if args.seeds is not None:
         from batch_tuning import first_train_seeds
 
-        reserved = (*robustness.validation_seeds, *robustness.dev_seeds, *robustness.dev_extended_seeds,
-                    *robustness.fall_rate_seeds, *robustness.retired_seeds)
-        robustness = replace(robustness, train_seeds=first_train_seeds(args.seeds, reserved))
+        robustness = replace(robustness, train_seeds=first_train_seeds(args.seeds, robustness.held_out_seeds))
     # The validation seeds are frozen (docs/ml-baselines-plan.md 2.5): without --final, "validation"
     # below and the latency sweep run on the development seeds, and comparison.json says so.
     robustness, checked_on = checking_tier(robustness, args.final)
@@ -330,6 +328,7 @@ def main():
     robust_dict = asdict(robustness)
     if CONFIG.name == "pololu":
         robust_dict.pop("dev_extended_seeds", None)
+        robust_dict.pop("confirm_seeds", None)
         robust_dict.pop("max_total_backlash", None)
     (folder / "comparison.json").write_text(json.dumps({
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),

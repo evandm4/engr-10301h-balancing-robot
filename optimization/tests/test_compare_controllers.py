@@ -92,6 +92,19 @@ def test_frozen_tiers_need_final(tmp_path):
         main(["--tier", "validation", "--out", str(tmp_path)])
 
 
+def test_confirm_tier_maps_to_its_seeds_and_is_not_frozen():
+    from compare_controllers import FROZEN, TIERS, tier_seeds
+
+    robust = CONFIG.build_robustness()
+    assert "confirm" in TIERS and "confirm" not in FROZEN
+    assert tier_seeds(robust, "confirm") == tuple(range(6_000_000, 6_000_100))
+    assert tier_seeds(robust, "dev") == robust.dev_seeds and tier_seeds(robust, "smoke") == robust.smoke_seeds
+    assert tier_seeds(robust, "validation") == robust.validation_seeds
+    assert tier_seeds(robust, "fall_rate") == robust.fall_rate_seeds
+    seen = [set(tier_seeds(robust, t)) for t in TIERS if t != "smoke"]   # smoke lies inside dev, on purpose
+    assert all(not (a & b) for i, a in enumerate(seen) for b in seen[i + 1:])
+
+
 @pytest.mark.skipif(CONFIG.reference_is_provisional, reason="needs a tuned reference PID (LEGO: after E2); "
                     "test_legobot_learning.py runs compare_controllers under legobot")
 def test_end_to_end_on_smoke(tmp_path):
