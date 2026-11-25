@@ -2,11 +2,12 @@
 (docs/ml-baselines-plan.md 13). Re-run when the reference PID changes (after E2).
 
 Runs, in the one-robot reference simulator with the LEGO models (IMU filter, slow-PWM voltage drive):
-  * the robot's reference PID (config.reference_pid_gains: the hand-tuned PID until E2), recording
+  * the robot's reference PID (config.reference_pid_gains: the model-based PID since E2.3), recording
     its pitch setpoint and pitch integral each tick;
   * its PID-equivalent linear policy (leaky, freeze-on-saturation integrators), recording the
     raw OBSERVATIONS each tick.
-Dev seeds only (5000-...), the 60 s validation scenario, the nominal robot.
+Dev seeds only (5000-...), the 60 s validation scenario, the nominal robot. Runs that fall are counted but left\r
+out of the statistics (E2.4: one L-PID dev run falls; its last ticks would set the maxima).
 
     python hardware/legobot/legobot_learning_scales.py [N_DEV_SEEDS]      (default 50: about 2.5 min)
 """
@@ -58,7 +59,8 @@ for pitch, seed in ev.scenarios(seeds):
     r = Rec(ev.controller(gains), lambda c, u: (c.pitch_pid.setpoint, c.pitch_pid._integral, u))
     run = ev.run_controller(r, pitch, seed)
     pid_falls += run.fell
-    pid_rows += r.rows
+    if not run.fell:          # a fall's last ticks are not the closed loop's range
+        pid_rows += r.rows
 pid_rows = np.abs(np.array(pid_rows))
 
 # 2. Its PID-equivalent linear policy, recording the raw observations it computes.
@@ -84,11 +86,12 @@ for pitch, seed in ev.scenarios(seeds):
     r = Rec(c, grab_obs)
     run = ev.run_controller(r, pitch, seed)
     l_falls += run.fell
-    obs_rows += r.rows
+    if not run.fell:
+        obs_rows += r.rows
 obs = np.abs(np.array(obs_rows))
 
 print(f"LEGO, {len(ev.scenarios(seeds))} runs of {ev.config.duration:g} s (dev seeds {seeds[0]}-{seeds[-1]}), "
-      f"nominal robot; falls: PID {pid_falls}, L-PID {l_falls}")
+      f"nominal robot; falls: PID {pid_falls}, L-PID {l_falls} (statistics over the runs that stay up)")
 print(f"{'observation':<16}{'max':>10}{'p99':>10}{'p90':>10}")
 for i, name in enumerate(OBSERVATIONS):
     print(f"{name:<16}{obs[:, i].max():>10.4f}{np.quantile(obs[:, i], 0.99):>10.4f}{np.quantile(obs[:, i], 0.90):>10.4f}")

@@ -22,7 +22,13 @@ CONFIG = load_config("pololu")      # the Pololu robot, whatever ROBOT is set to
 def test_lego_has_its_own_learning_scales():
     assert LEGO.learning != CONFIG.learning
     assert LEGO.learning.speed_scale == 0.4                  # its 0.40 m/s cruise, not the Pololu 1 m/s
-    assert LEGO.learning.command_scale == LEGO.learning.output_scale == 0.6
+    assert LEGO.learning.command_scale == LEGO.learning.output_scale == 0.4   # E2.4, model-based PID p99
+    # E2.4 search schedule (E2_NOTES.md), LEGO only: no stagnation stop, dense checkpoints, its own PID budget.
+    assert LEGO.learning.profile("full").stagnation_checkpoints == 0
+    assert CONFIG.learning.profile("full").stagnation_checkpoints == 3
+    assert LEGO.learning.profile("quick") == CONFIG.learning.profile("quick")
+    assert LEGO.learning.pid_reference_evaluations == 2976 + 3600 != CONFIG.learning.pid_reference_evaluations
+    assert {2e8, 4.5e8, 1.35e9} <= set(LEGO.learning.checkpoints_robot_seconds)
     # The search settings are shared: only the scales and the reference differ.
     assert LEGO.learning.hidden == CONFIG.learning.hidden
     assert LEGO.learning.mlp_popsize == CONFIG.learning.mlp_popsize

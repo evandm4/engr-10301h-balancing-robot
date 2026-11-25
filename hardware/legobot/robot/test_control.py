@@ -519,7 +519,7 @@ def test_robot_code_runs_on_the_deployed_layout_without_scipy_or_tuning(tmp_path
             "robot.sim_hw", "robot.measure.fit"} <= set(data["modules"])
     assert data["sim_reason"] == "done"
     committed = sorted(p.name for p in (root / "results" / "legobot" / "policies").iterdir() if p.is_dir())
-    assert sorted(data["bundles"]) == committed and {"l_pid", "a_warm_zero", "b1_zero", "quick_l"} <= set(committed)
+    assert sorted(data["bundles"]) == committed and {"l_pid", "a_warm_zero", "b1_zero"} <= set(committed)
     for name, b in data["bundles"].items():
         snapshot = json.loads((root / "results" / "legobot" / "policies" / name / "snapshot.json").read_text())
         laptop = cfg.scoring_differences(snapshot["config"])     # here, with tuning and scipy importable
@@ -623,13 +623,14 @@ def synthetic_bundles(tmp_path_factory, cfg):
 
 
 # ---- 1. L-PID through robot code ~= PID through robot code -----------------------------------------
-def test_l_pid_through_robot_code_is_close_to_hand_pid(tmp_path, cfg, synthetic_bundles):
-    """P6: PID-equivalent linear policy (leaky, frozen integrators) vs hand-tuned PID through sim_hw."""
+def test_l_pid_through_robot_code_is_close_to_reference_pid(tmp_path, cfg, synthetic_bundles):
+    """P6: PID-equivalent linear policy (leaky, frozen integrators) vs the reference PID through sim_hw. Since E2.3
+    the reference is the model-based PID (--controller model), and the synthetic bundles sit on it."""
     from balance_sim import load_trajectory
 
     d_pid, d_lin = tmp_path / "pid", tmp_path / "l_pid"
     common = ["--sim", "--sim-noise", "--sim-pitch", "0.02", "--seconds", "10"]
-    r_pid_reason = balance.main(common + ["--controller", "hand", "--outdir", str(d_pid), "--label", "pid"])
+    r_pid_reason = balance.main(common + ["--controller", "model", "--outdir", str(d_pid), "--label", "pid"])
     r_lin_reason = balance.main(common + ["--controller", str(synthetic_bundles["l_pid"]),
                                           "--outdir", str(d_lin), "--label", "l_pid"])
     assert r_pid_reason == "done" and r_lin_reason == "done"
@@ -655,7 +656,7 @@ def test_l_pid_through_robot_code_is_close_to_hand_pid(tmp_path, cfg, synthetic_
 
 # ---- 2. B1 with zero output layer == reference PID bit-for-bit (catches Problem 1) -----------------
 @pytest.mark.parametrize("goal, seconds", [("still", "5"), ("scenario", "15")])
-def test_b1_zero_equals_hand_pid_bit_for_bit(tmp_path, cfg, synthetic_bundles, goal, seconds):
+def test_b1_zero_equals_reference_pid_bit_for_bit(tmp_path, cfg, synthetic_bundles, goal, seconds):
     """P6 + Problem 1: residual B1 with zero output layer equals the reference PID bit-for-bit on both
     --goal still and --goal scenario (goal must reach PolicyController.base, not just PolicyController)."""
     from balance_sim import load_trajectory
@@ -669,7 +670,7 @@ def test_b1_zero_equals_hand_pid_bit_for_bit(tmp_path, cfg, synthetic_bundles, g
 
     d_pid, d_b1 = tmp_path / f"pid_{goal}", tmp_path / f"b1_{goal}"
     common = ["--sim", "--sim-noise", "--goal", goal, "--seconds", seconds]
-    reason_pid = balance.main(common + ["--controller", "hand", "--outdir", str(d_pid), "--label", "pid"])
+    reason_pid = balance.main(common + ["--controller", "model", "--outdir", str(d_pid), "--label", "pid"])  # E2.3 ref.
     reason_b1 = balance.main(common + ["--controller", str(synthetic_bundles["b1_zero"]),
                                        "--outdir", str(d_b1), "--label", "b1_zero"])
     assert reason_pid == "done" and reason_b1 == "done"
@@ -741,6 +742,9 @@ def test_closed_loop_balances_and_tracks_policy_by_name(tmp_path, cfg, synthetic
         assert Path(b["bundle_dir"]).resolve() == repo_l_pid.resolve()
 
 
+@pytest.mark.skip(reason="quick_l retired at E2.4 (E2_NOTES.md): it was trained under the pre-E2 LEARNING (hand-tuned "
+                  "reference, provisional scales), so it can't pass the strict config check and can't be honestly "
+                  "re-exported; the E2 L bundle replaces it")
 def test_quick_l_exported_bundle_loads_runs_and_replays(tmp_path, cfg, monkeypatch):
     """P1 + P2a-P2d + P4b + P2-3: the committed quick_l bundle (a real trained, exported policy) passes the strict
     config check and the golden self-test, runs closed loop in still and --goal scenario without falling, stays

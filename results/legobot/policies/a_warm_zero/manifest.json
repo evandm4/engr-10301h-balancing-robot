@@ -5,9 +5,9 @@
   "synthetic": "a_warm_zero",
   "n_params": 492,
   "multiply_adds_per_tick": 459,
-  "sha256": "6ba4ae87fbc7d019dcc89dc16831a2eaaee9cf867724fec5bdb974f9d27ec5fe",
+  "sha256": "ff3b14cdddb8760ffa6ea832271d89f276789891f69f6d332ed121346e0f7493",
   "source_run": null,
-  "git_commit": "3ae6bc35cd23c773f70c437de6326a856ab2374d-dirty",
+  "git_commit": "8f399cc972820d54d6bbd0f5c3c7a31cac504c44-dirty",
   "dev_score": null,
   "source_path": null,
   "max_torque": 0.9,
@@ -44,10 +44,10 @@
   "envelope_falls": 0,
   "golden_saturated_ticks": 0,
   "files_sha256": {
-    "final.npz": "6ba4ae87fbc7d019dcc89dc16831a2eaaee9cf867724fec5bdb974f9d27ec5fe",
-    "snapshot.json": "f5b99acbbb5ba8e4d77b76004c2655fac9a3bbe79f06449d4e27838707b50264",
-    "summary.json": "190af7231d26b63729da1c297a2fd7f7d2fb5f54546555b81c3ad3ff8e7d5349",
-    "golden.npz": "f51f8c11e7aee3b7e01196caf8dad618e90af6a58b5ed798f0186a5337a36db4",
-    "envelope.json": "649d7dcd3c40689af218d9b25b3fcb692ae2ad8aceee6633a0dfc371e8850d67"
+    "final.npz": "ff3b14cdddb8760ffa6ea832271d89f276789891f69f6d332ed121346e0f7493",
+    "snapshot.json": "c0d45f28beac41cac7863f8a173028347be73aae5206bbc5a68226b799be2870",
+    "summary.json": "4be214f11d02896f7b38a83edb51fbcc25ba6d376ff110858d76ccb8ee64312d",
+    "golden.npz": "a7be489213b322061607d9f63e85ffe14ca4c14c62f399c3089041a46880e661",
+    "envelope.json": "647d261b1fe5bfb4d24f9f85efe5d420f5d2137a2878c62580281f262f23af8f"
   }
 }

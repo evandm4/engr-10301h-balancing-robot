@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-11-25 09:26:16",
+  "timestamp": "2026-11-25 10:40:57",
   "provenance": {
-    "git_commit": "37aac5e8fc47b11d557ca7627c27ed78ca1db285",
-    "git_dirty": false,
+    "git_commit": "8f399cc972820d54d6bbd0f5c3c7a31cac504c44",
+    "git_dirty": true,
     "python": "3.12.10",
     "platform": "Windows-11-10.0.26300-SP0",
     "hostname": "Evans-G16",
@@ -27,7 +27,7 @@
     ]
   },
   "score": {
-    "train": "BatchEvaluator numpy float64, robust scoring, default training seeds 1-50 (2.8 s)",
+    "train": "BatchEvaluator numpy float64, robust scoring, default training seeds 1-50 (2.9 s)",
     "dev": "copied from the selection: seeds 5000-5049 x 3 tilts, 60 s, numpy float64"
   },
   "results": {
@@ -1974,11 +1974,11 @@
       "speed_scale": 0.4,
       "velocity_error_scale": 0.3,
       "pitch_scale": 0.3,
-      "pitch_rate_scale": 4.3,
-      "int_v_scale": 0.75,
-      "int_theta_scale": 0.35,
-      "command_scale": 0.6,
-      "output_scale": 0.6,
+      "pitch_rate_scale": 4.4,
+      "int_v_scale": 0.45,
+      "int_theta_scale": 0.23,
+      "command_scale": 0.4,
+      "output_scale": 0.4,
       "t_leak_s": 10.0,
       "integral_limits": [
         1.0,
@@ -1992,10 +1992,10 @@
       "linear_popsize": 256,
       "mlp_popsize": 1332,
       "residual_authority": 0.25,
-      "residual_setpoint_scale": 0.35,
-      "residual_int_theta_scale": 0.09,
-      "reference_pid_file": null,
-      "reference_pid_entry": "PID, hand-tuned",
+      "residual_setpoint_scale": 0.42,
+      "residual_int_theta_scale": 0.08,
+      "reference_pid_file": "results/legobot/reference_pid/comparison.json",
+      "reference_pid_entry": "PID, model-based",
       "output_dir": "C:/balancebot_training",
       "sigma0": [
         [
@@ -2041,12 +2041,18 @@
         10000000.0,
         30000000.0,
         100000000.0,
+        200000000.0,
         300000000.0,
+        450000000.0,
+        600000000.0,
+        750000000.0,
+        900000000.0,
         1000000000.0,
-        3000000000.0,
-        6000000000.0
+        1200000000.0,
+        1350000000.0,
+        3000000000.0
       ],
-      "pid_reference_evaluations": 9720,
+      "pid_reference_evaluations": 6576,
       "profiles": [
         {
           "name": "quick",
@@ -2063,7 +2069,7 @@
           "dev_tier": "dev",
           "dev_60s": true,
           "max_generations": 100000,
-          "stagnation_checkpoints": 3,
+          "stagnation_checkpoints": 0,
           "float32": true
         }
       ]

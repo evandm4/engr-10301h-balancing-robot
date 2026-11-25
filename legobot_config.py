@@ -337,41 +337,58 @@ SEARCH = replace(SearchConfig(), ki_max=10.0, kv_p_max=2.0)
 # config.py's; what differs is what the inputs are divided by, sized as config.py's were: from the
 # closed loop of this robot's PID and its PID-equivalent linear policy (leaky integrators), in the
 # one-robot simulator with this robot's models (IMU filter, slow-PWM pulse-density drive, backlash),
-# the 60 s scenario, the nominal robot, all 50 dev seeds x 3 tilts, no falls. Re-measured 2026-11-24
-# after the Round-2 fixes with the hand-tuned gains (0/150 falls on both PID and L-PID), so they are
-# provisional until E2 picks its reference PID (hardware/legobot/legobot_learning_scales.py):
+# the 60 s scenario, the nominal robot, all 50 dev seeds x 3 tilts. Re-measured 2026-11-25 (E2.4)
+# with the frozen reference, the model-based PID (falls: PID 0/150, L-PID 1/150; statistics over the
+# runs that stay up; hardware/legobot/legobot_learning_scales.py, E2_NOTES.md):
 #   quantity          max     p99     p90     scale
-#   v_meas            0.815   0.529   0.351   0.4   (the goal's 0.40 m/s cruise; also the goal's scale)
-#   theta_meas        0.275   0.120   0.062   0.3   (CostConfig.pitch_limit_rad, as on the Pololu robot)
-#   theta_dot_meas    4.28    2.53    1.77    4.3   (peak, recovering from the 0.30 rad start)
-#   goal - v_meas     0.684   0.289   0.176   0.3   (p99. The Bryson limit, 0.06 m/s, fits the Pololu
-#                                                    robot but would put p90 inputs at 3 and peaks at 11)
-#   int_v             0.731   0.694   0.656   0.75  (peak; mostly the standstill offset: bias x T_leak)
-#   int_theta         0.347   0.330   0.311   0.35  (peak)
-#   torque command    0.900   0.574   0.382   0.6   (p99, for the command history and the output. Here
+#   v_meas            0.854   0.508   0.343   0.4   (the goal's 0.40 m/s cruise; also the goal's scale)
+#   theta_meas        0.474   0.120   0.064   0.3   (CostConfig.pitch_limit_rad, as on the Pololu robot)
+#   theta_dot_meas    4.37    2.22    1.53    4.4   (peak, recovering from the 0.30 rad start)
+#   goal - v_meas     0.764   0.281   0.159   0.3   (p99. The Bryson limit, 0.06 m/s, fits the Pololu
+#                                                    robot but would put p90 inputs at 3 and peaks at 13)
+#   int_v             0.453   0.387   0.343   0.45  (peak; mostly the standstill offset: bias x T_leak)
+#   int_theta         0.231   0.197   0.174   0.23  (peak)
+#   torque command    0.891   0.412   0.266   0.4   (p99, for the command history and the output. Here
 #                                                    the Bryson limit, 0.09 N m, is 10% of max_torque by
-#                                                    design, and typical commands are 4-10x it: this
+#                                                    design, and typical commands are 3-5x it: this
 #                                                    voltage-mode drive overcomes 0.03-0.055 N m of
 #                                                    Coulomb friction plus pulse-density chatter)
-#   PID setpoint      0.342   0.145   0.087   0.35  (residual input; peak)
-#   PID pitch int.    0.092   0.053   0.036   0.09  (residual input; peak)
+#   PID setpoint      0.423   0.144   0.082   0.42  (residual input; peak)
+#   PID pitch int.    0.078   0.020   0.012   0.08  (residual input; peak)
+# (The pre-E2 hand-tuned measurement used 4.3 / 0.75 / 0.35 / 0.6 / 0.35 / 0.09.)
 # Reference PID (E2.3, hardware/legobot/E2_PLAN.md D3, E2_NOTES.md): frozen 2026-11-25 from the E2.2
 # selection (results/legobot/e2_selection/20261125-092022). No tuned PID beat the model-based one on
 # the confirm slice by D3 (a), so the reference is "PID, model-based"; B1 sits on it.
 # results/legobot/reference_pid/comparison.json (hardware/legobot/e2_freeze_reference.py) holds it with
 # the hand-tuned PID alongside. No LQR on this robot (A4_BASELINES.md).
+# Search schedule (E2.4, E2_NOTES.md; fixed before any L run). These are LEGO-only overrides; the
+# Pololu defaults stay as they are.
+#   - The full profile never stops on stagnation (stagnation_checkpoints=0). With 150 train seeds,
+#     the default checkpoint marks fall at gens ~0, 1, 4, 13, 43, 130, 434, 651. A patience of 3
+#     on the fall-noisy dev60 score could stop a run at gen ~130, which is 20% of the budget.
+#   - The checkpoints are denser (every 1-1.5e8 robot-s above 1e8), because final.npz is picked
+#     only from checkpoints. 3e9 is kept for the 6e9 A/B budgets. Marks at or above a method's
+#     budget are dropped, and the budget itself and the PID's budget are added (run_neuroevolution).
+#   - pid_reference_evaluations is this robot's E2.1 PID search: DE 2,976 + CMA-ES 3,600
+#     (midpoint recipe, every E2.1 run). The 9,720 is the Pololu robot's.
+_BASE_LEARNING = LearningConfig()
 LEARNING = replace(
-    LearningConfig(),
+    _BASE_LEARNING,
+    checkpoints_robot_seconds=(1e6, 3e6, 1e7, 3e7, 1e8, 2e8, 3e8, 4.5e8, 6e8, 7.5e8, 9e8, 1e9, 1.2e9, 1.35e9,
+                               3e9),
+    pid_reference_evaluations=2976 + 3600,
+    profiles=tuple(replace(p, stagnation_checkpoints=0) if p.name == "full" else p
+                   for p in _BASE_LEARNING.profiles),
     speed_scale=0.4,
     velocity_error_scale=0.3,
     pitch_scale=0.3,
-    pitch_rate_scale=4.3,
-    int_v_scale=0.75,
-    int_theta_scale=0.35,
-    command_scale=0.6,
-    output_scale=0.6,
-    residual_setpoint_scale=0.35,
-    residual_int_theta_scale=0.09,
+    pitch_rate_scale=4.4,
+    int_v_scale=0.45,
+    int_theta_scale=0.23,
+    command_scale=0.4,
+    output_scale=0.4,
+    residual_setpoint_scale=0.42,
+    residual_int_theta_scale=0.08,
     reference_pid_file="results/legobot/reference_pid/comparison.json",
     reference_pid_entry="PID, model-based",
 )

@@ -1,0 +1,41 @@
+{
+  "gains": [
+    1.9796769192699448,
+    5.236019498934128,
+    0.1509013128652891,
+    0.5152520198827069
+  ],
+  "reference_pid_file": "results/legobot/reference_pid/comparison.json",
+  "reference_pid_entry": "PID, model-based",
+  "bound": 0.01,
+  "train": {
+    "scenarios": 150,
+    "pid_falls": 5,
+    "l_pid_falls": 10,
+    "falls_differ_on": 11,
+    "both_up": 137,
+    "pid_objective": 72.45151486243728,
+    "l_pid_objective": 128.18964164515293,
+    "objective_ratio_minus_1": 0.7693162370523914,
+    "both_up_ratio_of_means_minus_1": -0.004773648857878898,
+    "both_up_mean_ratio_minus_1": 0.0027211965480726796,
+    "both_up_median_ratio_minus_1": 0.0033857006171575943,
+    "both_up_max_abs_ratio_minus_1": 0.44760628396833524
+  },
+  "dev": {
+    "scenarios": 150,
+    "pid_falls": 6,
+    "l_pid_falls": 5,
+    "falls_differ_on": 3,
+    "both_up": 143,
+    "pid_objective": 106.8422390625144,
+    "l_pid_objective": 94.02811728821032,
+    "objective_ratio_minus_1": -0.11993497971159517,
+    "both_up_ratio_of_means_minus_1": -0.001719612412260374,
+    "both_up_mean_ratio_minus_1": 0.0011327749458893699,
+    "both_up_median_ratio_minus_1": -0.00023550625308266238,
+    "both_up_max_abs_ratio_minus_1": 0.1514750204169717
+  },
+  "pass": true,
+  "elapsed_s": 21.6
+}

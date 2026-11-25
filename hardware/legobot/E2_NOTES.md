@@ -192,9 +192,13 @@ Output: `results/legobot/reference_pid/comparison.json`, in `read_pid_comparison
 
 Train objective: BatchEvaluator, NumPy float64, robust scoring on the default training seeds (what the policy gates
 check against). Dev is copied from the selection. The confirm stats are stored for the reference only. No
-validation (3000–3099) or fall-rate (6000–6999) seed was used. The file embeds the config snapshot at freeze time,
-which still shows the pre-E2.3 LEARNING (`reference_pid_file: null`, hand-tuned scales). Scoring doesn't depend on
-LEARNING.
+validation (3000–3099) or fall-rate (6000–6999) seed was used. The file was re-written at E2.4, after the final
+LEARNING edits, with identical scores. So its config snapshot is the launch config: reference file set, E2.4 scales,
+`pid_reference_evaluations` 6576, full-profile stagnation 0. Scoring doesn't depend on LEARNING.
+
+The 72.4515 (5/150) is on the **default** 50 train seeds × 3 tilts. On the **150 E2 train seeds** (1–99 + 110–160
+× 3 tilts, as in E2.1 and the L runs), MB scores **92.8897 with 20/450 falls**. That is NumPy float64, matching E2.1's
+`model-based` train_objective of 92.88973 to every printed digit (verified 2026-11-25).
 
 Tests generalized from the Pololu-only `"PID, ML-tuned"` to `CONFIG.learning.reference_pid_entry`
 (test_policy, test_linear_stability, test_compare_controllers). test_legobot_learning now asserts the frozen
@@ -218,3 +222,82 @@ skip under `ROBOT=legobot`; LEGO-specific triage is listed below.
 
 The committed bundles (`l_pid`, `a_warm_zero`, `b1_zero`, `quick_l`) embed the old LEARNING. So at the E2.3 commit
 the robot deployed-layout test is red until E2.4 re-exports them.
+
+## E2.4: scales re-measured, gate (b), bundles re-exported
+
+    ROBOT=legobot python hardware/legobot/legobot_learning_scales.py     # MB gains, dev 5000–5049 × 3, 60 s, nominal
+
+`legobot_learning_scales.py` now leaves runs that fall out of the statistics (a fall's last ticks are off-scale by
+construction) and prints the fall counts. With the model-based PID: PID 0/150 falls, L-PID 1/150. Statistics are over
+the runs that stay up.
+
+| Quantity | max | p99 | p90 | Old scale (hand-tuned) | New scale | Rule |
+|---|---:|---:|---:|---:|---:|---|
+| v_meas | 0.854 | 0.508 | 0.343 | 0.4 | 0.4 | goal cruise |
+| theta_meas | 0.474 | 0.120 | 0.064 | 0.3 | 0.3 | pitch cost limit |
+| theta_dot_meas | 4.37 | 2.22 | 1.53 | 4.3 | **4.4** | peak |
+| goal − v_meas | 0.764 | 0.281 | 0.159 | 0.3 | 0.3 | p99 |
+| int_v | 0.453 | 0.387 | 0.343 | 0.75 | **0.45** | peak |
+| int_theta | 0.231 | 0.197 | 0.174 | 0.35 | **0.23** | peak |
+| torque command / output | 0.891 | 0.412 | 0.266 | 0.6 | **0.4** | p99 |
+| PID setpoint (residual) | 0.423 | 0.144 | 0.082 | 0.35 | **0.42** | peak |
+| PID pitch integral (residual) | 0.078 | 0.020 | 0.012 | 0.09 | **0.08** | peak |
+
+The model-based PID has a much smaller integral state (int_v 0.45 vs 0.73), because ki is 5.2 vs 1.5 with kv_p
+similar. It also commands less torque at p99 (0.41 vs 0.57 N m). `integral_limits` are in raw units (1.0), not
+scaled, so the L-PID behaviour and gate (b) don't depend on these scales. test_legobot_learning asserts command =
+output = 0.4.
+
+**Gate (b)**, `ROBOT=legobot python hardware/legobot/e2_gate_b.py --out results/legobot/reference_pid/gate_b.json`
+(NumPy float64, 21.6 s). Bound stated before measuring: |ratio of means − 1| < 1% on the scenarios where both stay up.
+
+| Tier | PID falls | L-PID falls | Falls differ | Both up | Ratio of means − 1 | Median ratio − 1 | Objective PID / L-PID |
+|---|---:|---:|---:|---:|---:|---:|---|
+| train (default 1–50 × 3, 20 s) | 5 | 10 | 11 | 137 | **−0.48%** | +0.34% | 72.45 / 128.19 |
+| dev (5000–5049 × 3, 60 s) | 6 | 5 | 3 | 143 | **−0.17%** | −0.02% | 106.84 / 94.03 |
+
+**PASS** on both tiers. Where both stay up, L-PID tracks the PID to well under 1%. The falls differ on 11 train and 3
+dev scenarios. These are the same fall-edge coin flips as E2.2: the leaky integrators and float order flip marginal
+scenarios both ways, so dev comes out 6 → 5 and train 5 → 10. The objective ratio follows those flips (train +77%,
+dev −12%), which is why the LEGO gate is defined on the both-up set (E2.3 triage).
+
+**Bundles.** `export_policy.py --synthetic l_pid | a_warm_zero | b1_zero` were re-exported under the E2.4 LEARNING
+and the MB reference. Each has 400 golden ticks and a 15-run envelope with 0 falls.
+- l_pid: 10 params, sha256 00897c7e8e3e…
+- a_warm_zero: 492 params, sha256 ff3b14cdddb8…
+- b1_zero: 513 params, sha256 9ab24b1e9dc0…
+
+`quick_l` was retired (`git rm`). It was trained under the pre-E2 LEARNING, so the Pi's strict config check refuses it,
+and its robot test is now skipped. The robot tests for L-PID and b1_zero compare against `--controller model`, the
+frozen reference.
+
+### E2.4: L search schedule and throughput (pre-registered before any L run)
+
+Every item below was fixed before any E2 L run started. None of it was chosen on L results.
+
+- **No stagnation stop.** In LEGO `LEARNING` only, the full profile has `stagnation_checkpoints=0`; the Pololu
+  default of 3 is unchanged. With 150 train seeds (2.304 M robot-s per generation), the default marks fall at
+  gens ~0, 1, 4, 13, 43, 130, 434 and 651. A patience of 3 on the fall-noisy dev60 score (E2.2) could stop a run at
+  gen ~130, which is 20% of the budget, and a stopped run can't be usefully resumed. So every L run goes to the
+  1.5e9 budget. Within-run selection still keeps the best-dev checkpoint.
+- **Denser checkpoints.** `checkpoints_robot_seconds = (1e6, 3e6, 1e7, 3e7, 1e8, 2e8, 3e8, 4.5e8, 6e8, 7.5e8,
+  9e8, 1e9, 1.2e9, 1.35e9, 3e9)`. final.npz is picked only from checkpoints, so the old gaps (gens ~131–433 and
+  435–650 unsaved) could lose a peak. This costs ~2 min of dev60 scoring per seed. For L, marks at or above 1.5e9 are
+  dropped and the budget is added. The 3e9 mark is kept for the 6e9 A/B budgets.
+- **PID-budget checkpoint.** `pid_reference_evaluations = 6576`: DE 2,976 + CMA-ES 3,600, the midpoint recipe of
+  every E2.1 run (the model-based-x0 runs used DE 72 + CMA 3,600). The 9,720 was Pololu's count. At 450 scenarios ×
+  20 s, the "L at the PID's budget" mark is 59.18 M robot-s.
+- **`--max-batch 115200`** (= 256 candidates × 450 scenarios) on every L run, both machines, all 10 seeds. At the
+  default 200,000, `_simulate_policy_chunk` pads 256 candidates up to 444, so 42% of the GPU work is dummies
+  (evaluation.py:389). The orchestrator's laptop test (run-seed 0, `--stop-after 3`, linear/full/float64/150) gave
+  best_train_objective, generation_min and generation_median **bit-identical** for all 3 generations at 200,000 vs
+  115,200. Generation time dropped from 32–39 s to 18.5–18.9 s.
+- **`--allow-screen-off`** on both machines. It changes only the display's keep-awake, not the computation.
+
+### Notes for E2.5–E2.6 selection
+
+- `finish()`'s float32-vs-float64 field is trivially 0 under `--float64` (`train_objective_float32` is mislabeled).
+  Do the D6 f32/f64 gap check by hand on the first finished run.
+- In-run dev60 is computed with torch on two GPU architectures (RTX 5070 Ti Laptop, RTX 3080), so **don't compare
+  summary.json dev60 across hosts**. At selection, re-score every run's final.npz (and the saved checkpoint
+  candidates) on ONE machine, CPU NumPy float64, on the dev tier. Report the even-vs-odd (desktop-vs-laptop) parity.
