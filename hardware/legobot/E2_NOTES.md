@@ -356,3 +356,56 @@ seeds were touched.
 Bundle `results/legobot/policies/l_e2_s1`: linear, 10 params, 10 MAC/tick, sha256 `58cb3c615a43…`, golden 400 ticks,
 envelope 15 runs with 0 falls. Source label: "PROVISIONAL E2.5 L run seed 1 (first finished; not the E2.6 selection)".
 
+### Root cause of the CPU-vs-torch train gap (seed 1) and the `tolupsigma` stop
+
+Scripts are in the operator scratch: `diag_s1.py`, `diag_s1_followup.py`, `diag_s1_falls.py`. All scoring is f64 on the
+E2 train-150 tier. The GPU checks used the laptop GPU briefly while seed 3 trained; they are read-only and don't affect it.
+
+**The gap is not a backend bias. It is CMA-ES fitting torch's exact chaotic realization.**
+- **Exact reproduction.** The torch f64 evaluator reproduces the in-run number bit for bit: 7.789618614925632 is the
+  selected checkpoint's `train_objective`. NumPy f64 gives 7.914169.
+- **Tick-by-tick on one train scenario.** Seed 1, tilt −0.15, delay 3 steps, run on CUDA vs NumPy:
+  - Step 0 is identical, and so are the noise lookup and the latency/PWM tick alignment.
+  - The first difference is at step 18: 1.3e-18 in x_dot and 5.6e-17 in motor speed. These are last-bit
+    differences, the GPU's sin/cos rounding noted in `test_torch.py`.
+  - The difference then grows smoothly, with no jump at any tick: 1e-12 at step 444, 1e-9 at 763, 1e-6 at 1055,
+    1e-3 at 1358 (3.4 s).
+  - The worst scenario overall (train seed 98, tilt +0.05) shows the same pattern: first difference 4e-16 at step 70,
+    1e-6 at step 1013.
+  - So it is the pulse-density/backlash chaos the torch tests already document, not a structural difference between the engines.
+- **Per-scenario costs are chaotic on either engine.** NumPy against itself with the start tilt nudged by 1e-15: all
+  450 scenario costs move by more than 1e-6, 392 of them by more than 1 % (max 20 %). Torch vs NumPy: 374 move by
+  more than 1 % (max 24 %).
+- **Paired mean, (torch − numpy) / mean ± scenario-level SE:**
+
+| Parameters | torch − numpy |
+|---|---|
+| final (CMA-selected on torch) | **−1.57 % ± 0.26 %** |
+| final, NumPy nudged by 1e-15 (control) | −0.004 % ± 0.28 % |
+| final × (1 + 1e-3·N(0,1)), 4 draws (decorrelates the chaos) | −0.05, −0.23, −0.05, +0.63 % (each ±0.27–0.30 %) |
+| frozen MB PID (never tuned on either engine), both-up scenarios (n=423) | +0.76 % ± 0.52 %; falls 20 vs 20 |
+
+  Only the parameters that CMA selected on torch show a gap. Unselected parameters show none. So the
+  in-run train (and checkpoint-selected dev60) numbers are optimistic by ~1.6 % (dev ~0.5 %). This is a winner's
+  curse on the realization the optimizer saw, not numerics. The CPU re-score is the honest number.
+- **Fall flips under nudges.** Across 9 unselected realizations, there were 3 falls in 4050 scenario runs (~0.07 %):
+  - NumPy with nudges 0, 1, 2, 3, 5, 8 × 1e-15 gave 0, 0, 0, 0, 1, 0 falls.
+  - Torch with nudges 1, 2, 3 × 1e-15 gave 1, 0, 1 falls.
+  - Each fall was a different scenario: seed 43 at +0.05, seed 142 at −0.15, seed 39 at −0.15. All fell at
+    t = 6.4–6.7 s.
+  - The torch-exact realization has 0 falls. Each fall adds ~3.7 to the 150-seed objective. Without falls the mean is
+    7.89–7.94 on every realization. So seed 1's expected train objective, falls included, is ~9 (PID 92.9).
+
+**`tolupsigma` is a converged plateau, not a weight blowing up.**
+- **Gens 380–539.** CMA's sigma grew from 2.5e3 to 2.0e6 while the actual per-coordinate sampling std (`median_std`)
+  shrank from 2.7e-5 to 1.8e-9. The covariance collapsed faster than sigma grew, which is exactly what
+  `tolupsigma` (sigma/sigma0 > 1e20·sqrt(max eig C)) detects.
+- **Weights are stable.** max |param| over every checkpoint from 4.5e8 to 1.242e9 is 0.9754–0.9868; at gens
+  390–539 it is 0.98589–0.98592.
+- **No real progress late on.** Best train went only 7.790 → 7.773 and the generation median 7.809 → 7.773. Given
+  the result above, that late "progress" is fitting torch's realization at a 1e-7–1e-9 step size.
+
+**Implication for E2.6 (proposal only; not applied):** a single CPU re-score also carries realization luck: about a
+1-in-3 chance of one fall over 450 scenarios, ±3.7. Pre-register the selection re-score as the mean over K NumPy f64
+realizations (for example nudges k × 1e-15, k = 0…4), reporting falls per realization plus median and both-up costs.
+
