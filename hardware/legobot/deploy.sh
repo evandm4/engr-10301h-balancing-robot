@@ -23,7 +23,10 @@ DIRTY=""
 git diff --quiet HEAD -- "${CHECK_PATHS[@]}" || DIRTY="-dirty"
 [ -z "$(git ls-files --others --exclude-standard -- "${UNTRACKED_PATHS[@]}")" ] || DIRTY="-dirty"
 VERSION="$(git rev-parse --short HEAD)$DIRTY $(date '+%Y-%m-%d %H:%M')"
+# The shell scripts get their CRs stripped on the Pi: a Windows checkout with core.autocrlf (unless .gitattributes'
+# eol=lf has reached it) would ship them CRLF, and bash can't run those. Everything else ships byte for byte (the
+# policy bundles' sha256s cover their exact bytes; Python doesn't mind CRLF).
 tar --exclude=__pycache__ --exclude='test_*.py' -cf - "${FILES[@]}" -C hardware/legobot robot ${TAR_POLICIES[@]+"${TAR_POLICIES[@]}"} \
-    | ssh "$HOST" "$REMOTE_PREP && tar -xf - -C ~/legobot && chmod +x ~/legobot/robot/*.sh \
-                   && echo '$VERSION' > ~/legobot/DEPLOYED"
+    | ssh "$HOST" "$REMOTE_PREP && tar -xf - -C ~/legobot && sed -i 's/\r\$//' ~/legobot/robot/*.sh \
+                   && chmod +x ~/legobot/robot/*.sh && echo '$VERSION' > ~/legobot/DEPLOYED"
 echo "deployed $VERSION to $HOST:~/legobot"
