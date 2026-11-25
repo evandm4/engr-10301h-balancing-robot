@@ -8,6 +8,7 @@ import math
 import os
 import sys
 from collections import namedtuple
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -745,15 +746,33 @@ def test_compute_lead_reproduces_the_p7_step1_calibration():
     assert control.compute_lead(0.1e-3) == pytest.approx(lc.COMPUTE_LEAD_S + 0.1e-3 + lc.POLICY_LEAD_EXTRA_S)
 
 
-@pytest.mark.parametrize("name", ["l_pid", "quick_l", "a_warm_zero", "b1_zero"])
+_COMMITTED_POLICIES = Path(__file__).resolve().parents[3] / "results" / "legobot" / "policies"
+# The committed bundle set changes between branches (E2.4 retires quick_l), so the bit-identity test runs on
+# every bundle that is there; the three synthetic kinds (linear, warm MLP, residual MLP) must always be there.
+_REQUIRED_POLICIES = {"l_pid", "a_warm_zero", "b1_zero"}
+
+
+def _committed_policy_names():
+    if not _COMMITTED_POLICIES.is_dir():
+        return []
+    return sorted(p.name for p in _COMMITTED_POLICIES.iterdir()
+                  if p.is_dir() and (p / "final.npz").is_file() and (p / "golden.npz").is_file())
+
+
+def test_committed_policy_bundles_cover_every_kind():
+    """P3c: the bit-identity test below covers a linear, a warm-started MLP and a residual MLP bundle."""
+    found = set(_committed_policy_names())
+    assert _REQUIRED_POLICIES <= found, sorted(_REQUIRED_POLICIES - found)
+
+
+@pytest.mark.parametrize("name", _committed_policy_names())
 def test_fast_forward_is_bit_identical_on_the_committed_bundles(cfg, name):
     """P3c: the robot's FastPolicyController returns the committed bundle's golden torques to the bit, and the
     same torques, raw observations and flags as the reference PolicyController (fast_forward=False), on the
-    golden vectors and on random states."""
+    golden vectors and on random states. Runs on whichever bundles are committed (see above)."""
     control.import_config()
-    from pathlib import Path
     from balance_sim import FastPolicyController, PolicyController
-    bdir = Path(__file__).resolve().parents[3] / "results" / "legobot" / "policies" / name
+    bdir = _COMMITTED_POLICIES / name
     fast, desc = control.build_controller(cfg, str(bdir), goal="still", allow_config_mismatch=True)
     ref, desc_ref = control.build_controller(cfg, str(bdir), goal="still", allow_config_mismatch=True,
                                              fast_forward=False)
