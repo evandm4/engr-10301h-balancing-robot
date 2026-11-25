@@ -21,13 +21,14 @@ def provenance() -> dict:
 
     def git(*args):
         try:
-            return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True,
-                                  timeout=10).stdout.strip() or None
+            proc = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, timeout=10)
         except (OSError, subprocess.SubprocessError):
             return None
+        # "" is a real answer (a clean tree's `status --porcelain`); None only when git itself fails
+        return proc.stdout.strip() if proc.returncode == 0 else None
 
     status = git("status", "--porcelain", "--untracked-files=no")
-    info = {"git_commit": git("rev-parse", "HEAD"), "git_dirty": None if status is None else bool(status),
+    info = {"git_commit": git("rev-parse", "HEAD") or None, "git_dirty": None if status is None else bool(status),
             "python": platform.python_version(), "platform": platform.platform(),
             "hostname": platform.node() or None}
     for name in ("numpy", "scipy", "cma", "torch"):

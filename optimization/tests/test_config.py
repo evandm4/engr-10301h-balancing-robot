@@ -252,6 +252,37 @@ def test_results_record_their_provenance():
     assert "hostname" not in json.dumps(snap) and CONFIG.scoring_differences(snap) == []
 
 
+@pytest.mark.parametrize("status_out, returncode, dirty", [
+    ("", 0, False),                          # clean tree: empty `git status --porcelain` (was recorded as None)
+    (" M simulation/config.py\n", 0, True),  # uncommitted change
+    ("", 128, None),                         # git failed (e.g. not a repository): unknown
+])
+def test_provenance_git_dirty_clean_dirty_unknown(monkeypatch, status_out, returncode, dirty):
+    import subprocess
+
+    from tuning import reporting
+
+    def fake_run(cmd, **kwargs):
+        out = status_out if cmd[1] == "status" else ("ecb666e" * 6 if returncode == 0 else "")
+        return subprocess.CompletedProcess(cmd, returncode, stdout=out, stderr="")
+
+    monkeypatch.setattr(reporting.subprocess, "run", fake_run)
+    info = reporting.provenance()
+    assert info["git_dirty"] is dirty
+    assert info["git_commit"] == (None if returncode else "ecb666e" * 6)
+
+
+def test_provenance_git_missing_is_unknown(monkeypatch):
+    from tuning import reporting
+
+    def no_git(cmd, **kwargs):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(reporting.subprocess, "run", no_git)
+    info = reporting.provenance()
+    assert info["git_dirty"] is None and info["git_commit"] is None
+
+
 def test_fall_penalty_exceeds_any_non_fall_cost():
     """PHYSICS.md 8.3: a run that stays up can't cost more than the fall penalty.
 

@@ -11,7 +11,9 @@
    Every other folder (the four E1 runs, benchmarks, ...) is listed with the reason it was left out. The kept
    runs must be exactly one per (recipe, run seed 0-9), none with a dirty tree and none trained under a config
    that differs from today's in anything scored (config.scoring_differences); otherwise the script stops,
-   unless --allow-partial.
+   unless --allow-partial. git_dirty None WITH a commit recorded reads as "clean*": a clean tree under the
+   pre-fix provenance bug (tuning.provenance recorded an empty `git status --porcelain` as None; every ecb666e
+   run has it). It is noted, not a problem; git_dirty None without a commit is. --list-runs stops here.
 
 2. Candidates, two per run (E2_PLAN E2.2 "each run's cma-es (mean) and best"):
        "cma-es (mean)"  CMA-ES's final distribution mean (xfavorite);
@@ -53,6 +55,7 @@ Outputs, in results/legobot/e2_selection/<timestamp>/ (with -dry appended when -
 
 From the project folder (the venv):
     python hardware/legobot/e2_select.py                                   the real E2.2 (after E2.1)
+    python hardware/legobot/e2_select.py --list-runs                       which runs it would use; scores nothing
     python hardware/legobot/e2_select.py --allow-partial --seeds 2 --duration 5     cheap dry run
     python hardware/legobot/e2_select.py --commit 59065a3 --train-seeds 50 --allow-partial --seeds 2 --duration 5
                                                                            dry run on the four E1 runs
@@ -98,6 +101,8 @@ MB, HT = "PID, model-based", "PID, hand-tuned"
 DEFAULT_N_FINALISTS = 3
 ALPHA = 0.05
 DRY_DEFAULT_SEEDS = 25   # a dry run without --seeds: dev 5000-5024, confirm stand-in 5025-5049
+CLEAN_STAR_NOTE = ("git_dirty None with a commit recorded = clean tree under the pre-fix provenance bug (an empty "
+                   "`git status --porcelain` was recorded as None; fixed after ecb666e): read as clean")
 
 D3_RULE = ("D3 (E2_PLAN.md, written before the runs): adopt a tuned finalist only if, on the confirm slice "
            "(6,000,000-6,000,099 x 3 tilts, 60 s), (a) its paired per-scenario median-cost ratio to model-based has a "
@@ -128,16 +133,25 @@ class Run:
     results: dict = field(default_factory=dict)
     reasons: List[str] = field(default_factory=list)   # why it isn't an E2.1 run (excluded)
     flags: List[str] = field(default_factory=list)     # an E2.1 run, but suspect (refused without --allow-partial)
+    notes: List[str] = field(default_factory=list)     # recorded, not a problem (clean*, no hostname)
 
     @property
     def name(self) -> str:
         return self.folder.name
 
+    @property
+    def dirty_reading(self) -> str:
+        """clean / dirty / clean* (git_dirty None but a commit recorded: the pre-fix provenance bug) / unknown."""
+        if self.dirty is None:
+            return "clean*" if self.commit else "unknown"
+        return "dirty" if self.dirty else "clean"
+
     def summary(self) -> dict:
         return {"folder": self.name, "path": str(self.folder), "recipe": self.recipe, "run_seed": self.seed,
-                "git_commit": self.commit, "git_dirty": self.dirty, "hostname": self.hostname, "gpu": self.gpu,
+                "git_commit": self.commit, "git_dirty": self.dirty, "git_dirty_reading": self.dirty_reading,
+                "hostname": self.hostname, "gpu": self.gpu,
                 "n_train_seeds": self.n_train_seeds, "search_dtype": self.dtype, "timestamp": self.timestamp,
-                "flags": list(self.flags)}
+                "flags": list(self.flags), "notes": list(self.notes)}
 
 
 def read_run(folder: Path, commits: Sequence[str], n_train_seeds: int, cfg=None) -> Run:
@@ -187,7 +201,10 @@ def read_run(folder: Path, commits: Sequence[str], n_train_seeds: int, cfg=None)
         run.reasons.append(f"no {', '.join(missing)} entry")
 
     if run.dirty is None:
-        run.flags.append("git_dirty unknown")
+        if run.commit:
+            run.notes.append(CLEAN_STAR_NOTE)
+        else:
+            run.flags.append("git_dirty unknown (and no commit recorded)")
     elif run.dirty:
         run.flags.append("trained from a dirty tree")
     if cfg is not None and isinstance(data.get("config"), dict):
@@ -195,7 +212,7 @@ def read_run(folder: Path, commits: Sequence[str], n_train_seeds: int, cfg=None)
         if drift:
             run.flags.append("trained under a different config: " + ", ".join(drift))
     if run.hostname is None:
-        run.flags.append("no hostname in provenance (pre-ecb666e run)")
+        run.notes.append("no hostname in provenance (pre-ecb666e run)")
     return run
 
 
@@ -230,8 +247,7 @@ def design_problems(runs: Sequence[Run], run_seeds: Sequence[int] = RUN_SEEDS) -
             problems.append(f"unexpected run seed {s} ({recipe}): {', '.join(names)}")
     for r in runs:
         for flag in r.flags:
-            if not flag.startswith("no hostname"):
-                problems.append(f"{r.name}: {flag}")
+            problems.append(f"{r.name}: {flag}")
     return problems
 
 
@@ -366,7 +382,9 @@ def markdown(sel: dict) -> str:
         mine = [c for c in sel["candidates"] if c["run"] == r["folder"]]
         tr = " / ".join("—" if c["train_objective"] is None else f"{c['train_objective']:.2f}" for c in mine)
         lines.append(f"| `{r['folder']}` | {r['recipe']} | {r['run_seed']} | `{str(r['git_commit'])[:7]}` | "
-                     f"{r['git_dirty']} | {r['hostname'] or '—'} | {r['gpu'] or '—'} | {tr} |")
+                     f"{r['git_dirty_reading']} | {r['hostname'] or '—'} | {r['gpu'] or '—'} | {tr} |")
+    if any(r["git_dirty_reading"] == "clean*" for r in sel["runs"]):
+        lines += ["", f"clean\\* = {CLEAN_STAR_NOTE}."]
     lines += ["", f"### E2.2 dev pick: {dev['n_scenarios']} scenarios (seeds {dev['seeds'][0]}–{dev['seeds'][1]}), "
               f"{st['duration_s']:g} s, {st['backend']} float64, against model-based",
               "", f"Ranked by robust objective (mean cost with the fall penalty). Finalists: the top {st['n_finalists']} "
@@ -416,7 +434,7 @@ def write_per_scenario(path: Path, labels, scores, seeds, pitches) -> None:
 
 # ---- main -----------------------------------------------------------------------------------------
 
-def main(argv=None) -> Path:
+def main(argv=None) -> Optional[Path]:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--runs-root", type=Path, default=REPO / "results" / "legobot" / "batch_tuning")
     parser.add_argument("--commit", action="append", default=None,
@@ -436,6 +454,8 @@ def main(argv=None) -> Path:
                         help="one engine for both stages; numpy float64 is compare_controllers' scoring path")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument("--list-runs", action="store_true",
+                        help="collection only: print the run table, exclusions and design problems; score nothing")
     args = parser.parse_args(argv)
     commits = tuple(args.commit) if args.commit else DEFAULT_COMMITS
 
@@ -471,15 +491,23 @@ def main(argv=None) -> Path:
     # 1. collection
     runs, excluded = collect_runs(args.runs_root, commits, args.train_seeds, cfg)
     print(f"Run folders under {args.runs_root}: {len(runs)} E2.1 runs, {len(excluded)} left out")
-    print(f"{'folder':<18}{'recipe':<7}{'seed':>5}  {'commit':<9}{'dirty':<7}{'host':<18}{'gpu':<40}")
+    print(f"{'folder':<18}{'recipe':<7}{'seed':>5}  {'commit':<9}{'dirty':<9}{'host':<18}{'gpu':<40}")
     for r in runs:
-        print(f"{r.name:<18}{str(r.recipe):<7}{str(r.seed):>5}  {str(r.commit)[:7]:<9}{str(r.dirty):<7}"
+        print(f"{r.name:<18}{str(r.recipe):<7}{str(r.seed):>5}  {str(r.commit)[:7]:<9}{r.dirty_reading:<9}"
               f"{str(r.hostname)[:17]:<18}{str(r.gpu)[:39]:<40}" + ("  FLAGS: " + "; ".join(r.flags) if r.flags else ""))
+    for recipe in RECIPES:
+        print(f"  {recipe}: run seeds {sorted(r.seed for r in runs if r.recipe == recipe)}")
+    if any(r.dirty_reading == "clean*" for r in runs):
+        print(f"  clean* = {CLEAN_STAR_NOTE}")
     for r in excluded:
         print(f"  left out {r.name}: " + "; ".join(r.reasons))
     problems = design_problems(runs)
     if problems:
         print("Not E2.1's full, clean design:\n  " + "\n  ".join(problems))
+    if args.list_runs:
+        print("--list-runs: collection only, nothing scored")
+        return None
+    if problems:
         if not args.allow_partial:
             raise SystemExit("refusing to select on these runs (pass --allow-partial to go on, flagged)")
         print("--allow-partial: going on; the problems are recorded in selection.json")
@@ -559,6 +587,8 @@ def main(argv=None) -> Path:
                      "argv": sys.argv[1:] if argv is None else list(argv)},
         "best_reading": BEST_READING,
         "runs": [r.summary() for r in runs],
+        "git_dirty_reading_note": {"clean*": CLEAN_STAR_NOTE,
+                                   "unknown": "git_dirty None and no commit recorded: a design problem"},
         "excluded_runs": [{"folder": r.name, "git_commit": r.commit, "reasons": r.reasons} for r in excluded],
         "design_problems": problems,
         "machines": sorted({f"{r.hostname} / {r.gpu}" for r in runs}),

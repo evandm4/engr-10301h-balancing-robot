@@ -103,8 +103,53 @@ def test_commit_and_seed_filters_are_options(tmp_path):
     make_run(tmp_path, "a", MID, 0, commit="59065a348abc", n_train=50, hostname=None, seeds=None)
     assert es.collect_runs(tmp_path)[0] == []
     kept, _ = es.collect_runs(tmp_path, commits=("59065a3",), n_train_seeds=50)
-    assert [r.name for r in kept] == ["a"] and kept[0].flags == ["no hostname in provenance (pre-ecb666e run)"]
-    assert es.design_problems(kept)[0] == "1 E2.1 runs found, expected 20"   # the hostname flag isn't a problem
+    assert [r.name for r in kept] == ["a"] and kept[0].flags == []
+    assert kept[0].notes == ["no hostname in provenance (pre-ecb666e run)"]
+    assert es.design_problems(kept) == ["1 E2.1 runs found, expected 20"] + \
+        [f"missing {k} seed {s}" for k in ("mid", "warm") for s in range(10) if (k, s) != ("mid", 0)]
+
+
+def test_git_dirty_none_with_a_commit_reads_clean_star_not_a_problem(tmp_path):
+    """The pre-fix provenance bug: a clean tree's empty `git status` was recorded as git_dirty None."""
+    full_design(tmp_path)
+    for name in os.listdir(tmp_path):
+        p = tmp_path / name / "comparison.json"
+        d = json.loads(p.read_text())
+        d["provenance"]["git_dirty"] = None
+        p.write_text(json.dumps(d))
+    kept, excluded = es.collect_runs(tmp_path)
+    assert len(kept) == 20 and not excluded and es.design_problems(kept) == []
+    assert {r.dirty_reading for r in kept} == {"clean*"}
+    assert all(es.CLEAN_STAR_NOTE in r.notes and not r.flags for r in kept)
+    s = kept[0].summary()
+    assert s["git_dirty"] is None and s["git_dirty_reading"] == "clean*" and es.CLEAN_STAR_NOTE in s["notes"]
+
+
+def test_git_dirty_none_without_a_commit_stays_a_problem(tmp_path):
+    folder = make_run(tmp_path, "a", MID, 0, commit=None, dirty=None)
+    run = es.read_run(folder, commits=("",), n_train_seeds=150)   # even if no commit filter caught it
+    assert run.dirty_reading == "unknown" and run.flags == ["git_dirty unknown (and no commit recorded)"]
+    assert "a: git_dirty unknown (and no commit recorded)" in es.design_problems([run])
+    assert es.collect_runs(tmp_path)[0] == []                      # and the default commit filter leaves it out
+    assert [es.read_run(make_run(tmp_path, n, MID, 0, dirty=d), es.DEFAULT_COMMITS, 150).dirty_reading
+            for n, d in (("c", False), ("d", True))] == ["clean", "dirty"]
+
+
+def test_markdown_marks_clean_star_with_a_footnote():
+    run = {"folder": "f", "recipe": "mid", "run_seed": 0, "git_commit": "ecb666e", "git_dirty": None,
+           "git_dirty_reading": "clean*", "hostname": "h", "gpu": "g"}
+    st = {"commits": ["ecb666e"], "train_seeds": 150, "n_finalists": 1, "duration_s": 60, "backend": "numpy",
+          "dry_run": False}
+    s = {"objective": 1.0, "mean_cost": 1.0, "median_cost": 1.0, "falls": 0, "scenarios": 300,
+         "median_ratio_vs_model_based": 1.0, "ratio_95ci": [1.0, 1.0],
+         "mcnemar_vs_model_based": {"only_this_fell": 0, "only_reference_fell": 0, "p_value": 1.0}}
+    sel = {"settings": st, "runs": [run], "candidates": [], "baseline_gains": {es.MB: [1, 2, 3, 4]},
+           "dev": {"seeds": [5000, 5049], "n_scenarios": 150, "n_seeds": 50, "ranking": [es.MB], "stats": {es.MB: s}},
+           "confirm": {"seeds": [6_000_000, 6_000_099], "n_scenarios": 300, "is_d2_slice": True, "stats": {es.MB: s}},
+           "finalists": [], "decision": es.d3_decide({}, [])}
+    md = es.markdown(sel)
+    assert "| `f` | mid | 0 | `ecb666e` | clean* | h | g |" in md
+    assert f"clean\\* = {es.CLEAN_STAR_NOTE}." in md
 
 
 def test_candidates_mean_and_cma_best_sample_by_default(tmp_path):
@@ -170,6 +215,20 @@ def test_dev_ranking_and_finalists_skip_the_baselines():
 
 
 # ---- end to end (tiny, CPU) -------------------------------------------------------------------------
+
+def test_list_runs_collects_without_scoring(tmp_path):
+    runs = tmp_path / "runs"
+    make_run(runs, "r-mid", MID, 0, dirty=None)
+    make_run(runs, "r-e1", MID, 1, commit="59065a348", n_train=50)
+    env = {k: v for k, v in os.environ.items() if k != "ROBOT"}
+    proc = subprocess.run([sys.executable, str(REPO / "hardware" / "legobot" / "e2_select.py"), "--runs-root",
+                           str(runs), "--list-runs", "--out", str(tmp_path / "out")],
+                          cwd=REPO, env=env, capture_output=True, text=True, timeout=300)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    out = proc.stdout
+    assert "1 E2.1 runs, 1 left out" in out and "clean*" in out and "mid: run seeds [0]" in out
+    assert "left out r-e1" in out and "nothing scored" in out and "Dev:" not in out
+    assert not (tmp_path / "out").exists()
 
 def test_end_to_end_dry_run_on_synthetic_runs(tmp_path):
     runs = tmp_path / "runs"
