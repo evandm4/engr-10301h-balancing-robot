@@ -301,3 +301,17 @@ Every item below was fixed before any E2 L run started. None of it was chosen on
 - In-run dev60 is computed with torch on two GPU architectures (RTX 5070 Ti Laptop, RTX 3080), so **don't compare
   summary.json dev60 across hosts**. At selection, re-score every run's final.npz (and the saved checkpoint
   candidates) on ONE machine, CPU NumPy float64, on the dev tier. Report the even-vs-odd (desktop-vs-laptop) parity.
+
+## E2.5–E2.6: L runs launched (commit `4582fe7`)
+
+Ten L runs: `--method linear --profile full --float64 --train-seeds 150 --max-batch 115200 --allow-screen-off
+--run-seed k --out C:/balancebot_training/legobot/neuroevolution/linear/e2-seed<k>`, budget 1.5e9 robot-s, no
+stagnation stop. Both trees are pinned at `4582fe7` with clean trees. Later merges (e.g. `5e9cbb0`, robot-perf) have
+`scoring_differences == []` against the run snapshot, so they can't affect the runs or their resumes.
+
+| Machine | Seeds | Tree | Queue | Launched | Tests at launch commit | First gen times |
+|---|---|---|---|---|---|---|
+| Laptop EVANS-G16, RTX 5070 Ti Laptop (95 W cap, Turbo) | 1, 3, 5, 7, 9 | worktree `C:\balancebot_training\e2_L_worktree` | `e26-laptop`, OMP/MKL = 4 | 2026-11-25 12:04:07 | default 729/1 skip, legobot 646/9 skip, robot 62/1 skip | 19.1, 12.8, 18.9, 18.9 s |
+| Desktop Pavilion, RTX 3080 | 0, 2, 4, 6, 8 | clone `C:\balancebot\engr-10301h-balancing-robot` | `e26-desktop` (Scheduled Task, -AtStartup) | 2026-11-25 13:31:40 | legobot 646/9 skip, robot 62/1 skip | 19.7 s (gen 1) |
+
+Each seed takes ~651 generations at ~19 s, plus the checkpoint dev scoring: about 3.5 h per seed, ~18 h per queue.
