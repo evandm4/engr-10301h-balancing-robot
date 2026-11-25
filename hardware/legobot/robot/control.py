@@ -683,7 +683,8 @@ class LineClock:
     P7 step 1 (2026-11-24 logs): the reader thread is not pinned, but it stamps an arrival with perf_counter()
     after ser.read() returns, which needs the GIL, so lines that arrive while the loop computes are stamped
     when the loop releases it (most of an MLP's stamps landed within 0.3 ms after the command write; with
-    PID/L, inside the IMU read). The in-run period drifted -300 to -1000 ppm from its start value. Replaying
+    PID/L, inside the IMU read). The in-run period moved from its start value by -290 to -1187 ppm in 7 of the 13
+    runs, +126 to +554 ppm in 5 (mostly runs whose start fit was a low outlier) and -155 in 1. Replaying
     the reconstructed arrivals, the envelope slope was not clearly better than least squares (RMS window-slope
     error 460 vs 523 ppm against the clean stamps, but worse in the PID/L runs), and even the clean stamps'
     slope wandered or stepped, so the default stays "lsq". The period error hardly matters to the lock:

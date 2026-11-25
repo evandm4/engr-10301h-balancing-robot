@@ -521,7 +521,8 @@ the latency plus 0–5 ms on the robot (0 or 2.5 ms in the sim). The robot no lo
 **Policy timing on the Pi 3B (P7 step 1 / P3a, 2026-11-24, `4375caf`, SCHED_FIFO 50, CPU 3, mlockall, line
 lock held on every tick, 0 overruns in 13 no-drive runs of 10–15 s; details in
 [P7_STEP1_NOTES.md](P7_STEP1_NOTES.md)).** Tick start → command, including the ~0.55 ms IMU read (mean / p99 /
-max, ms): hand PID 1.04–1.13 / 1.41–1.70 / 2.06; L-type linear (l_pid, quick_l) 1.40 / 1.63–1.69 / 1.98; A-sized
+max, ms, ranges over the runs): hand PID 1.01–1.13 (p50 0.96–1.20) / 1.41–1.70 / 2.06; L-type linear (l_pid,
+quick_l) 1.37–1.41 / 1.63–1.69 / 1.98; A-sized
 MLP (a_warm_zero) 2.11–2.18 / 2.69–2.76 / 3.26; B1 residual MLP (b1_zero) 2.29 / 2.65–2.91 / 3.64–3.79. Forward
 pass alone (self-test, numpy): linear 0.09 / 0.11, a_warm 1.06 / 1.10, b1 1.17 / 1.24 ms. Golden self-test error 0
 and replay error 0 for all bundles. With the IMU DLPF (~3 ms, est.), the serial command (2.37 ms) and the HAT apply
@@ -529,12 +530,14 @@ and replay error 0 for all bundles. With the IMU DLPF (~3 ms, est.), the serial 
 (linear) and 10.6–10.75 (MLP) ms typical, ≤ 12.2 ms worst (b1, 15 s run): inside latency_range 7.5–12.5 ms, with
 0.3 ms to spare for b1. The MLPs use ~0.9 ms more than the 1.3 ms read+compute budget above; P3c (Python-float
 forward pass) is expected to remove most of it. cmd_phase was not measurable in no-drive (P7 step 2). The
-LineClock in-run period estimate drifts −300 to −1000 ppm from its start value even with NTP stopped (likely
-reader-thread stamping delay under load); the quiet start fits put the HAT line period at ≈10.000 ms ±0.1% by the
-Pi clock, not −880 ppm; harmless to the lock.
+LineClock in-run period estimate moves from its start value even with NTP stopped (end − start: 7 runs −290 to
+−1187 ppm, 5 runs +126 to +554, 1 run −155; the positive ones are the 4 runs whose start fits were low outliers,
+−236 to −514 ppm, plus b1_zero; likely reader-thread stamping delay under load); the quiet start fits put the HAT
+line period at ≈10.000 ms ±0.1% by the Pi clock (−514 to +204 ppm), not −880 ppm; harmless to the lock.
 
 *Withdrawn (2026-11-25):* the P7 step 1 report's recommendation to stop systemd-timesyncd for timing runs. Two
-no-drive runs with it stopped drifted the same (−289 and −448 ppm), so NTP slewing is not the cause.
+no-drive runs with it stopped drifted the same (−290 and −467 ppm, ending at −289 and −448 ppm), so NTP slewing is
+not the cause.
 
 *Follow-up (`legobot-robot-perf`, laptop analysis of the same logs, not yet re-measured on the Pi):* the line
 stamps reconstructed from `t − age_left` show the delay is the GIL rather than priority: the reader thread is not
