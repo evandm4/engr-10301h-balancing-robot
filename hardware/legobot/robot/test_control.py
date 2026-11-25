@@ -406,6 +406,21 @@ def test_line_clock_default_slope_is_least_squares():
     assert clock.update(arr) and clock.period == expected
 
 
+@pytest.mark.parametrize("slope", ["lsq", "envelope"])
+@pytest.mark.parametrize("min_lines", [0, 1, 2])
+def test_line_clock_with_too_few_lines_keeps_its_estimate(slope, min_lines):
+    """Review F5: with min_lines set below 2, fewer than 2 lines return False (no lock, estimate unchanged)
+    instead of an IndexError / ZeroDivisionError; from 2 lines on it fits."""
+    clock = control.LineClock(min_lines=min_lines, slope=slope)
+    for arrivals in ([], [1.0]):
+        assert clock.update(arrivals) is False
+        assert clock.t_ref is None and clock.period == 0.010 and not clock.locked(1.0)
+    for n in (2, 3, 5):
+        clock = control.LineClock(min_lines=min_lines, slope=slope)
+        assert clock.update([1.0 + 0.0099912 * k for k in range(n)]) is True
+        assert clock.period == pytest.approx(0.0099912, abs=1e-12) and clock.locked(1.05)
+
+
 def test_log_lines_writes_the_raw_arrivals(tmp_path):
     """--log-lines: every data line's stamp, on the raw log's time base (so t - age_left at a tick is a logged
     line); --line-slope and --switch-interval-us are logged, and the switch interval restored afterwards."""

@@ -710,7 +710,7 @@ class LineClock:
 
     def update(self, arrivals):
         a = arrivals[-self.window:]
-        if len(a) < self.min_lines:
+        if len(a) < max(2, self.min_lines):   # a slope needs 2 lines, whatever min_lines is set to (review F5)
             return False
         p = self.period
         ref = a[0] if self.t_ref is None else self.t_ref
