@@ -301,6 +301,22 @@ Every item below was fixed before any E2 L run started. None of it was chosen on
 - In-run dev60 is computed with torch on two GPU architectures (RTX 5070 Ti Laptop, RTX 3080), so **don't compare
   summary.json dev60 across hosts**. At selection, re-score every run's final.npz (and the saved checkpoint
   candidates) on ONE machine, CPU NumPy float64, on the dev tier. Report the even-vs-odd (desktop-vs-laptop) parity.
+- **Pre-registered K-realization re-score (approved 2026-11-25 16:44, before any E2.6 re-score ran).** The reason is
+  in "Root cause of the CPU-vs-torch train gap" below: one realization carries fall-flip luck of about ±3.7 per fall.
+  - K = 5 NumPy f64 realizations of the dev tier (5000–5049 × 3, 60 s). Realization k adds k × 1e-15 rad to every
+    scenario's initial tilt, k = 0…4; k = 0 is the plain dev tier. Same machine, `CUDA_VISIBLE_DEVICES=-1`.
+  - Scored this way: every candidate (each run's `final.npz` and its saved checkpoint candidates) **and** the frozen
+    MB PID baseline.
+  - Reported per candidate:
+    - the mean over realizations of the mean dev cost;
+    - the median cost (median over all K × N scenario runs);
+    - the both-up cost (per realization, the mean over scenarios where the candidate and the MB PID both stay up,
+      then averaged over realizations);
+    - total falls / (K × N), with N = 150. Falls per realization are listed too.
+  - **Selection key:** the mean over realizations of the mean dev cost, as before. Ties (equal at the reported
+    3-decimal precision) go to fewer total falls.
+  - E2.8's frozen tiers are unchanged: one realization, as already specified.
+  - Per-run machine and stop_reason are reported alongside, for disclosure.
 
 ## E2.5–E2.6: L runs launched (commit `4582fe7`)
 
@@ -350,8 +366,16 @@ seeds were touched.
 - **Medians:** the L-vs-PID gain is not only fall luck. Median costs are 30 % lower on dev and 28 % lower on train.
 - **CPU vs in-run torch:** the CPU f64 re-score is higher than the in-run torch numbers: dev60 +0.47 % (19.806 vs
   19.715), train +1.6 % (7.914 vs 7.790). Both have 0 falls. This is the cross-implementation gap behind the E2.6
-  re-score-on-one-machine rule. Check the train gap before E2.6, in case it is a train-scenario mismatch rather than
-  numerics.
+  re-score-on-one-machine rule.
+- **Disclosure: winner's curse and fall flips** (root cause in the next subsection).
+  - The torch in-run numbers are optimistic. CMA-ES fitted the exact chaotic realization torch produced. On
+    parameters it never selected, the gap is ~0.
+  - The honest numbers for this bundle are the CPU re-scores above. The in-run figures (train 7.790, dev60 19.715)
+    are not.
+  - The 0-fall results are themselves one realization. Under 1e-15 start-tilt nudges, seed 1 fell in ~0.07 % of
+    train scenario runs (3 of 4050). That gives ~1-in-3 odds of one fall per 450-scenario realization, and an
+    expected train objective of ~9, falls included (PID 92.9).
+  - Expect occasional falls in sim (and on the robot), even though the tables above show 0.
 
 Bundle `results/legobot/policies/l_e2_s1`: linear, 10 params, 10 MAC/tick, sha256 `58cb3c615a43…`, golden 400 ticks,
 envelope 15 runs with 0 falls. Source label: "PROVISIONAL E2.5 L run seed 1 (first finished; not the E2.6 selection)".
@@ -405,7 +429,8 @@ E2 train-150 tier. The GPU checks used the laptop GPU briefly while seed 3 train
 - **No real progress late on.** Best train went only 7.790 → 7.773 and the generation median 7.809 → 7.773. Given
   the result above, that late "progress" is fitting torch's realization at a 1e-7–1e-9 step size.
 
-**Implication for E2.6 (proposal only; not applied):** a single CPU re-score also carries realization luck: about a
-1-in-3 chance of one fall over 450 scenarios, ±3.7. Pre-register the selection re-score as the mean over K NumPy f64
-realizations (for example nudges k × 1e-15, k = 0…4), reporting falls per realization plus median and both-up costs.
+**Implication for E2.6 (adopted 2026-11-25; see "Notes for E2.5–E2.6 selection"):** a single CPU re-score also
+carries realization luck: about a 1-in-3 chance of one fall over 450 scenarios, ±3.7. The selection re-score is
+therefore pre-registered as the mean over K = 5 NumPy f64 realizations (nudges k × 1e-15, k = 0…4). Falls per
+realization, plus median and both-up costs, are reported. The MB PID is scored the same way.
 
