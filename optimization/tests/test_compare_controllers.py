@@ -117,7 +117,7 @@ def test_end_to_end_on_smoke(tmp_path):
                     CONFIG.robot.max_torque)
     folder = main(["--tier", "smoke", "--seeds", "2", "--duration", "1.0", "--bootstrap", "200",
                    "--policies", f"L-PID={tmp_path}/run*/final.npz", "--latency-sweep", "--latencies", "15,40",
-                   "--out", str(tmp_path / "out")])
+                   "--baseline-latency", "15", "--out", str(tmp_path / "out")])
     report = json.loads((folder / "comparison.json").read_text())
     ref = report["runs"][REF]
     assert ref["median_ratio"] == 1.0 and ref["mcnemar_vs_reference"]["p_value"] == 1.0

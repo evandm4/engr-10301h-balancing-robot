@@ -245,7 +245,7 @@ def test_results_record_their_provenance():
     # Which machine ran it (E2's runs are split between two machines), and its CUDA GPU when torch has one.
     assert info["hostname"] == (platform.node() or None)
     torch = sys.modules.get("torch")
-    if torch is not None and torch.cuda.is_available():
+    if torch is not None and (torch.cuda.is_available() and torch.cuda.device_count() > 0):
         assert info["gpu"] == torch.cuda.get_device_name(0)
     # Metadata only: not part of the config, so never config drift.
     snap = CONFIG.snapshot()

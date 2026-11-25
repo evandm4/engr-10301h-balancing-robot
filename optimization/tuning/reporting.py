@@ -36,7 +36,7 @@ def provenance() -> dict:
         if module is not None:
             info[name] = getattr(module, "__version__", None)
     torch = sys.modules.get("torch")
-    info["gpu"] = torch.cuda.get_device_name(0) if torch is not None and torch.cuda.is_available() else None
+    info["gpu"] = torch.cuda.get_device_name(0) if torch is not None and (torch.cuda.is_available() and torch.cuda.device_count() > 0) else None
     return info
 
 

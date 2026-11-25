@@ -1165,6 +1165,66 @@ class ProjectConfig:
 POLOLU_CONFIG = ProjectConfig()
 
 
+# ------------------------------------------------------------ COMPARISON -
+@dataclass(frozen=True)
+class ComparisonConfig:
+    """The robot-specific settings of the final comparison (optimization/compare_controllers.py):
+    its latency sweep and the thermal variant of its weight sensitivity.
+
+    Deliberately NOT a ProjectConfig section, so it is in no snapshot() and scoring_differences
+    never sees it: nothing here changes how a controller is trained or scored, only what the
+    final comparison reports. Each robot has one (load_comparison_config); these defaults are
+    the Pololu robot's, the settings compare_controllers.py hard-coded before 2026-11-25.
+    """
+
+    # The latency the sweep's metrics are measured from (ms). None: the robot's nominal latency,
+    # TimingConfig.latency_s. It is always swept, whatever the grid, and never taken from the
+    # grid's position (compare_controllers.py --baseline-latency overrides it).
+    sweep_baseline_ms: Optional[float] = None
+    # The sweep's grid (ms): the design latency, then a 2.5 ms grid from 15 to 45 ms.
+    sweep_latencies_ms: Tuple[float, ...] = (10.0,) + tuple(15.0 + 2.5 * i for i in range(13))
+    sweep_fall_rate_seeds: int = 333   # the fall-rate tier's first 333 seeds x 3 tilts = 999 scenarios
+    # Absolute fall metric: the first latency with this many falls (Clopper-Pearson's upper bound
+    # passes 1% at about 4 / 1,000). Left-censored when the baseline already falls that often.
+    sweep_fall_threshold: int = 4
+    sweep_cost_factor: float = 1.5     # cost metric: median per-scenario cost at 1.5x the baseline's
+    # Relative fall metric: the first latency above the baseline with at least this many more falls
+    # than the controller's own at the baseline (same scenarios), where an exact one-sided McNemar
+    # test of the paired fall flags also gives p < sweep_excess_alpha. Readable whatever the
+    # baseline's fall rate (short of a ceiling: compare_controllers.excess_ceiling_censored). 5, not
+    # 4: at alpha 0.05 four new falls with none recovered give p = 0.0625, so 4 could never pass;
+    # five give 0.03125. The alpha is POINTWISE and unadjusted: it is tested at every latency above
+    # the baseline (13 on Pololu's grid, 14 on LEGO's), so with no latency effect the chance of a
+    # false flag somewhere on the grid is well above it (about 16-22%, the 2026-11-25 review; the
+    # tests are correlated). The report says so (latency_sweep.excess_falls.alpha_scope).
+    sweep_excess_falls: int = 5
+    sweep_excess_alpha: float = 0.05
+    # The weight sensitivity's thermal variant: the torque limit at the motors' continuous rating,
+    # in N m at the wheels, both motors. None: torque_constant x continuous_current_a x gear_ratio
+    # x gear_efficiency x n_motors from ActuatorConfig. Pololu allows 25% of its 6.0 A stall
+    # current (1.5 A) continuously (DATASHEET.md 3.1).
+    continuous_torque_n_m: Optional[float] = None
+    continuous_current_a: Optional[float] = 1.5
+
+    def baseline_ms(self, project: "ProjectConfig") -> float:
+        """The sweep's baseline latency (ms) for this robot."""
+        if self.sweep_baseline_ms is not None:
+            return float(self.sweep_baseline_ms)
+        return round(project.timing.latency_s * 1000.0, 9)
+
+    def thermal_torque(self, actuator: ActuatorConfig) -> float:
+        """The continuous (thermal) torque limit, N m at the wheels, both motors."""
+        if self.continuous_torque_n_m is not None:
+            return float(self.continuous_torque_n_m)
+        if self.continuous_current_a is None:
+            raise ValueError("ComparisonConfig needs continuous_torque_n_m or continuous_current_a")
+        a = actuator
+        return a.torque_constant * self.continuous_current_a * a.gear_ratio * a.gear_efficiency * a.n_motors
+
+
+POLOLU_COMPARISON = ComparisonConfig()
+
+
 # ------------------------------------------------------- ROBOT SELECTION -
 # Two robots: "pololu" (the defaults above: Pololu 25D gearmotors, DATASHEET.md)
 # and "legobot" (legobot_config.py: LEGO SPIKE motors, hardware/legobot/DATASHEET.md).
@@ -1186,6 +1246,16 @@ def load_config(name: str) -> ProjectConfig:
     if name == "legobot":
         from legobot_config import LEGOBOT_CONFIG   # imports this module's classes, so imported lazily
         return LEGOBOT_CONFIG
+    raise ValueError(f"Unknown robot {name!r}; use one of {ROBOTS}")
+
+
+def load_comparison_config(name: str) -> ComparisonConfig:
+    """The ComparisonConfig (compare_controllers.py's sweep and thermal settings) for robot `name`."""
+    if name == "pololu":
+        return POLOLU_COMPARISON
+    if name == "legobot":
+        from legobot_config import LEGOBOT_COMPARISON
+        return LEGOBOT_COMPARISON
     raise ValueError(f"Unknown robot {name!r}; use one of {ROBOTS}")
 
 

@@ -312,8 +312,8 @@ try:
 except ImportError:
     torch = None
 needs_torch = pytest.mark.skipif(torch is None, reason="needs PyTorch")
-needs_cuda = pytest.mark.skipif(torch is None or not torch.cuda.is_available(), reason="needs CUDA")
-DEVICES = ["cpu"] + (["cuda"] if torch is not None and torch.cuda.is_available() else [])
+needs_cuda = pytest.mark.skipif(torch is None or not (torch.cuda.is_available() and torch.cuda.device_count() > 0), reason="needs CUDA")
+DEVICES = ["cpu"] + (["cuda"] if torch is not None and (torch.cuda.is_available() and torch.cuda.device_count() > 0) else [])
 
 
 @needs_torch
