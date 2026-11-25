@@ -125,7 +125,11 @@ class Setup:
         self.backend = resolve_backend(args)
         robust = CONFIG.build_robustness()
         n_train = args.train_seeds or self.profile.n_train_seeds
-        self.robust = replace(robust, train_seeds=tuple(range(1, n_train + 1)))
+        from batch_tuning import first_train_seeds
+
+        reserved = (*robust.validation_seeds, *robust.dev_seeds, *robust.dev_extended_seeds,
+                    *robust.fall_rate_seeds, *robust.retired_seeds)
+        self.robust = replace(robust, train_seeds=first_train_seeds(n_train, reserved))
         tier = robust.smoke_seeds if self.profile.dev_tier == "smoke" else robust.dev_seeds
         self.dev_seeds = tuple(tier[:args.dev_seeds] if args.dev_seeds else tier)
         space = CONFIG.build_search_space()

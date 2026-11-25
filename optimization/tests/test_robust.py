@@ -268,3 +268,42 @@ def test_dev_extended_seeds_are_registered_and_disjoint():
                 robust.fall_rate_seeds[0], robust.retired_seeds[0]):
         with pytest.raises(ValueError):
             replace(robust, dev_extended_seeds=(bad,))
+
+
+def test_train_seeds_reject_and_skip_retired_seeds():
+    from batch_tuning import first_train_seeds
+
+    robust = CONFIG.build_robustness()
+    with pytest.raises(ValueError, match="retired"):
+        replace(robust, train_seeds=(1, 2, 100))
+    reserved = (*robust.validation_seeds, *robust.dev_seeds, *robust.dev_extended_seeds,
+                *robust.fall_rate_seeds, *robust.retired_seeds)
+    assert first_train_seeds(50, reserved) == tuple(range(1, 51))
+    wide = first_train_seeds(150, reserved)
+    assert len(wide) == 150 and wide[:99] == tuple(range(1, 100)) and wide[99] == 110
+    assert not (set(wide) & set(reserved))
+    # Validated cleanly when passed into RobustnessConfig.
+    assert replace(robust, train_seeds=wide).train_seeds == wide
+
+
+def test_max_total_backlash_caps_combined_play_without_moving_other_draws():
+    import math
+    from config import POLOLU_CONFIG, load_config
+
+    assert "max_total_backlash" not in POLOLU_CONFIG.snapshot()["robustness"]
+    lego = load_config("legobot")
+    base = BatchEvaluator(lego.build_eval_config(), lego.build_search_space()).robot
+    rob = lego.build_robustness()
+    assert rob.max_total_backlash == pytest.approx(math.radians(4.0))
+    uncapped = replace(rob, max_total_backlash=None)
+    a = sample_robots(base, uncapped, tuple(range(1, 51)), 3)
+    b = sample_robots(base, rob, tuple(range(1, 51)), 3)
+    assert np.max(a.gearbox_backlash + a.coupling_backlash) > math.radians(5.0)
+    assert np.all(b.gearbox_backlash + b.coupling_backlash <= rob.max_total_backlash + 1e-12)
+    assert len(set(b.coupling_backlash)) == len(b.coupling_backlash)
+    for name in ("body_mass", "wheel_friction", "coulomb_friction", "pitch_bias", "pwm_tick_phase", "gearbox_backlash"):
+        np.testing.assert_array_equal(getattr(a, name), getattr(b, name))
+    with pytest.raises(ValueError, match="max_total_backlash"):
+        replace(rob, max_total_backlash=0.0)
+    with pytest.raises(ValueError, match="max_total_backlash"):
+        replace(rob, max_total_backlash=math.radians(3.0))

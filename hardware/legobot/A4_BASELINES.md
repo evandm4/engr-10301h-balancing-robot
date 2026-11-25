@@ -519,5 +519,37 @@ NumPy float64 baselines from `python hardware/legobot/legobot_baselines.py` (wit
 
 Before `H9` (non-mutating `backlash_release` before IMU `derivatives`) landed, the same config scored `104.83 (7)` / `136.21 (10)` (hand-tuned) and `46.85 (3)` / `72.51 (5)` (model-based) on train / dev; `H11` had no effect. On 300 fresh dev seeds (`5050–5149`), post-`H9` vs pre-`H9` is `107.4 (15)` vs `118.1 (17)` for hand-tuned and `40.5 (5)` vs `35.4 (4)` for model-based — zero directional bias, confirming that single-tier 150-scenario shifts of `~±30` objective (`±3–4` falls) are chaotic noise.
 
-These are the current reference points for E1 (`hardware/legobot/E1_HANDOFF.md`; robust fall rates 4.7–8.7%). (The push-onset full-torque trace in `review-v2.md` Section 4 was run pre-`H9`; compare E1 candidates with paired per-scenario bootstrap CIs or larger dev seed slices.)
+These were the reference points for E1 (`hardware/legobot/E1_HANDOFF.md`; robust fall rates 4.7–8.7%). (The push-onset full-torque trace in `review-v2.md` Section 4 was run pre-`H9`; compare candidates with paired per-scenario bootstrap CIs or larger dev seed slices.)
+
+### After 2026-11-24 Bench C and total-play cap (current E2 reference)
+
+Pre-E2 bench checks (`DATASHEET.md` 8.7; `triage.md` G7/G8/G11) completed the right motor's calibration and both wheels'
+`69 mm` tire play measurements:
+- **Motor & friction (`C1`, `C3`, `B3`):** right `lever` measured `a = 0.05724 ± 0.00092 N m/V` (`-4.1%` vs left `0.05971`),
+  putting the two-motor mean at `a = 0.0585 N m/V` (`ACTUATOR.gear_efficiency = 0.739`, was `0.755`). Low-duty speeds on both
+  motors give pair `coulomb_friction = 0.0539 N m` (`ROBOT.coulomb_friction = 0.045`, `ROBUSTNESS` `0.030–0.060 N m`, was
+  `0.030–0.055`). `B3` confirmed unregulated `V = vin` scaling up to a full `8.04 V` pack, and `B4` confirmed identical `10 ms`
+  PDM ripple on both ports.
+- **Correlated `69 mm` wheel-on play (`max_total_backlash = ±4.0°`):** both `69 mm` tires measured `4 mm` (`6.64°` ptp,
+  `±3.32°`) total play at the tread, while encoder dwell clusters gave `±1.0–1.3°` gearbox on the left (`~±2.2°` coupling)
+  and `±3.4°` gearbox on the right (`~0°` coupling; `11` zero-drift cycles `-356° ↔ -349°/-348°`). Nominal uses the two-motor
+  means (`±2.3°` gearbox, `±1.1°` coupling = `±3.4°` total). Because coupling play is inferred by subtracting gearbox play from
+  total tread play, `ROBUSTNESS` draws `gearbox_backlash ∈ [1.1°, 3.4°]` and `coupling_backlash ∈ [0°, 2.5°]` with
+  `max_total_backlash = ±4.0°` (`4.8 mm` at the tread, `4 mm` + `< 1 mm` visual margin) rather than summing them independently
+  to an unmeasured `±5.9°`.
+- **Re-derived pushes:** across all `8,192` corners with `max_total_backlash = ±4.0°` (`27.5 ms` reaction), worst-corner
+  catchable forward impulse is **`0.03665 N s`** (start tilt `0.420 rad`, `pitch_limit_rad = 0.30` unchanged), giving pushes of
+  **`0.71 N × 50 ms`** at **`5.5 s` and `7.5 s`** (`0.03665 × 0.145/0.149 / 0.05 = 0.713 -> 0.71 N`; uncapped `±5.9°` gave
+  `0.0320 N s` / `0.62 N`).
+
+NumPy float64 baselines from `python hardware/legobot/legobot_baselines.py` (`sensitivity_weight = 0.0`, falls in brackets):
+
+| Baseline | Plain (seeds 1–3, 9) | Robust train (1–50, 150) | Robust dev (5000–5049, 150) | Dev worst | Dev chaos |
+|---|---|---|---|---|---|
+| Hand-tuned PID (2.5, 1.5, 0.2, 0.5) | 25.23 (0) | **222.24** (17) | **197.33** (15) | 1836 | 0.0 |
+| Model-based PID (1.98, 5.24, 0.15, 0.52) | 11.22 (0) | **72.45** (5) | **86.47** (6) | 1973 | 0.0 |
+
+`model-based` keeps identical gains (`[1.9797, 5.2360, 0.1509, 0.5153]`) and stays at `5–6/150` robust falls (`3.3–4.0%`),
+whereas `hand-tuned` (`ki = 1.5`) rises to `15–17/150` falls under the wider `±2.3°` nominal / `±1.1–3.4°` gearbox play. These
+are the starting baselines for Phase E2.
 

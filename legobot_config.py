@@ -62,11 +62,12 @@ ROBOT = RobotConfig(
     # 2026-11-23 (20261123_073624_backlash.csv). Left encoder dwell clusters are 2.05-2.67 deg apart (+-1.0-1.3 deg);
     # right encoder swung cleanly across 11 zero-drift cycles between -356 and -349/-348 deg (6.80 deg cluster sep,
     # +-3.4 deg confirmed at internal gearbox stops). Visual play at the 69 mm tire tread was 4 mm (6.64 deg ptp,
-    # +-3.32 deg total) on both wheels -> ~+-2.2 deg coupling on left and ~+-0 deg on right (tightening the earlier
-    # 96 mm beam coupling estimate from +-3.0 to +-2.5 deg). Nominal takes the two-motor means (+-2.3 deg gearbox,
-    # +-1.2 deg coupling); ROBUSTNESS draws both per scenario.
+    # +-3.32 deg total) on both wheels -> ~+-2.2 deg coupling on left and ~+-0 deg on right (coupling play is inferred
+    # by subtraction, so gearbox and coupling are negatively correlated rather than additive to +-5.9 deg). Nominal
+    # takes the two-motor means (+-2.3 deg gearbox, +-1.1 deg coupling = +-3.4 deg total); ROBUSTNESS draws both with
+    # max_total_backlash = +-4.0 deg (4.8 mm at the 69 mm tread, i.e. 4 mm + <1 mm visual margin).
     gearbox_backlash=math.radians(2.3),    # rad, motor side to the encoder's output shaft
-    coupling_backlash=math.radians(1.2),   # rad, output shaft to the wheel
+    coupling_backlash=math.radians(1.1),   # rad, output shaft to the wheel
 )
 
 # -------------------------------------------------------------- ACTUATOR ---
@@ -190,15 +191,18 @@ ROBUSTNESS = replace(
         # list, so the draws above are unchanged. Plain (non-robust) runs keep +b.
         ("pitch_bias", -0.015, 0.015),        # rad
         # SOFTWARE_PLAN B5: the free play (ROBOT above), measured on both 69 mm wheels 2026-11-24. After pitch_bias,
-        # so the draws above are unchanged.
+        # so the draws above are unchanged. Because coupling play was derived by subtracting encoder gearbox play from
+        # the 4 mm (+-3.32 deg) tire-tread total on each wheel, max_total_backlash below caps gearbox + coupling at
+        # +-4.0 deg (4.8 mm at the tread) instead of pairing right's +-3.4 deg gearbox with left's +-2.5 deg coupling.
         ("gearbox_backlash", math.radians(1.1), math.radians(3.4)),   # rad: left +-1.0-1.3 deg, right +-3.4 deg (20261124_233749)
-        ("coupling_backlash", 0.0, math.radians(2.5)),                # rad: 69 mm tire visual +-3.3 deg less gearbox (left ~+-2.2, right ~0)
+        ("coupling_backlash", 0.0, math.radians(2.5)),                # rad: bounded per scenario to <= max_total_backlash - gearbox
         # The pulse ticks' phase against the control loop, as a fraction of a 10 ms tick (B1b): bench B1 found
         # it fixed neither between power-ups nor within one (ACTUATOR.pwm_tick_locked), so it is drawn per
         # scenario, uniform over a tick. Last, so the draws above are unchanged. (It was drawn in B1b, then
         # left out from review G6 until B1, while the loop was taken to be locked to the ticks.)
         ("pwm_tick_phase", 0.0, 1.0),
     ),
+    max_total_backlash=math.radians(4.0),
     # The sample-to-pulse budget without the tick wait (TIMING): 9.7 ms typical, 12 ms worst; drawn in whole
     # 2.5 ms steps, so 7.5, 10 or 12.5 ms. Each command then waits 0-3 physics steps for the next tick (0-7.5 ms;
     # 0-10 ms on the hardware). A tick sends the newest command, which is never more than a step old in the sim (0-5 ms on
@@ -263,18 +267,20 @@ CONTROLLER = replace(
 #   t = 2-3.25 s     0 -> 0.40 m/s in 1.25 s: peak 0.70 m/s^2, a 0.125 rad lean (half of
 #                    Pololu's 0.25 / 0.30 of pitch_limit_rad).
 #   t = 3.25-9.5 s   cruise at 0.40 m/s, 53% of the nominal no-load speed (Pololu 53%).
-#   t = 5.5, 7.5 s   pushes, forward then backward: 0.62 N for 50 ms = 0.031 N s, 97% (Pololu's
+#   t = 5.5, 7.5 s   pushes, forward then backward: 0.71 N for 50 ms = 0.0355 N s, 97% (Pololu's
 #                    0.145/0.149 share, POLOLU_PUSH_SHARE) of the largest forward push a full-torque
 #                    response catches at 0.40 m/s on every corner, with the free play in its worst
 #                    position (closed away from the recovery, so the motor side first crosses the
-#                    whole gap; decided 2026-11-23, the user) and a 27.5 ms reaction (above): 0.0320 N s
-#                    (light, tall, high rotor inertia, weakest motor, most friction 0.060 N m, most play: +-5.9
-#                    deg; 0.081 nominal at 25 ms). 0.0320 x 0.973 / 0.05 = 0.623, rounded to 0.62 N.
-#                    Was 0.73 N before 2026-11-24 Bench C (right gearbox +-3.4 deg, right a 0.0572, coulomb to 0.060),
+#                    whole gap; decided 2026-11-23, the user) and a 27.5 ms reaction (above): 0.0367 N s
+#                    (light, tall, high rotor inertia, weakest motor, most friction 0.060 N m, capped play:
+#                    +-4.0 deg = 3.4 deg gearbox + 0.6 deg coupling; 0.082 nominal at 25 ms).
+#                    0.03665 x 0.973 / 0.05 = 0.713, rounded to 0.71 N. Was 0.73 N before 2026-11-24
+#                    Bench C (right gearbox +-3.4 deg, right a 0.0572, coulomb to 0.060, max_total_backlash +-4.0 deg;
+#                    would be 0.62 N / 0.0320 N s if gearbox and coupling summed uncapped to +-5.9 deg),
 #                    0.67 N with +-6 deg of play (0.0342 N s; review round 2, H3/H5), 0.70 N with
 #                    the ticks locked (25 ms, 0.0357 N s) and 1.02 N before the play was modelled
 #                    (0.0523 N s). 50 ms is under the 119 ms fastest unstable time constant (123 ms
-#                    nominal). Backward: 0.298 catchable, easy (braking is helped by back-EMF), as on
+#                    nominal). Backward: 0.302 catchable, easy (braking is helped by back-EMF), as on
 #                    the Pololu robot.
 #   t = 9.5-11.9 s   0.40 -> -0.15 m/s in 2.4 s: 0.50 m/s^2, 0.092 rad.
 #   t = 11.9-14 s    cruise backward at -0.15 m/s (Pololu's 0.5/1.3 of top speed).
@@ -289,16 +295,16 @@ SCENARIO = replace(
         (14.0, 0.0, 2.0),     # gentle stop: 0.16 m/s^2
     ),
     pushes=(
-        (5.5, 0.05, 0.62),    # from behind at 0.40 m/s
-        (7.5, 0.05, -0.62),   # from the front at 0.40 m/s
+        (5.5, 0.05, 0.71),    # from behind at 0.40 m/s
+        (7.5, 0.05, -0.71),   # from the front at 0.40 m/s
     ),
     start_pitches_deg=(2.8648, -8.5944, 17.1887),    # 0.05, -0.15, 0.30 rad
 )
 
 # Cost limits (CostConfig's Bryson rule), in the Pololu cost's proportions:
 #   pitch_limit_rad 0.30: Pololu's is both 77% of its catchable start tilt and 69% of its lean
-#     cap. Here those give 0.31 (of the 0.406 rad caught on every corner with the play at its worst and a
-#     22.5 ms reaction; 0.546 nominal at 20 ms) and 0.30; the smaller keeps the goal profile's leans (shares
+#     cap. Here those give 0.32 (of the 0.420 rad caught on every corner with the play at its worst and a
+#     22.5 ms reaction; 0.547 nominal at 20 ms) and 0.30; the smaller keeps the goal profile's leans (shares
 #     of it) under the cap.
 #   velocity_limit 0.06 m/s: Pololu's 0.2/1.3 of the top speed.
 #   torque_limit 0.09 N m: Pololu's 0.1/0.135 of the nominal lean-cap torque (0.119), so pitch
