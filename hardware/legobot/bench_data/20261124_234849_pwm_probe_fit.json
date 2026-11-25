@@ -1,0 +1,202 @@
+{
+  "script": "pwm_probe",
+  "meta": {
+    "pwmparams": [
+      1.0,
+      0.01
+    ],
+    "vin": 7.81,
+    "side": "left",
+    "args": {
+      "wheels_off": true,
+      "side": "left",
+      "duties": [
+        0.05,
+        0.1,
+        0.15,
+        0.2
+      ],
+      "hold": 3.0,
+      "pwmparams": [
+        1.0,
+        0.01
+      ],
+      "outdir": "logs"
+    },
+    "firmware": "Firmware version: 1674818421 2023-01-27T11:20:21+00:00"
+  },
+  "constants": {
+    "ripple_sd_once_0.05@left": {
+      "value": 2.810114404002947,
+      "se": null,
+      "unit": "rad/s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "ripple_sd_same_0.05@left": {
+      "value": 2.9220247620145,
+      "se": null,
+      "unit": "rad/s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "ripple_sd_dither_0.05@left": {
+      "value": 2.9335142136923413,
+      "se": null,
+      "unit": "rad/s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "ripple_sd_once_0.1@left": {
+      "value": 3.2140720445082005,
+      "se": null,
+      "unit": "rad/s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "ripple_sd_same_0.1@left": {
+      "value": 3.144887182564619,
+      "se": null,
+      "unit": "rad/s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "ripple_sd_dither_0.1@left": {
+      "value": 3.047286495689781,
+      "se": null,
+      "unit": "rad/s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "ripple_sd_once_0.15@left": {
+      "value": 4.042457205667634,
+      "se": null,
+      "unit": "rad/s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "ripple_sd_same_0.15@left": {
+      "value": 4.435887150695488,
+      "se": null,
+      "unit": "rad/s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "ripple_sd_dither_0.15@left": {
+      "value": 3.9553815015098728,
+      "se": null,
+      "unit": "rad/s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "ripple_sd_once_0.2@left": {
+      "value": 2.1901199802242584,
+      "se": null,
+      "unit": "rad/s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "ripple_sd_same_0.2@left": {
+      "value": 2.4431349089024423,
+      "se": null,
+      "unit": "rad/s",
+      "n": 1,
+      "se_kind": "none"
+    },
+    "ripple_sd_dither_0.2@left": {
+      "value": 2.43285256988818,
+      "se": null,
+      "unit": "rad/s",
+      "n": 1,
+      "se_kind": "none"
+    }
+  },
+  "diagnostics": {
+    "results": [
+      {
+        "duty": 0.05,
+        "way": "once",
+        "mean": 2.4279781932985633,
+        "sd": 2.810114404002947,
+        "freq": 10.080645161290324
+      },
+      {
+        "duty": 0.05,
+        "way": "same",
+        "mean": 2.4209405753469735,
+        "sd": 2.9220247620145,
+        "freq": 10.080645161290324
+      },
+      {
+        "duty": 0.05,
+        "way": "dither",
+        "mean": 2.470203901008104,
+        "sd": 2.9335142136923413,
+        "freq": 10.080645161290324
+      },
+      {
+        "duty": 0.1,
+        "way": "once",
+        "mean": 8.43828171035811,
+        "sd": 3.2140720445082005,
+        "freq": 10.080645161290324
+      },
+      {
+        "duty": 0.1,
+        "way": "same",
+        "mean": 8.336901235175796,
+        "sd": 3.144887182564619,
+        "freq": 10.080645161290324
+      },
+      {
+        "duty": 0.1,
+        "way": "dither",
+        "mean": 8.486419669588035,
+        "sd": 3.047286495689781,
+        "freq": 10.080645161290324
+      },
+      {
+        "duty": 0.15,
+        "way": "once",
+        "mean": 11.630750810179034,
+        "sd": 4.042457205667634,
+        "freq": 14.919354838709678
+      },
+      {
+        "duty": 0.15,
+        "way": "same",
+        "mean": 11.738920100082883,
+        "sd": 4.435887150695488,
+        "freq": 14.919354838709678
+      },
+      {
+        "duty": 0.15,
+        "way": "dither",
+        "mean": 11.957300767889558,
+        "sd": 3.9553815015098728,
+        "freq": 14.919354838709678
+      },
+      {
+        "duty": 0.2,
+        "way": "once",
+        "mean": 14.441766773049402,
+        "sd": 2.1901199802242584,
+        "freq": 8.064516129032258
+      },
+      {
+        "duty": 0.2,
+        "way": "same",
+        "mean": 14.485669488334382,
+        "sd": 2.4431349089024423,
+        "freq": 6.82730923694779
+      },
+      {
+        "duty": 0.2,
+        "way": "dither",
+        "mean": 14.551756404744486,
+        "sd": 2.43285256988818,
+        "freq": 34.67741935483871
+      }
+    ]
+  }
+}

@@ -107,7 +107,7 @@ measurement brings it down to. Values marked Est. are placeholders to replace wi
 | `wheel_inertia` | 6.0e-5 kg m² | ±0.20 | Measured mass / Est. | Pair, 0.65 m r² each (tire at the rim), as in the main datasheet. Slightly high, since the axle's few grams sit at the centre. The motor's output-side inertia is separate (`rotor_inertia` below) |
 | `max_torque` | **0.90 N m** (was 0.50) | — | Measured | 2 × 0.45 N m: zero-speed torque per volt a = 0.0597 N m/V (lever on a scale, slow PWM) × 7.6 V. LEGO's 0.25 N m per motor is a rating; Pybricks' 0.43 at 7.2 V agrees (8.7) |
 | `wheel_friction` | **0.0017 N m s/rad** (was 0) | range 0.0012–0.0022 | Measured | Both motors: 7e-4 per motor from the slow-PWM steady speeds, 9.5e-4 from coast-downs (8.7) |
-| `coulomb_friction` | **0.042 N m** (was 0.046) | range 0.030–0.055 | Measured | Both motors: 0.022 / 0.027 (left / right) from the speeds, 0.016 / 0.019 from coast-downs (8.7) |
+| `coulomb_friction` | **0.045 N m** (was 0.042) | range 0.030–0.060 | Measured | Both motors: 0.0251 / 0.0288 (left / right, pair 0.0539) from 2026-11-24 C3+C1 speeds, 0.035 from coast-downs; top widened to 0.060 for floor headroom (8.7) |
 | `gravity` | 9.81 m/s² | — | — | Unchanged |
 
 ### 2.2 `ActuatorConfig` (model `"slow_pwm"`)
@@ -122,7 +122,7 @@ delivered as 10 ms full-voltage pulses (`pwm_tick_s = 0.01`).
 |---|---|---|---|---|
 | `gear_ratio` | 1.0 | — | — | Lumped: constants below are output-referred |
 | `torque_constant` | **0.348 V s/rad** (was 0.411) | ±0.03 | Measured | Output k_e from the slow-PWM speed fit: 0.352 left, 0.344 right. LEGO's sheet gives 0.355; Pybricks' 0.411 is 18% high (8.7) |
-| `gear_efficiency` | **0.755** (was 0.565) | ±0.02 | Measured | Carries the measured a = η k/R = 0.0597 ± 0.0019 N m/V with R fixed at 4.4 Ω: without current sensing only the ratio is identifiable, and the simulation needs only the ratio while the current limit doesn't bind |
+| `gear_efficiency` | **0.739** (was 0.755) | ±0.02 | Measured | Carries the two-motor mean a = η k/R = 0.0585 N m/V (left 0.05971 ± 0.00192, right 0.05724 ± 0.00092 on 2026-11-24 C1) with R fixed at 4.4 Ω: without current sensing only the ratio is identifiable, and the simulation needs only the ratio while the current limit doesn't bind |
 | `resistance` | 4.4 Ω (kept) | ±0.05 | — | Not separable from η without a current measurement (`stall.py` with a multimeter would separate it); its spread, with η's, covers a on the unmeasured right motor |
 | `supply_voltage` | 7.6 V × `plimit` | ±0.105 | DS | 2S LiPo, 6.8–8.4 V, **times the HAT's power limit** (7.2). With `plimit 1`: 7.6 V |
 | `current_limit` | 2.5 A | — | — | The Build HAT has no current control, so this is set high enough never to bind (stall at 8.4 V and 3.73 Ω is 2.25 A) |
@@ -914,21 +914,22 @@ wheels clear, `--pitch-zero 1.58` (stand read `+1.584 rad`), vin `7.85–7.94 V`
 | A3 `--bench --seconds 5 --inject unlock` | Armed at `0.50 s` (`vin 7.94 V`, locked at `+107 ppm`). Injected unlock at `1.01 s`: logged `"line lock lost at 1.01 s: ticking on the Pi's clock"` and kept running cleanly to `stopped: done` (`5.00 s`, `1001` ticks, `201/1001` locked, `0` overruns, period `5.000 ± 0.003 ms`). Summary recorded `line lock lost while armed: 1 times`; wheels `[0.0, 0.0]` deg/s 1 s after stop. Pass |
 | A5 `--duty-cap 0.6 --seconds 10` | Armed at `0.51 s` (`vin 7.85 V`, threshold `0.85 * w_nl(7.85) = 17.59 rad/s`). Both wheels crossed `17.59 rad/s` at `0.85 s` after arming (`t = 1.357 s`) and tripped at **`2.18 s`** after arming (`t = 2.692 s`, `1.34 s` after crossing, vs `4.7 s` before smoothing): `"wheels running away (mean +18.2, +17.6 rad/s over 1.5 s): lifted?"`. `438/438` ticks locked, `0` overruns, wheels `[0.0, 0.0]` deg/s 1 s after stop. Pass |
 
-**B3 (partial, 7.87 V vs 7.44 V): motor rail scaling (2026-11-24, left wheel, wheels off the ground, slow PWM
+**B3: motor rail scaling across battery voltage (2026-11-24, left wheel, wheels off the ground, slow PWM
 `1 0.01`; `robot.measure.motor_steps --wheels-off --wheel on --side left --duties 1.0 0.5`, logs
-`bench_data/20261124_210715_motor_steps*`).** Idle `vin` read `7.88 -> 7.85 V` (mean `7.865 V`), vs
-`7.45 -> 7.43 V` (`7.440 V`) in the `20261123_061856` baseline:
+`bench_data/20261124_210715_motor_steps*` and `20261124_231027_motor_steps*`).** Compared against the
+`20261123_061856` baseline (`7.440 V`) at two higher pack voltages including a freshly charged 2S LiPo
+(`vin = 8.05 -> 8.03 V` at the HAT):
 
-| Duty | `7.440 V` (`20261123`) | `7.865 V` (`20261124`) | Measured $\Delta\omega$ | Linear-rail prediction (`k = 0.352`) |
+| Duty | `7.440 V` (`20261123`) | `7.865 V` (`20261124`) | `8.040 V` (`20261124`, full pack) | Same-day slope (`7.87 → 8.04 V`) vs model |
 |---|---|---|---|---|
-| `0.50` | `17.87 rad/s` (`+17.97 / -17.77`) | `18.61 rad/s` (`+18.72 / -18.50`) | `+0.74 rad/s` (`+4.1%`) | `18.99 rad/s` (`+1.13 rad/s`, `-2.0%` gap) |
-| `1.00` | `19.50 rad/s` (`+19.59 / -19.41`) | `20.24 rad/s` (`+20.31 / -20.17`) | `+0.74 rad/s` (`+3.8%`) | `20.61 rad/s` (`+1.17 rad/s`, `-1.8%` gap) |
+| `0.50` | `17.87 rad/s` (`+0.1%`) | `18.61 rad/s` (`-2.0%`) | `18.94 rad/s` (`-2.6%`) | `1.92` vs `2.66 rad/s/V` |
+| `1.00` | `19.50 rad/s` (`+0.3%`) | `20.24 rad/s` (`-1.8%`) | `20.72 rad/s` (`-1.8%`) | **`2.73` vs `2.75 rad/s/V`** |
 
-Speed rises cleanly above the `7.44 V` baseline (`+0.74 rad/s` at both duties), ruling out a `~7.2–7.5 V`
-regulated motor rail. The measured slope (`1.74 rad/s/V` vs `2.75` predicted) leaves a uniform `~1.8–2.0%`
-(`~0.14 V` equivalent) shortfall at `7.87 V` — within `torque_constant` spread / pack sag or session drift,
-but repeat once on a freshly charged `~8.4 V` pack (predicted `~22.1 rad/s` at duty `1.0`) to rule out any
-clamp above `7.9 V`.
+*(Percentages in parentheses are relative to the 2026-11-23 `k = 0.352` fit.)* **Pass — no regulated motor
+rail cap.** Speed rises linearly with `vin` right up to the full pack (`8.05 V` at the HAT): on the same day
+(`7.865 → 8.040 V`), `duty 1.0` scales at `2.73 rad/s/V` against the slow-PWM model's `2.75 rad/s/V` (and
+stays at a constant `-1.8%` offset vs the previous day's fit, consistent with the slightly higher `tau_c` /
+`beta` seen in `C3` on 2026-11-24). `V = vin` holds in the simulator and feedforward; no engine change needed.
 
 **C3: right drivetrain friction inspection and low-duty re-check (2026-11-24, wheels off the ground, tires on,
 slow PWM `1 0.01`, `vin = 7.83–7.85 V`; `robot.measure.motor_steps --wheels-off --wheel on --side both --duties 0.1 0.15 0.2`,
@@ -946,7 +947,65 @@ slower than left across all three low duties. Assuming left's `a = 0.0597 N m/V`
 (left) and `0.0303 N m` (right), pair sum `0.0554 N m` (right at the top of `legobot_config.ROBUSTNESS`'s
 `0.030–0.055 N m` range). Re-evaluate together with right-motor `a` after Bench C1.
 
-**Still to measure:** `B3` at `~8.4 V` (once a pack is fully charged), `discharge` (about an hour on the stand), and optionally `stall` (R
+**C1: right motor torque scale `a` (2026-11-24, right motor, 96 mm Technic lever on kitchen scale, slow PWM
+`1 0.01`, `vin = 7.93–8.02 V`; `robot.measure.lever --side right --arm-mm 96 --pwmparams 1 0.01`, logs
+`bench_data/20261124_232511_lever*`).** Zero-speed torque in N·m (`0.50` slipped 24° and was excluded from the
+fit; including it gives `0.05739 N·m/V`):
+
+| duty | 0.05 | 0.10 | 0.15 | 0.20 | 0.30 | 0.40 | 0.50 *(slipped)* | 0.70 |
+|---|---|---|---|---|---|---|---|---|
+| Right (`vin ~8.0 V`) | `0.0424` | `0.0706` | `0.0941` | `0.1196` | `0.1648` | `0.2128` | `0.2542` | `0.3389` |
+
+Linear fit (`n = 7`, max deviation `1.7%`): **`a = 0.05724 ± 0.00092 N·m/V`** (intercept `+0.0252 N·m`,
+`v_dead = -0.440 ± 0.050 V`, extrapolated stall `0.484 N·m` at `8.01 V`). Against left's `0.05971 ± 0.00192`
+(`2026-11-23`), right is **`-4.14%`** (`1.16 σ`; through-origin slopes `0.06462` right vs `0.06424` left agree
+within `0.6%`), well inside `legobot_config.ROBUSTNESS`'s `resistance` (`±5%`) + `gear_efficiency` (`±2%`)
+combined `a` span (`-6.7%` to `+7.4%`). Re-evaluating `C3` with right's measured `a = 0.05724` gives right
+$\tau_c = 0.0288\text{ N·m}$ (`0.0281–0.0299` across `0.10–0.20`), so the two-motor sum is
+`0.0251 + 0.0288 = 0.0539 N·m` — inside `ROBUSTNESS`'s existing `coulomb_friction = 0.030–0.055 N·m` range.
+
+**Wheel-on backlash check, both motors (2026-11-24, 69 mm tires mounted, slow PWM `1 0.01`, `vin = 7.93 V`;
+`robot.measure.backlash --side both --seconds 10 --diameter-mm 69`, logs
+`bench_data/20261124_233749_backlash*`).**
+
+| Side | Encoder `ptp` (`POS` / `APOS`) | Dwell cluster sep (`all` / `t ≥ 1 s`) | Visual at 69 mm tread | Implied gearbox / coupling half-width |
+|---|---|---|---|---|
+| Left | `6°` / `7°` | `2.05°` / `2.04°` (steady `0° ↔ +2°/+3°`) | `4 mm` = `6.64°` (`±3.32°`) | `±1.0–1.3°` gearbox, `~±2.3°` coupling |
+| Right | `8°` / `9°` | `6.34°` / `6.80°` (11 cycles `-356° ↔ -349°/-348°`, zero drift) | `4 mm` = `6.64°` (`±3.32°`) | `±3.2–3.4°` gearbox (confirmed at stops), `~0–0.8°` coupling |
+
+With the real 69 mm tires mounted (replacing the earlier 96 mm beam visual reading), both wheels show `~4 mm`
+(`6.64°` ptp, `±3.32°` half-width) total free play at the tread — smaller than `legobot_config.py`'s `±4.6°`
+worst-case total, confirming the left-side `coupling_backlash` range (`±0–3.0°`) is realistic. On the right
+motor, however, Evan confirmed by hand that the wheel cleanly hits the two internal gearbox stops without
+turning the rotor: the encoder swung between `-356°` and `-349°/-348°` across 11 consecutive cycles (`6.80°`
+cluster sep, `±3.4°` half-width, well above `legobot_config.ROBUSTNESS`'s `±1.1–1.6°` gearbox range from the
+left motor alone; right `lever` holds also moved `10–14°` vs left's `3–7°`). Two-motor mean gearbox play is
+`~±2.2–2.35°` (left `±1.0–1.3°`, right `±3.2–3.4°`).
+
+**B4: slow-PWM ripple re-check, robot secured, both motors (2026-11-24, wheels off the ground, tires on,
+slow PWM `1 0.01`, `vin = 7.81–7.82 V`; `robot.measure.pwm_probe --wheels-off --side left` and `--side right`,
+logs `bench_data/20261124_234849_pwm_probe*` (left) and `20261124_234938_pwm_probe*` (right)).**
+
+| Duty | Left speed (rad/s) | Left ripple sd / peak freq (`once / same / dither`) | Right speed (rad/s) | Right ripple sd / peak freq (`once / same / dither`) |
+|---|---|---|---|---|
+| `0.05` | `2.42–2.47` | `2.81 / 2.92 / 2.93 rad/s` at `10.1 Hz` | `1.85–1.99` | `2.90 / 3.05 / 3.04 rad/s` at `10.1 / 10.0 / 5.2 Hz` |
+| `0.10` | `8.34–8.49` | `3.21 / 3.14 / 3.05 rad/s` at `10.1 Hz` | `6.45–6.80` | `3.08 / 3.07 / 3.21 rad/s` at `10.1 / 10.0 / 10.1 Hz` |
+| `0.15` | `11.63–11.96` | `4.04 / 4.44 / 3.96 rad/s` at `14.9 Hz` | `10.33–10.53` | `4.00 / 4.01 / 4.22 rad/s` at `14.9 Hz` |
+| `0.20` | `14.44–14.55` | `2.19 / 2.44 / 2.43 rad/s` (no single peak) | `13.67–13.89` | `2.00 / 1.88 / 2.02 rad/s` (no single peak) |
+
+**Pass.** Reproduces the earlier secured left-wheel ripple closely and confirms identical behavior on the
+right port: `once`, `same`, and `dither` match on both motors (the firmware times the 10 ms PDM pulse train
+independently of 5 ms `set` updates), with `100 × duty Hz` ripple (`5.2 Hz` fundamental / `10.1 Hz` harmonic
+at `0.05`, `10.1 Hz` at `0.10`, `14.9 Hz` at `0.15`, dropping at `0.20`). Low-duty speeds also confirm C3's
+right-motor drag (`-21%` at `0.10`, `-11%` at `0.15`, `-5%` at `0.20`).
+
+**C2: balance-point calibration check (2026-11-24, IMU only, motors off; `robot.calibrate balance --save`,
+saved to `~/legobot/calibration.json`).** Two of three 3 s holds passed the stillness check (`-0.00569` and
+`+0.00028 rad`), giving **`pitch_zero = -0.00270 rad`** (`-0.15°`), trial sd **`0.0042 rad`** (`0.24°`).
+Agrees with the 2026-11-23 free-fall bracket (`-0.010 ± 0.010 rad`, bracket `-0.015` to `+0.003 rad`) and
+sits well within `legobot_config.py`'s `pitch_bias = ±0.015 rad` spread. Pass; no config change needed.
+
+**Still to measure:** `discharge` (about an hour on the stand), and optionally `stall` (R
 with a multimeter) and `load` (the braking quadrant directly).
 
 ## 9. Sources

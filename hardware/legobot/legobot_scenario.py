@@ -378,15 +378,17 @@ POLOLU_PITCH_LIMIT_OF_CAP = 0.30 / math.radians(25.0)   # pitch_limit = 69% of t
 TOP_SPEED_CHOICE = 0.40
 LEAN_SOFTENING = 0.5
 POLOLU_PUSH_SHARE = 0.145 / 0.149             # push / largest catchable on every corner
-# What a full run of the catch simulations gives for legobot_config.py as of review round 2 (measured robot, slow
-# PWM with the tick phase free since bench B1, latency to 12.5 ms: push reaction 27.5 ms, tilt 22.5 ms; gearbox
-# +-1.1-1.6 deg and coupling +-0-3 deg play, B5, in its worst position), for --quick. Before the H3 play
-# re-reading (gearbox +-2.6-3 deg): forward 0.03420, backward 0.3009, tilt 0.412, nominal forward 0.081, nominal
-# tilt 0.548. Re-run without --quick after changing the config
-# (about 30 min). nominal_* are at the nominal 10 ms (push 25 ms, tilt 20 ms). With the ticks locked (push 25 ms,
-# tilt 15 ms): forward 0.03572, backward 0.3059, tilt 0.436, nominal forward 0.085, nominal tilt 0.589. Without
-# the play, locked: forward 0.0523, backward 0.3250, tilt 0.486, nominal forward 0.099, nominal tilt 0.628.
-RECORDED_CATCH = dict(forward=0.03772, backward=0.3043, tilt=0.423, nominal_forward=0.085, nominal_tilt=0.559)
+# What a full run of the catch simulations gives for legobot_config.py as of 2026-11-24 Bench C (measured robot,
+# slow PWM with the tick phase free since bench B1, latency to 12.5 ms: push reaction 27.5 ms, tilt 22.5 ms;
+# gearbox +-1.1-3.4 deg and coupling +-0-2.5 deg play, coulomb 0.030-0.060 N m, gear_efficiency 0.739, in its
+# worst position), for --quick. Before 2026-11-24 Bench C (gearbox +-1.1-1.6, coupling +-0-3.0, coulomb 0.030-0.055,
+# eta 0.755): forward 0.03772, backward 0.3043, tilt 0.423, nominal forward 0.085, nominal tilt 0.559. Before the H3
+# play re-reading (gearbox +-2.6-3 deg): forward 0.03420, backward 0.3009, tilt 0.412, nominal forward 0.081, nominal
+# tilt 0.548. Re-run without --quick after changing the config (about 15-30 min). nominal_* are at the nominal 10 ms
+# (push 25 ms, tilt 20 ms). With the ticks locked (push 25 ms, tilt 15 ms): forward 0.03572, backward 0.3059,
+# tilt 0.436, nominal forward 0.085, nominal tilt 0.589. Without the play, locked: forward 0.0523, backward 0.3250,
+# tilt 0.486, nominal forward 0.099, nominal tilt 0.628.
+RECORDED_CATCH = dict(forward=0.0320, backward=0.2980, tilt=0.406, nominal_forward=0.081, nominal_tilt=0.546)
 
 
 def lean_cap_table(N, R, caps_deg):
