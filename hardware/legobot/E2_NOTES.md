@@ -340,6 +340,16 @@ Its unstarted seeds 2, 4, 6, 8 moved to the laptop. They use the same command an
 one or two seeds. Any such move will be recorded here, and the machine of every run must be disclosed with the E2.6
 selection: it decides the even/odd = desktop/laptop parity check, since the even seeds are now mostly on the laptop.
 
+- **Laptop paused 17:12 (2026-11-25) for robot testing** (Evan's request). Both laptop queues were stopped with
+  `C:\balancebot_training\queue_tools\stop_queues.ps1 -Execute`: runners first, so no next job started, and
+  `QUEUE_DONE.txt` was not written.
+  - Seed 3 was interrupted at gen 283, 6.52e8 robot-s. `state.pkl` was saved 17:12:08, with no `.tmp` left over.
+    It is resumable.
+  - Seeds 5, 7, 9 and 2, 4, 6, 8 have not started. The `e26-laptop-b` waiter was killed too.
+  - Nothing auto-restarts. Resume only on Evan's explicit request, following `C:\balancebot_training\PAUSE_RESUME.md`
+    (same queue commands; seed 3 continues from `state.pkl` via `--resume`).
+  - The pause interval is a wall-clock disclosure item. `elapsed_s` in the run excludes it.
+
 ## E2.7 (provisional): `l_e2_s1`, the first finished L run
 
 > **PROVISIONAL.** This is seed 1, exported only because it finished first, so Evan can start robot tests. It is
