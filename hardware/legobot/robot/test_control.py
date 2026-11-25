@@ -379,6 +379,8 @@ def test_closed_loop_ticks_are_locked(tmp_path):
     phases = [float(r["cmd_phase"]) % 0.0049956 for r in rows]      # the sim's control takes no time
     target = (0.004 - lc.COMPUTE_LEAD_S) % 0.0049956
     assert max(abs(p - target) for p in phases) < 0.0003
+    cmd_at = [float(r["cmd_at"]) for r in rows]                     # P3b: tick start -> command write
+    assert all(0.0 <= x < 0.0005 for x in cmd_at)
 
 
 def test_every_robot_module_compiles():
@@ -643,8 +645,26 @@ def test_bundle_round_trip_and_self_test(tmp_path, cfg):
     st = control.self_test_policy(controller, bundle["golden"], cfg=cfg)
     assert st["n_ticks"] == len(bundle["golden"]["states"]) and st["n_ticks"] >= 300
     assert st["max_torque_err"] <= lc.GOLDEN_TOL
-    assert st["compute_lead_s"] >= lc.COMPUTE_LEAD_S
-    assert st["compute_lead_s"] == pytest.approx(lc.COMPUTE_LEAD_S + max(0.0, st["p99_s"] - st["pid_p99_s"]))
+    assert st["compute_lead_s"] >= lc.COMPUTE_LEAD_S + lc.POLICY_LEAD_EXTRA_S
+    assert st["pid_p50_s"] <= st["pid_p99_s"]
+    assert st["compute_lead_s"] == pytest.approx(lc.COMPUTE_LEAD_S + max(0.0, st["p50_s"] - st["pid_p50_s"])
+                                                 + lc.POLICY_LEAD_EXTRA_S)
+
+
+def test_compute_lead_reproduces_the_p7_step1_calibration():
+    """P3b: compute_lead from the Pi self-test medians (P7 step 1: l_pid 0.0876, quick_l 0.079, a_warm_zero
+    1.054, b1_zero 1.162 ms; PID ~0.025 ms) against the in-loop command point p50s (1.423, 1.403, 2.123,
+    2.293 ms). Fitted on l_pid, so it lands there; quick_l is held out; the MLPs (reference forward pass,
+    full clock) come out early, never late. Without a PID timing the whole policy median is added."""
+    pid = 0.025e-3
+    # name: (self-test p50, in-loop p50, largest early error allowed)
+    observed = {"l_pid": (0.0876e-3, 1.423e-3, 0.02e-3), "quick_l": (0.079e-3, 1.403e-3, 0.02e-3),
+                "a_warm_zero": (1.054e-3, 2.123e-3, 0.3e-3), "b1_zero": (1.162e-3, 2.293e-3, 0.3e-3)}
+    for name, (p50, in_loop, early) in observed.items():
+        err = control.compute_lead(p50, pid) - in_loop          # + early, - late
+        assert -0.02e-3 <= err <= early, (name, err)
+    assert control.compute_lead(0.0, 0.025e-3) == pytest.approx(lc.COMPUTE_LEAD_S + lc.POLICY_LEAD_EXTRA_S)
+    assert control.compute_lead(0.1e-3) == pytest.approx(lc.COMPUTE_LEAD_S + 0.1e-3 + lc.POLICY_LEAD_EXTRA_S)
 
 
 @pytest.mark.parametrize("name", ["l_pid", "quick_l", "a_warm_zero", "b1_zero"])

@@ -40,7 +40,8 @@ from . import loop_config as lc
 LEFT, RIGHT = hc.LEFT_PORT, hc.RIGHT_PORT
 RAW_COLUMNS = ("tick", "t", "late", "compute", "phase", "imu_t", "imu_read", "pitch_rate_raw", "acc_fwd", "acc_up",
                "tilt", "theta", "gyro", "x", "v", "w_left", "w_right", "pos_left", "pos_right", "age_left",
-               "age_right", "torque", "duty_left", "duty_right", "pitch_ref", "goal", "vin", "locked", "cmd_phase")
+               "age_right", "torque", "duty_left", "duty_right", "pitch_ref", "goal", "vin", "locked", "cmd_phase",
+               "cmd_at")
 POLICY_EXTRA_COLUMNS = ("pre_clip", "saturated", "integrators_frozen", "residual_torque")
 
 
@@ -178,9 +179,11 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
     pacer (control.Pacer) sets the tick times: locked to line_clock's HAT data-line grid when it has a lock,
     else every dt. line_clock is re-estimated from the left port's line arrivals every LINE_UPDATE_TICKS
     ticks, after that tick's command is out. cmd_phase in the log is when the command write started,
-    in s after the grid's latest line (lower envelope of arrivals). The goal column is the goal the controller
-    used that tick (c.goal_velocity(c._time) just before it ran, its own clock as in the simulator; 0 where it
-    didn't act), so a replay can feed it back exactly.
+    in s after the grid's latest line (lower envelope of arrivals; driving runs only). cmd_at is the command
+    point, s from the tick start to the write (in --no-drive, to where it would be): what the compute lead
+    (P3b) aims at, without the watchdog kick and envelope check the compute column also counts. The goal
+    column is the goal the controller used that tick (c.goal_velocity(c._time) just before it ran, its own
+    clock as in the simulator; 0 where it didn't act), so a replay can feed it back exactly.
 
     A non-finite state on an armed tick trips before the controller runs; a non-finite torque or duty trips
     and coasts before the command is sent (a NaN would pass the tilt check and clamp to +cap).
@@ -335,8 +338,8 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
                 hat.coast()
             else:
                 duties = (dl, dr)
+                t_cmd = clock.now()       # the command point (cmd_at), in --no-drive too
                 if drive:
-                    t_cmd = clock.now()
                     hat.set_pwm(dl, dr)
                 if watchdog is not None:
                     watchdog.kick()
@@ -351,8 +354,9 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
                ages[0], ages[1], torque if acted else 0.0, duties[0] if acted else 0.0,
                duties[1] if acted else 0.0, c.pitch_reference() if phase else 0.0,
                goal_used, None if vr is None else vr[1], int(locked),
-               None if t_cmd is None or line_clock is None or line_clock.t_ref is None
-               else line_clock.phase(t_cmd))
+               None if not drive or t_cmd is None or line_clock is None or line_clock.t_ref is None
+               else line_clock.phase(t_cmd),
+               None if t_cmd is None else t_cmd - t)
         if n_policy:
             row += ((*c.last_raw, float(c.last_pre_clip), int(c.last_saturated),
                      int(c.last_integrators_frozen), float(c.last_residual)) if acted else no_policy)
@@ -421,6 +425,8 @@ def write_logs(base, rows, reason, t_arm, meta, notes, seconds=None, columns=RAW
             f"lateness: {stats_ms(lates)}",
             f"overruns (> {lc.OVERRUN_S * 1e3:.1f} ms late): {sum(1 for x in lates if x > lc.OVERRUN_S)}",
             f"compute (IMU read to command sent): {stats_ms([r[i['compute']] for r in run_rows])}",
+            f"command point (tick start to command write, cmd_at; compute lead target): "
+            f"{stats_ms([r[i['cmd_at']] for r in run_rows])}",
             f"IMU read: {stats_ms([r[i['imu_read']] for r in run_rows])}",
             f"ticks locked to the HAT's lines: {sum(r[i['locked']] for r in run_rows)} of {len(run_rows)}",
             f"command write phase after the line grid, mod 5 ms: "
@@ -628,8 +634,8 @@ def main(argv=None):
             notes["self-test"] = (f"{self_test['n_ticks']} golden ticks, max torque error "
                                   f"{self_test['max_torque_err']:.3g} N m (tol {lc.GOLDEN_TOL:g}); forward pass mean "
                                   f"{self_test['mean_s'] * 1e6:.1f} p50 {self_test['p50_s'] * 1e6:.1f} p99 "
-                                  f"{self_test['p99_s'] * 1e6:.1f} max {self_test['max_s'] * 1e6:.1f} us; PID p99 "
-                                  f"{self_test['pid_p99_s'] * 1e6:.1f} us")
+                                  f"{self_test['p99_s'] * 1e6:.1f} max {self_test['max_s'] * 1e6:.1f} us; PID p50 "
+                                  f"{self_test['pid_p50_s'] * 1e6:.1f} p99 {self_test['pid_p99_s'] * 1e6:.1f} us")
             print(f"policy self-test passed: {notes['self-test']}")
         elif bundle is not None:
             notes["self-test"] = "none (no golden vectors)"

@@ -387,7 +387,8 @@ def self_test_policy(controller, golden, cfg=None, tol=lc.GOLDEN_TOL):
     reference run returned) through the controller; ValueError if any torque differs by more than tol N m (a
     NaN counts as a failure). The controller is reset and its goal (and a residual base PID's) restored
     afterwards, pass or fail. Also times the forward pass, and with cfg a fresh cascaded PID over the same
-    states, for the compute lead: lc.COMPUTE_LEAD_S + max(0, policy p99 - PID p99)."""
+    states, for the compute lead (compute_lead: from the two medians).
+    The returned timings are those of the forward path the controller uses (fast or reference, P3c)."""
     import numpy as np
     states = np.asarray(golden["states"], dtype=float)
     expected = np.asarray(golden["torques"], dtype=float)
@@ -421,13 +422,26 @@ def self_test_policy(controller, golden, cfg=None, tol=lc.GOLDEN_TOL):
     if p99 > lc.POLICY_MAX_P99_FRACTION * dt:
         raise ValueError(f"policy self-test: forward pass p99 {p99 * 1e3:.3f} ms exceeds "
                          f"{lc.POLICY_MAX_P99_FRACTION:g} x dt ({dt * 1e3:g} ms): too slow for this loop")
-    pid_p99 = None
+    p50 = _quantile(ts, 0.5)
+    pid_p50 = pid_p99 = None
     if cfg is not None:
         _, pid_times = _time_updates(cfg.build_controller(goal=0.0), states, dt)
-        pid_p99 = _quantile(sorted(pid_times), 0.99)
-    lead = lc.COMPUTE_LEAD_S + (max(0.0, p99 - pid_p99) if pid_p99 is not None else p99)
-    return {"n_ticks": n, "max_torque_err": float(max_err), "mean_s": sum(ts) / n, "p50_s": _quantile(ts, 0.5),
-            "p99_s": p99, "max_s": ts[-1], "pid_p99_s": pid_p99, "compute_lead_s": lead}
+        pid_ts = sorted(pid_times)
+        pid_p50, pid_p99 = _quantile(pid_ts, 0.5), _quantile(pid_ts, 0.99)
+    lead = compute_lead(p50, pid_p50)
+    return {"n_ticks": n, "max_torque_err": float(max_err), "mean_s": sum(ts) / n, "p50_s": p50,
+            "p99_s": p99, "max_s": ts[-1], "pid_p50_s": pid_p50, "pid_p99_s": pid_p99, "compute_lead_s": lead}
+
+
+def compute_lead(policy_p50, pid_p50=None):
+    """P3b: tick start -> command write for a policy controller, from its self-test forward-pass median:
+    lc.COMPUTE_LEAD_S (the hand PID's) + max(0, policy p50 - PID p50) + lc.POLICY_LEAD_EXTRA_S; without a
+    PID timing the whole policy p50 is added. Medians, not p99s: COMPUTE_LEAD_S is a typical figure, and the
+    tail is absorbed by the margin from LINE_WRITE_PHASE_S to the left motor's tick cliff (0.7 ms or more;
+    P7 step 1's worst in-loop p99 was 0.5 ms past its lead). The extra is the in-loop cost the self-test
+    doesn't see (see loop_config)."""
+    delta = policy_p50 - pid_p50 if pid_p50 is not None else policy_p50
+    return lc.COMPUTE_LEAD_S + max(0.0, delta) + lc.POLICY_LEAD_EXTRA_S
 
 
 class EnvelopeMonitor:
