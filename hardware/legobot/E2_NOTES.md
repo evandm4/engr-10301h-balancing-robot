@@ -1,7 +1,8 @@
 # E2 notes: LEGO robot reference PID, scales, and learned controllers
 
 The record for [E2_PLAN.md](E2_PLAN.md) (decisions D1–D6, steps E2.0–E2.9). Numbers are copied from the run
-folders named here. Seed tiers: train 1–150, dev 5000–5049, confirm 6,000,000–6,000,099 (E2.2 only).
+folders named here. Seed tiers: train 1–99 and 110–160 for the E2.1 searches (150 seeds; 100–109 are retired), default
+1–50 × 3 tilts for the E2.3 reference scores and the policy gates; dev 5000–5049, confirm 6,000,000–6,000,099 (E2.2 only).
 Validation 3000–3099 and fall-rate 6000–6999 stay **frozen until E2.8**: nothing below touched them.
 
 ## Machines
@@ -147,6 +148,73 @@ Ranked by robust objective (mean cost with the fall penalty). Finalists: the top
 
 *Candidates: 'best' = the run's CMA-ES best sample (comparison.json entry 'cma-es': the lowest training objective the CMA-ES search saw), alongside 'cma-es (mean)'; E1_NOTES.md 5.4 ('cma-es (mean) and best-sample finalists'). DE and random search are excluded unless --best overall / --include-entry.*
 
+**Pattern (as in E1):** the tuned PIDs beat model-based on the dev objective *only through fewer falls*. Every tuned
+candidate's median per-scenario ratio to model-based is > 1, so model-based has the lowest median cost of all 42
+candidates.
+
+**D1 fallback considered and declined (Evan, 2026-11-25 09:27).** The D1 trigger for switching the selection to a
+median/trimmed objective was arguably met: the mean objective here mostly tracks fall luck. Evan chose to keep
+the model-based PID as the E2 reference rather than re-select under the fallback, because:
+- the tuned searches converged consistently (finalists 71–83 on dev, train objectives clustered);
+- the falls form a shared hard tail: every controller falls on mostly the same scenarios;
+- the discordant falls are coin flips (McNemar p 0.5–1.0 on confirm);
+- the mean objective fits fall luck, so re-ranking by a different statistic of the same runs would be choosing
+  after seeing the data.
+
+The model-based PID is reproducible from the design formula (`model_based_gains()`) and has the lowest median
+cost of all candidates.
+
+**Adversarial audit of E2.2 (reviewer-e22, 2026-11-25): PASS.** It found no frozen-seed touches. Its notes:
+- The D3 McNemar rule ("more discordant falls AND two-sided p < 0.05") is effectively a one-sided α = 0.025 test.
+  It doesn't matter here: the discordant counts were 6/5, 3/6, 4/5.
+- Bootstrap robustness: a 100-seed cluster bootstrap and a tilt-stratified bootstrap both keep every CI lower
+  bound ≥ 1.061.
+- `--best overall` gives the identical 3 finalists. DE beat CMA-ES on train in only 4/20 runs, and those runs' dev
+  scores miss the top 3.
+- Model-based wins 86–89% of the confirm scenarios head-to-head against each finalist. The finalists' lower means
+  come from 1–3 coin-flip falls.
+
 ## E2.3: frozen reference
 
-(pending)
+Command (laptop CPU, 15 s), at the stage-2 commit:
+
+    ROBOT=legobot python hardware/legobot/e2_freeze_reference.py      # latest selection: 20261125-092022
+
+Output: `results/legobot/reference_pid/comparison.json`, in `read_pid_comparison`'s layout (entries keyed by label,
+`"kind": "cascaded_pid"`, gains list). `legobot_config.LEARNING` now points to it: `reference_pid_file =
+"results/legobot/reference_pid/comparison.json"`, `reference_pid_entry = "PID, model-based"`. So
+`reference_is_provisional` is False, and compare_controllers / run_neuroevolution / B1 use the model-based PID.
+
+| Entry | Gains `[kp, ki, kd, kv_p]` | Train obj (default seeds 1–50 × 3 tilts, 20 s) | Train falls | Dev obj | Dev falls | ρ at 10 ms | Stable latency window |
+|---|---|---:|---:|---:|---:|---:|---|
+| `PID, model-based` (reference) | `[1.97968, 5.23602, 0.15090, 0.51525]` | 72.4515 | 5/150 | 106.84 | 6/150 | 0.99833 | 0–65.5 ms |
+| `PID, hand-tuned` (baseline) | `[2.5, 1.5, 0.2, 0.5]` | 222.2373 | 17/150 | 253.00 | 15/150 | 0.99947 | 0–80 ms (search cap) |
+
+Train objective: BatchEvaluator, NumPy float64, robust scoring on the default training seeds (what the policy gates
+check against). Dev is copied from the selection. The confirm stats are stored for the reference only. No
+validation (3000–3099) or fall-rate (6000–6999) seed was used. The file embeds the config snapshot at freeze time,
+which still shows the pre-E2.3 LEARNING (`reference_pid_file: null`, hand-tuned scales). Scoring doesn't depend on
+LEARNING.
+
+Tests generalized from the Pololu-only `"PID, ML-tuned"` to `CONFIG.learning.reference_pid_entry`
+(test_policy, test_linear_stability, test_compare_controllers). test_legobot_learning now asserts the frozen
+model-based reference (not provisional, gains = `model_based_gains()`, B1 sits on it). These modules no longer
+skip under `ROBOT=legobot`; LEGO-specific triage is listed below.
+
+- **Harness fix (test_policy).** `_batched` and the residual `pid_batch` built the batch robot with
+  `BatchRobot.from_params`, which drops the LEGO slow-PWM/actuator model. That gave ~50% cost gaps against the
+  one-robot engine. They now use `robot_from_eval_config(config)`, which is the same path BatchEvaluator uses, so
+  training was never affected. The one-robot policy and the direct PID were already exact.
+- **Gate b (test_policy).** On Pololu it stays the per-scenario check. On LEGO the L-PID policy and the reference PID
+  diverge chaotically after a fall-edge event: the slow PWM quantizes, and tiny float differences flip coin-flip
+  falls. So the LEGO branch checks the ratio of means over scenarios where both stay up (< 1%), plus both-up ≥ 90%.
+  E2.4's `e2_gate_b.py` reports the same check on train and dev.
+- **Delay margin (test_linear_stability).** The leaky-integrator delay-margin shift stays < 3 ms on Pololu. On LEGO
+  it's < 10% of `pid_high` and `high > 4 × LATENCY`. The measured shift is 6.25 ms, against a 65.5 ms margin.
+- **Small-amplitude test.** Skipped for non-Pololu robots: the LEGO plant has 7 extra actuator/filter states, so the
+  2-state small-signal comparison doesn't apply.
+- **compare_controllers.** CSV row count is now `1 + (methods + 1) × 6`. The torque-limit saturation assert is
+  Pololu-only, because the LEGO reference doesn't saturate on the test scenario.
+
+The committed bundles (`l_pid`, `a_warm_zero`, `b1_zero`, `quick_l`) embed the old LEARNING. So at the E2.3 commit
+the robot deployed-layout test is red until E2.4 re-exports them.

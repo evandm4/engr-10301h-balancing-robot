@@ -1,6 +1,6 @@
-"""The learned-controller setup for the LEGO robot (legobot_config.LEARNING), before it has a tuned
-reference PID (E1/E2): its own observation scales, the provisional reference (its hand-tuned PID),
-the comparison reader for both tuning scripts' layouts, and compare_controllers under legobot.
+"""The learned-controller setup for the LEGO robot (legobot_config.LEARNING): its own observation scales,
+its frozen E2 reference (the model-based PID, results/legobot/reference_pid/comparison.json), the
+comparison reader for both tuning scripts' layouts, and compare_controllers under legobot.
 Tests run under the default Pololu robot, so the LEGO config is built with load_config."""
 
 import json
@@ -31,15 +31,23 @@ def test_lego_has_its_own_learning_scales():
         assert spec.scales == LEGO.learning.scales
     residual = LEGO.build_policy_spec("residual")
     np.testing.assert_allclose(residual.output_scale, LEGO.learning.residual_authority * LEGO.robot.max_torque)
-    assert residual.residual_scales == (0.35, 0.09)
+    assert residual.residual_scales == (LEGO.learning.residual_setpoint_scale, LEGO.learning.residual_int_theta_scale)
 
 
-def test_lego_reference_is_its_hand_tuned_pid_and_provisional():
-    assert LEGO.reference_is_provisional and not CONFIG.reference_is_provisional
-    assert LEGO.reference_pid_gains() == tuple(LEGO.controller.hand_tuned_gains)
-    assert set(LEGO.reference_controllers()) == {"PID, hand-tuned", "PID, model-based"}
+def test_lego_reference_is_its_frozen_model_based_pid():
+    """E2.3 (hardware/legobot/E2_PLAN.md D3): no tuned PID beat the model-based one on the confirm slice,
+    so results/legobot/reference_pid/comparison.json freezes "PID, model-based" as the reference."""
+    assert not LEGO.reference_is_provisional and not CONFIG.reference_is_provisional
+    assert LEGO.learning.reference_pid_entry == "PID, model-based"
+    frozen = json.loads((ROOT / LEGO.learning.reference_pid_file).read_text())
+    assert frozen["reference"] == "PID, model-based" and frozen["results"]["PID, model-based"]["role"] == "reference"
+    gains = tuple(frozen["results"]["PID, model-based"]["gains"])
+    np.testing.assert_allclose(gains, LEGO.model_based_gains(), rtol=1e-12)     # the design formula, unchanged
+    assert tuple(frozen["results"]["PID, hand-tuned"]["gains"]) == tuple(LEGO.controller.hand_tuned_gains)
+    assert LEGO.reference_pid_gains() == gains
+    assert list(LEGO.reference_controllers()) == ["PID, model-based", "PID, hand-tuned"]
     assert all(kind == "cascaded" for kind, _ in LEGO.reference_controllers().values())   # no LQR on this robot
-    assert LEGO.build_policy_spec("residual").residual_gains == tuple(LEGO.controller.hand_tuned_gains)
+    assert LEGO.build_policy_spec("residual").residual_gains == gains
 
 
 def test_reader_handles_both_tuning_scripts_layouts():
@@ -62,7 +70,7 @@ def test_reader_handles_both_tuning_scripts_layouts():
 def test_compare_controllers_under_legobot_uses_its_baselines(tmp_path, monkeypatch):
     monkeypatch.setattr(compare_controllers, "CONFIG", LEGO)
     entries = compare_controllers.existing_controllers()
-    assert [e.label for e in entries] == ["PID, hand-tuned", "PID, model-based"]
+    assert [e.label for e in entries] == ["PID, model-based", "PID, hand-tuned"]
     spec = LEGO.build_policy_spec("linear")
     (tmp_path / "run0").mkdir()
     save_policy(tmp_path / "run0" / "final.npz", spec, pid_equivalent_weights(spec, LEGO.reference_pid_gains()),
@@ -71,8 +79,8 @@ def test_compare_controllers_under_legobot_uses_its_baselines(tmp_path, monkeypa
                                        "--policies", f"L-PID={tmp_path}/run*/final.npz",
                                        "--out", str(tmp_path / "out")])
     report = json.loads((folder / "comparison.json").read_text())
-    assert report["robot"] == "legobot" and report["reference"] == "PID, hand-tuned"
-    assert report["reference_provisional"] is True
+    assert report["robot"] == "legobot" and report["reference"] == "PID, model-based"
+    assert report["reference_provisional"] is False
     assert set(report["methods"]) == {"PID, hand-tuned", "PID, model-based", "L-PID"}
     # Explicitly no existing controllers: then the reference must come from --policies.
     with pytest.raises(SystemExit):

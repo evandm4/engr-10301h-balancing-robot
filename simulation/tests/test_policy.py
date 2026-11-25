@@ -23,8 +23,9 @@ import pytest
 from balance_sim import (Controller, PolicyController, PolicySpec, SensorNoise, load_policy, pack,
                          pid_equivalent_weights, save_policy, step_profile, unpack)
 from balance_sim.policy import OBSERVATIONS, RESIDUAL_INPUTS
-from batch_sim import BatchRobot, SimSpec, build_schedule, noise_table, simulate_batch
-from batch_tuning import BatchEvaluator, RobustnessConfig, cma_es_policy_search, spec_from_eval_config
+from batch_sim import SimSpec, build_schedule, noise_table, simulate_batch
+from batch_tuning import (BatchEvaluator, RobustnessConfig, cma_es_policy_search, robot_from_eval_config,
+                          spec_from_eval_config)
 from config import CONFIG
 from tuning import Evaluator
 
@@ -34,7 +35,7 @@ if CONFIG.learning.reference_pid_file is None:
                 "optimization/tests/test_legobot_learning.py covers its learned-controller setup)",
                 allow_module_level=True)
 REFERENCE = json.loads((ROOT / CONFIG.learning.reference_pid_file).read_text())   # the reference every ratio is against
-REFERENCE_PID = REFERENCE["results"]["PID, ML-tuned"]
+REFERENCE_PID = REFERENCE["results"][CONFIG.learning.reference_pid_entry]
 GAINS = REFERENCE_PID["gains"]                     # kp, ki, kd, kv_p every ratio in the paper is against
 
 SPACE = CONFIG.build_search_space()
@@ -97,7 +98,8 @@ def _batched(config, spec, params, record=False):
     sim = spec_from_eval_config(config, "policy", spec)
     scen, pitch, col, seeds = _flat_scenarios(config, len(params))
     schedule = build_schedule(sim)
-    return simulate_batch(sim, BatchRobot.from_params(config.params, config.motor), params, pitch,
+    # robot_from_eval_config, as BatchEvaluator builds it: it carries the drive (the LEGO robot's slow PWM)
+    return simulate_batch(sim, robot_from_eval_config(config), params, pitch,
                           noise=noise_table(seeds, schedule.n_ticks), seed_index=col, schedule=schedule,
                           record=record, scenarios_per_candidate=len(scen)), scen
 
@@ -223,8 +225,16 @@ def test_gate_b_policy_integrators_stay_within_one_percent_of_the_real_pid():
         pid = BatchEvaluator(config, SPACE, robustness=robust).evaluate_population([GAINS], seeds)
         lin = BatchEvaluator(config, SPACE, robustness=robust, controller="policy",
                              policy=LINEAR).evaluate_policies([weights], seeds)
-        assert pid.n_fell[0] == 0 and lin.n_fell[0] == 0
-        assert abs(lin.objective[0] / pid.objective[0] - 1.0) < 0.01
+        if CONFIG.name == "pololu":
+            assert pid.n_fell[0] == 0 and lin.n_fell[0] == 0
+            assert abs(lin.objective[0] / pid.objective[0] - 1.0) < 0.01
+        else:
+            # The LEGO reference PID falls on a few scenarios (5/150 training, 6/150 dev), and a fall's
+            # penalty swamps the cost, so the bound is on the scenarios where both stay up
+            # (hardware/legobot/e2_gate_b.py, E2_NOTES.md E2.4).
+            up = ~pid.fell[0] & ~lin.fell[0]
+            assert up.sum() >= 0.9 * up.size
+            assert abs(lin.costs[0, up].mean() / pid.costs[0, up].mean() - 1.0) < 0.01
     # The training objective of the reference PID itself is reproduced, so the comparison is
     # against the same controller as in the paper.
     train = BatchEvaluator(CONFIG.build_eval_config(), SPACE, robustness=robust).evaluate_population([GAINS])
@@ -248,7 +258,7 @@ def test_zero_residual_is_the_reference_pid_bit_for_bit(name):
     pid_sim = spec_from_eval_config(config)
     _, pitch, col, seeds = _flat_scenarios(config, 2)
     schedule = build_schedule(pid_sim)
-    pid_batch = simulate_batch(pid_sim, BatchRobot.from_params(config.params, config.motor),
+    pid_batch = simulate_batch(pid_sim, robot_from_eval_config(config),
                                np.tile(GAINS, (len(pitch), 1)), pitch, noise=noise_table(seeds, schedule.n_ticks),
                                seed_index=col, schedule=schedule, record=True)
     np.testing.assert_array_equal(batched.states, pid_batch.states)

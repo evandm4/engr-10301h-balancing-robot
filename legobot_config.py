@@ -355,11 +355,11 @@ SEARCH = replace(SearchConfig(), ki_max=10.0, kv_p_max=2.0)
 #                                                    Coulomb friction plus pulse-density chatter)
 #   PID setpoint      0.342   0.145   0.087   0.35  (residual input; peak)
 #   PID pitch int.    0.092   0.053   0.036   0.09  (residual input; peak)
-# No tuned reference PID yet (E1/E2, hardware/legobot/SOFTWARE_PLAN.md): the hand-tuned PID is the
-# reference, flagged as provisional everywhere it is used, and B1 would sit on it. When E2 is done,
-# set reference_pid_file to its run_batch_tuning.py comparison.json under results/legobot/ and
-# reference_pid_entry to the chosen reference PID, then re-measure these scales with that PID.
-# No LQR on this robot (A4_BASELINES.md).
+# Reference PID (E2.3, hardware/legobot/E2_PLAN.md D3, E2_NOTES.md): frozen 2026-11-25 from the E2.2
+# selection (results/legobot/e2_selection/20261125-092022). No tuned PID beat the model-based one on
+# the confirm slice by D3 (a), so the reference is "PID, model-based"; B1 sits on it.
+# results/legobot/reference_pid/comparison.json (hardware/legobot/e2_freeze_reference.py) holds it with
+# the hand-tuned PID alongside. No LQR on this robot (A4_BASELINES.md).
 LEARNING = replace(
     LearningConfig(),
     speed_scale=0.4,
@@ -372,8 +372,8 @@ LEARNING = replace(
     output_scale=0.6,
     residual_setpoint_scale=0.35,
     residual_int_theta_scale=0.09,
-    reference_pid_file=None,
-    reference_pid_entry="PID, hand-tuned",
+    reference_pid_file="results/legobot/reference_pid/comparison.json",
+    reference_pid_entry="PID, model-based",
 )
 
 # --------------------------------------------------------- PUT IT TOGETHER -

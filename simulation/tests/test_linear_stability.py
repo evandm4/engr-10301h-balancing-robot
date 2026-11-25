@@ -24,7 +24,7 @@ if CONFIG.learning.reference_pid_file is None:
                 "optimization/tests/test_legobot_learning.py covers its learned-controller setup)",
                 allow_module_level=True)
 RESULTS = json.loads((ROOT / CONFIG.learning.reference_pid_file).read_text())["results"]
-GAINS = RESULTS["PID, ML-tuned"]["gains"]
+GAINS = RESULTS[CONFIG.learning.reference_pid_entry]["gains"]
 T = CONFIG.timing.control_dt_s
 LATENCY = CONFIG.timing.latency_s
 P = CONFIG.build_robot_params()
@@ -72,10 +72,17 @@ def test_l_pid_with_leaky_integrators_is_stable_at_the_design_latency():
     radius = spectral_radius(P, l_pid, T, LATENCY)
     assert radius < 1.0
     low, high = stable_latency_range(P, l_pid, T, around=LATENCY)
-    pid_high = RESULTS["PID, ML-tuned"]["linear_stability"]["stable_latency_range_ms"][1] / 1000
-    assert low == 0.0 and abs(high - pid_high) < 0.003     # the leak barely moves the delay margin
+    pid_high = RESULTS[CONFIG.learning.reference_pid_entry]["linear_stability"]["stable_latency_range_ms"][1] / 1000
+    # The leak barely moves the delay margin: within 3 ms on the Pololu robot. On the LEGO robot (E2.3 reference,
+    # measured 2026-11-25) it moves 6.25 ms of a 65.5 ms window, still far above its 7.5-12.5 ms latency range.
+    if CONFIG.name == "pololu":
+        assert low == 0.0 and abs(high - pid_high) < 0.003
+    else:
+        assert low == 0.0 and abs(high - pid_high) < 0.1 * pid_high and high > 4 * LATENCY
 
 
+@pytest.mark.skipif(CONFIG.name != "pololu", reason="the loop matrix is the rigid 4-state plant; the LEGO plant adds "
+                    "drive and backlash states that are not linear at 1e-5 rad")
 @pytest.mark.parametrize("latency", [0.0, 0.0075, 0.010])
 def test_linearized_loop_matches_a_small_amplitude_simulation(latency):
     """z_{k+1} = M z_k against balance_sim at 1e-5 rad (no noise, no Coulomb friction, nothing

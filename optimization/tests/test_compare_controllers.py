@@ -108,6 +108,7 @@ def test_confirm_tier_maps_to_its_seeds_and_is_not_frozen():
 @pytest.mark.skipif(CONFIG.reference_is_provisional, reason="needs a tuned reference PID (LEGO: after E2); "
                     "test_legobot_learning.py runs compare_controllers under legobot")
 def test_end_to_end_on_smoke(tmp_path):
+    REF = CONFIG.learning.reference_pid_entry
     spec = CONFIG.build_policy_spec("linear")
     gains = CONFIG.reference_pid_gains()
     for k, scale in enumerate((1.0, 1.02)):
@@ -118,24 +119,25 @@ def test_end_to_end_on_smoke(tmp_path):
                    "--policies", f"L-PID={tmp_path}/run*/final.npz", "--latency-sweep", "--latencies", "15,40",
                    "--out", str(tmp_path / "out")])
     report = json.loads((folder / "comparison.json").read_text())
-    ref = report["runs"]["PID, ML-tuned"]
+    ref = report["runs"][REF]
     assert ref["median_ratio"] == 1.0 and ref["mcnemar_vs_reference"]["p_value"] == 1.0
     l_pid = report["methods"]["L-PID"]
     assert len(l_pid["runs"]) == 2 and l_pid["bootstrap_95ci"] is not None
     assert abs(l_pid["headline_median_ratio"] - 1.0) < 0.1
-    assert set(report["latency_sweep"]["by_method"]) >= {"L-PID", "PID, ML-tuned"}
+    assert set(report["latency_sweep"]["by_method"]) >= {"L-PID", REF}
     lines = (folder / "per_scenario.csv").read_text().strip().splitlines()
-    assert len(lines) == 1 + 9 * 6        # 7 existing + 2 policies, 2 seeds x 3 tilts
+    assert len(lines) == 1 + (len(report["methods"]) + 1) * 6   # the existing ones + 2 policies, 2 seeds x 3 tilts
     # Weight sensitivity: the configured variant reproduces the headline; every variant scores the
     # reference at exactly 1; the variants include halved/doubled limits, effort off and thermal.
     sens = report["weight_sensitivity"]
     assert sens["configured"]["headline_median_ratio"]["L-PID"] == pytest.approx(l_pid["headline_median_ratio"],
                                                                                  rel=1e-12)   # summed in another order
-    assert all(v["headline_median_ratio"]["PID, ML-tuned"] == 1.0 for v in sens.values())
+    assert all(v["headline_median_ratio"][REF] == 1.0 for v in sens.values())
     assert len(sens) == 1 + 6 + 2 and any("thermal" in k for k in sens)
     side = ref["side_metrics"]
     assert side["torque_rms_change_per_tick_n_m"]["median"] > 0
-    assert 0 < side["time_at_torque_limit_fraction"]["worst"] < 1   # the 0.30 rad start saturates
+    if CONFIG.name == "pololu":   # its 0.30 rad start saturates; the LEGO robot's doesn't reach the limit
+        assert 0 < side["time_at_torque_limit_fraction"]["worst"] < 1
     assert side["peak_pitch_deg"]["worst"] >= 17.0                  # it starts at 0.30 rad = 17.2 deg
     # Fall ordering checked per weighting; method pairs only where a method has several runs; the
     # policies were saved without a run snapshot, which is flagged.
@@ -143,8 +145,8 @@ def test_end_to_end_on_smoke(tmp_path):
     assert sens["configured"]["falls_rank_below_every_non_fall"]
     assert set(report["method_pairs"]) == {f"{m} vs L-PID" for m in report["methods"] if m != "L-PID"}
     assert any("no snapshot.json" in w for w in report["runs"]["L-PID / run0"]["warnings"])
-    assert report["runs"]["PID, ML-tuned"]["warnings"] == []
-    curve = report["latency_sweep"]["curves"]["PID, ML-tuned"]
+    assert report["runs"][REF]["warnings"] == []
+    curve = report["latency_sweep"]["curves"][REF]
     assert report["latency_sweep"]["baseline_ms"] == 15.0 and curve["median_ratio_vs_reference"] == [1.0, 1.0]
     assert curve["first_latency_losing_to_reference"] is None       # the reference never beats itself
     assert set(report["latency_sweep"]["by_method"]["L-PID"]) >= {"first_latency_with_cost",
