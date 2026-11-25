@@ -185,7 +185,7 @@ def test_schedule_force_matches_profile():
 
 
 torch = pytest.importorskip("torch")
-DEVICES = ["cuda", "cpu"] if torch.cuda.is_available() else ["cpu"]
+DEVICES = ["cuda", "cpu"] if (torch.cuda.is_available() and torch.cuda.device_count() > 0) else ["cpu"]
 
 
 @pytest.mark.parametrize("device", DEVICES)

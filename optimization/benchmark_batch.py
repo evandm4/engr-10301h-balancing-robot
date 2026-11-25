@@ -36,7 +36,7 @@ def machine_info(backend: str) -> dict:
     if backend == "torch":
         import torch
         info.update(torch=torch.__version__, cuda=torch.version.cuda,
-                    gpu=torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)
+                    gpu=torch.cuda.get_device_name(0) if (torch.cuda.is_available() and torch.cuda.device_count() > 0) else None)
     return info
 
 

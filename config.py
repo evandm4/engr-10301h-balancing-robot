@@ -1189,8 +1189,13 @@ class ComparisonConfig:
     # Relative fall metric: the first latency above the baseline with at least this many more falls
     # than the controller's own at the baseline (same scenarios), where an exact one-sided McNemar
     # test of the paired fall flags also gives p < sweep_excess_alpha. Readable whatever the
-    # baseline's fall rate.
-    sweep_excess_falls: int = 4
+    # baseline's fall rate (short of a ceiling: compare_controllers.excess_ceiling_censored). 5, not
+    # 4: at alpha 0.05 four new falls with none recovered give p = 0.0625, so 4 could never pass;
+    # five give 0.03125. The alpha is POINTWISE and unadjusted: it is tested at every latency above
+    # the baseline (13 on Pololu's grid, 14 on LEGO's), so with no latency effect the chance of a
+    # false flag somewhere on the grid is well above it (about 16-22%, the 2026-11-25 review; the
+    # tests are correlated). The report says so (latency_sweep.excess_falls.alpha_scope).
+    sweep_excess_falls: int = 5
     sweep_excess_alpha: float = 0.05
     # The weight sensitivity's thermal variant: the torque limit at the motors' continuous rating,
     # in N m at the wheels, both motors. None: torque_constant x continuous_current_a x gear_ratio

@@ -72,7 +72,7 @@ def test_robust_scores_match_reference_runs_scenario_by_scenario(locked):
 @pytest.mark.parametrize("locked", [False, True], ids=["free-phase", "locked"])
 def test_torch_float64_matches_numpy_in_robust_mode(locked):
     torch = pytest.importorskip("torch")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda" if (torch.cuda.is_available() and torch.cuda.device_count() > 0) else "cpu"
     short, robust = (SHORT_LOCKED, ROBUST_LOCKED) if locked else (SHORT, ROBUST)
     ref = BatchEvaluator(short, SPACE, robustness=robust).evaluate_population(GAINS)
     got = BatchEvaluator(short, SPACE, robustness=robust, backend="torch", device=device,

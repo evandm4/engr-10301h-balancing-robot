@@ -50,9 +50,16 @@ pre-registered metrics (plan 3.4), a relative fall metric, and the full curves:
     falls: the first latency with 4 or more falls. If the baseline already has that many,
         latency isn't what makes it fall, and the metric is reported as at or below the baseline
         (left-censored: every LEGO controller, whose baselines fall about 4% of the time);
-    excess falls: the first latency above the baseline with 4 or more falls more than the
+    excess falls: the first latency above the baseline with 5 or more falls more than the
         controller's own at the baseline, on the same scenarios, where an exact one-sided McNemar
-        test of the paired fall flags gives p < 0.05. Readable whatever the baseline's fall rate;
+        test of the paired fall flags gives p < 0.05 (5 is the fewest that can: 5 new falls and
+        none recovered give p = 0.03125, 4 give 0.0625). Readable whatever the baseline's fall rate,
+        unless the baseline falls in so many scenarios that even every other one falling couldn't
+        pass (flagged excess_falls_ceiling_censored, and then None means unknown, not never). The
+        0.05 is POINTWISE and unadjusted: it is tested at every latency above the baseline (13 on
+        Pololu's grid, 14 on LEGO's), so with no latency effect at all the chance of a false flag
+        somewhere on the grid is well above 5% (about 16-22% by the 2026-11-25 review; the
+        latencies' tests are correlated). Read a flag near the baseline with that in mind;
     cost: the first latency at which the median per-scenario cost reaches 1.5x the controller's
         own at the baseline. A controller past its delay margin can oscillate for a whole run without
         falling, which only this metric sees;
@@ -298,12 +305,26 @@ def first_latency_with_excess_falls(latencies_ms, excess, p_values,
                                     alpha: float = POLOLU_COMPARISON.sweep_excess_alpha) -> Optional[float]:
     """The relative fall metric: over the grid above the baseline, the first latency with at least
     `min_excess` more falls than the controller's own at the baseline (same scenarios) and a one-sided
-    McNemar p below `alpha` (mcnemar_excess); None if none. Unlike first_latency_with_falls it isn't
-    censored when the baseline already falls (the LEGO robot's ~4%)."""
+    McNemar p below `alpha` (mcnemar_excess); None if none. `alpha` applies at each latency on its
+    own (pointwise, no multiplicity adjustment across the grid).
+
+    Unlike first_latency_with_falls it isn't left-censored by a baseline that already falls some
+    (the LEGO robot's ~4%), but it has a ceiling: if so few scenarios survive the baseline that even
+    all of them falling can't pass (excess_ceiling_censored), None means unknown, not never."""
     for ms, e, p in zip(latencies_ms, excess, p_values):
         if e >= min_excess and p < alpha:
             return float(ms)
     return None
+
+
+def excess_ceiling_censored(survivors_at_baseline: int,
+                            min_excess: int = POLOLU_COMPARISON.sweep_excess_falls,
+                            alpha: float = POLOLU_COMPARISON.sweep_excess_alpha) -> bool:
+    """True when the relative fall metric can't fire at any latency: the best case, every scenario
+    that survived the baseline falling and none of its falls recovering (b = survivors, c = 0, so
+    p = 0.5 ** survivors), still misses `min_excess` or `alpha`."""
+    best = int(survivors_at_baseline)
+    return not (best >= min_excess and 0.5 ** best < alpha)
 
 
 def sweep_grid(latencies_ms, baseline_ms: float) -> Tuple[float, ...]:
@@ -558,6 +579,8 @@ def latency_sweep(entries: Sequence[Entry], config, robust, seeds, reference: st
         c["first_latency_with_excess_falls"] = first_latency_with_excess_falls(
             c["latency_ms"][i0 + 1:], c["excess_falls_vs_baseline"][i0 + 1:], c["mcnemar_p_vs_baseline"][i0 + 1:],
             settings.sweep_excess_falls, settings.sweep_excess_alpha)
+        c["excess_falls_ceiling_censored"] = excess_ceiling_censored(
+            int(np.sum(~fell[label][i0])), settings.sweep_excess_falls, settings.sweep_excess_alpha)
         c["scenarios"] = len(seeds) * len(config.start_pitches)
     return curves
 
@@ -566,17 +589,30 @@ SWEEP_METRICS = ("first_latency_with_falls", "first_latency_with_cost", "first_l
                  "first_latency_with_excess_falls")
 
 
+# A metric's None means "no latency on the grid reached it" (ranked above every latency in the median)
+# unless the run's flag here says the metric couldn't have fired at all: then it is unknown.
+SWEEP_CENSORED_FLAGS = {"first_latency_with_excess_falls": "excess_falls_ceiling_censored"}
+
+
 def sweep_by_method(entries, curves) -> dict:
-    """The sweep metrics per method: each run's value, and their median (None = no latency reached it)."""
+    """The sweep metrics per method: each run's value, and their median (None = no latency reached it).
+    A ceiling-censored None (SWEEP_CENSORED_FLAGS) is unknown, not "never": a method with any such run
+    gets median None and censored_runs, its count."""
     out = {}
     for method in dict.fromkeys(e.method for e in entries):
         group = [curves[e.label] for e in entries if e.method == method]
         out[method] = {}
         for metric in SWEEP_METRICS:
             values = [c[metric] for c in group]
+            flag = SWEEP_CENSORED_FLAGS.get(metric)
+            censored = sum(1 for c in group if flag and c.get(flag) and c[metric] is None)
+            if censored:
+                out[method][metric] = {"per_run": values, "median": None, "censored_runs": censored}
+                continue
             med = float(np.median([v if v is not None else math.inf for v in values]))
             out[method][metric] = {"per_run": values, "median": None if math.isinf(med) else med}
         out[method]["falls_at_or_below_baseline"] = [c["falls_at_or_below_baseline"] for c in group]
+        out[method]["excess_falls_ceiling_censored"] = [c["excess_falls_ceiling_censored"] for c in group]
     return out
 
 
@@ -685,9 +721,12 @@ def main(argv=None) -> Path:
                                    "latencies_ms": list(latencies),
                                    "excess_falls": {"min_excess": settings.sweep_excess_falls,
                                                     "alpha": settings.sweep_excess_alpha,
+                                                    "alpha_scope": "pointwise_unadjusted",
+                                                    "n_tested_latencies": sum(1 for ms in latencies if ms > baseline),
                                                     "test": "exact one-sided McNemar of the fall flags at each "
                                                             "latency against the controller's own at baseline_ms, "
-                                                            "same scenarios"}}
+                                                            "same scenarios; alpha at each latency on its own, "
+                                                            "not adjusted for the n_tested_latencies tests"}}
         with open(folder / "latency_sweep.csv", "w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["controller", "latency_ms", "falls", "mean_cost", "median_cost", "median_ratio_vs_reference"])
@@ -721,12 +760,15 @@ def main(argv=None) -> Path:
         sweep = report["latency_sweep"]
         print(f"\nLatency sweep (baseline {baseline:g} ms; {', '.join(f'{ms:g}' for ms in latencies)} ms): first latency "
               f"with >= {sweep['threshold_falls']} falls; with >= {settings.sweep_excess_falls} falls more than at "
-              f"the baseline (McNemar p < {settings.sweep_excess_alpha:g}); with median cost >= "
+              f"the baseline (McNemar p < {settings.sweep_excess_alpha:g} pointwise, unadjusted over "
+              f"{sweep['excess_falls']['n_tested_latencies']} latencies); with median cost >= "
               f"{sweep['cost_factor']}x baseline; losing to the reference")
         show = lambda v: "none" if v is None else f"{v:g} ms"
         for label, c in sweep["curves"].items():
             falls = show(c["first_latency_with_falls"]) + (" (at/below baseline)" if c["falls_at_or_below_baseline"] else "")
-            print(f"  {label[:40]:<42}{falls:>26}{show(c['first_latency_with_excess_falls']):>10}"
+            excess = "censored" if c["excess_falls_ceiling_censored"] and c["first_latency_with_excess_falls"] is None \
+                else show(c["first_latency_with_excess_falls"])
+            print(f"  {label[:40]:<42}{falls:>26}{excess:>10}"
                   f"{show(c['first_latency_with_cost']):>10}{show(c['first_latency_losing_to_reference']):>10}"
                   f"   ({c['falls_at_baseline']} falls at baseline)")
     print("\nSide metrics (median over scenarios; not in the cost)")

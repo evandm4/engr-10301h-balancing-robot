@@ -104,7 +104,7 @@ def resolve_backend(args) -> str:
         return args.backend
     try:
         import torch
-        return "torch" if torch.cuda.is_available() else "numpy"
+        return "torch" if (torch.cuda.is_available() and torch.cuda.device_count() > 0) else "numpy"
     except ImportError:
         return "numpy"
 

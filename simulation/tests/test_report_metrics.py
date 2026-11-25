@@ -67,7 +67,7 @@ def test_counters_match_the_reference_commands():
 
 def test_evaluator_carries_the_counters_and_torch_agrees():
     torch = pytest.importorskip("torch")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda" if (torch.cuda.is_available() and torch.cuda.device_count() > 0) else "cpu"
     robust = replace(CONFIG.build_robustness(), train_seeds=(1, 2))
     a = BatchEvaluator(CONFIG_SHORT, CONFIG.build_search_space(), robustness=robust).evaluate_population([GAINS])
     b = BatchEvaluator(CONFIG_SHORT, CONFIG.build_search_space(), robustness=robust, backend="torch",

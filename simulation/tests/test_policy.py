@@ -360,7 +360,7 @@ def test_evaluator_rejects_mismatched_policies():
 
 def test_torch_matches_numpy_including_chunking_and_padding():
     torch = pytest.importorskip("torch")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda" if (torch.cuda.is_available() and torch.cuda.device_count() > 0) else "cpu"
     robust = replace(CONFIG.build_robustness(), train_seeds=(1, 2, 3))
     params = _near_pid(WARM, 5, 0.03, seed=2)
     a = BatchEvaluator(SHORT, SPACE, robustness=robust, controller="policy", policy=WARM).evaluate_policies(params)
@@ -375,7 +375,7 @@ def test_torch_matches_numpy_including_chunking_and_padding():
 
 def test_torch_residual_matches_numpy():
     torch = pytest.importorskip("torch")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda" if (torch.cuda.is_available() and torch.cuda.device_count() > 0) else "cpu"
     robust = replace(CONFIG.build_robustness(), train_seeds=(1, 2))
     params = np.vstack([_zero_residual(1), np.random.default_rng(4).normal(0, 0.3, (2, RESIDUAL.n_params))])
     a = BatchEvaluator(SHORT, SPACE, robustness=robust, controller="policy", policy=RESIDUAL).evaluate_policies(params)

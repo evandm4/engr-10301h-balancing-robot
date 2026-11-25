@@ -158,14 +158,14 @@ def test_ring_is_large_enough_for_long_delays():
 
 def _torch_devices():
     torch = pytest.importorskip("torch")
-    return ["cuda", "cpu"] if torch.cuda.is_available() else ["cpu"]
+    return ["cuda", "cpu"] if (torch.cuda.is_available() and torch.cuda.device_count() > 0) else ["cpu"]
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
 @pytest.mark.parametrize("controller", ["cascaded", "lqr"])
 def test_torch_per_sim_delay_matches_numpy(device, controller):
     torch = pytest.importorskip("torch")
-    if device == "cuda" and not torch.cuda.is_available():
+    if device == "cuda" and not (torch.cuda.is_available() and torch.cuda.device_count() > 0):
         pytest.skip("needs a CUDA GPU")
     from batch_sim.torch_sim import TorchSimulator
 
@@ -221,7 +221,7 @@ def test_gyro_bias_applies_without_a_noise_table(device):
         assert got == pytest.approx(expected, rel=1e-12)
     else:
         torch = pytest.importorskip("torch")
-        if device == "cuda" and not torch.cuda.is_available():
+        if device == "cuda" and not (torch.cuda.is_available() and torch.cuda.device_count() > 0):
             pytest.skip("needs a CUDA GPU")
         from batch_sim.torch_sim import TorchSimulator
         sim = TorchSimulator(spec, robot, 1, device=device, dtype=torch.float64)

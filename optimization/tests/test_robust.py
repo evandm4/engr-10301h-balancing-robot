@@ -224,7 +224,7 @@ def test_validation_seeds_come_from_the_robustness_config(space):
 
 def test_torch_backend_matches_numpy_in_robust_mode(space):
     torch = pytest.importorskip("torch")
-    if not torch.cuda.is_available():
+    if not (torch.cuda.is_available() and torch.cuda.device_count() > 0):
         pytest.skip("needs a CUDA GPU")
     gains = _near_hand_tuned(20, seed=6)
     ref = BatchEvaluator(SHORT, space, robustness=ROBUST).evaluate_population(gains)

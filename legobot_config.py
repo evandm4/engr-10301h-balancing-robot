@@ -418,13 +418,15 @@ LEGOBOT_CONFIG = ProjectConfig(
 #     to Pololu's 2.5 ms grid up to 45 ms. Latencies below the baseline are reported, not used by the metrics.
 #   - Falls: the models' own baselines fall about 4% of the time at 10 ms (about 43 / 999 on a fall-rate
 #     sized set), so the absolute 4-fall metric is reached at the baseline by every controller (left-
-#     censored). The relative metric is the one to read here: 4 or more falls above the controller's own at
-#     10 ms, on the same scenarios, with an exact one-sided McNemar p < 0.05.
-#   - Thermal variant: LEGO rates the Large Angular Motor at 0.25 N m continuous (ROBOT.max_torque's note):
-#     0.50 N m for both. Pololu's 1.5 A rule would give 0.348 x 1.5 x 0.739 x 2 = 0.772 N m here.
+#     censored). The relative metric is the one to read here: 5 or more falls above the controller's own at
+#     10 ms, on the same scenarios, with an exact one-sided McNemar p < 0.05 (pointwise, unadjusted over the
+#     14 latencies above 10 ms: see ComparisonConfig.sweep_excess_falls).
+#   - Thermal variant: LEGO's 0.25 N m fact-sheet rating per Large Angular Motor (ROBOT.max_torque's note;
+#     hardware/legobot/DATASHEET.md lists it under Stall, below the 0.45 N m measured stall), used as the
+#     continuous limit: 0.50 N m for both. Pololu's 1.5 A rule would give 0.348 x 1.5 x 0.739 x 2 = 0.772 N m.
 LEGOBOT_COMPARISON = ComparisonConfig(
     sweep_baseline_ms=None,                                         # TIMING.latency_s: 10 ms
     sweep_latencies_ms=tuple(7.5 + 2.5 * i for i in range(16)),     # 7.5, 10, 12.5, 15, ..., 45 ms
-    continuous_torque_n_m=2 * 0.25,                                 # N m: LEGO's rating, both motors
+    continuous_torque_n_m=2 * 0.25,                                 # N m: LEGO's 0.25 N m fact-sheet rating, x 2 motors
     continuous_current_a=None,
 )

@@ -24,7 +24,7 @@ from batch_tuning import BatchEvaluator, decode_units, differential_evolution_se
 from balance_sim import IMUSensor, SensorNoise
 from config import CONFIG
 
-HAS_CUDA = torch.cuda.is_available()
+HAS_CUDA = (torch.cuda.is_available() and torch.cuda.device_count() > 0)
 # Pulse-density ticks (the LEGO robot): last-bit differences move whole 10 ms pulses, so long runs and float32 diverge.
 PULSES = CONFIG.actuator.model == "slow_pwm" and CONFIG.actuator.pwm_tick_s > 0
 no_pulses = pytest.mark.skipif(PULSES, reason="pulse-density ticks (the LEGO robot) turn last-bit differences into whole pulses, so runs diverge like the chaos penalty's nudged twins; the LEGO engines are compared on short runs in optimization/tests/test_legobot_pipeline.py")
