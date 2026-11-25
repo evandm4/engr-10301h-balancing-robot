@@ -432,6 +432,35 @@ def test_log_lines_writes_the_raw_arrivals(tmp_path):
     assert not list(tmp_path.glob("*nolog_lines.csv"))       # off by default
 
 
+@pytest.mark.parametrize("us", ["inf", "-inf", "nan", "0", "5", "9.9", "10000.1", "20000", "1e300"])
+def test_switch_interval_out_of_range_is_refused(tmp_path, us):
+    """Review F2: --switch-interval-us must be finite and in [10, 10000] us, refused before anything starts."""
+    before = sys.getswitchinterval()
+    with pytest.raises(SystemExit, match="switch-interval-us"):
+        balance.main(["--sim", "--seconds", "1", f"--switch-interval-us={us}", "--outdir", str(tmp_path)])
+    assert sys.getswitchinterval() == before and not list(tmp_path.iterdir())
+
+
+def test_switch_interval_failure_still_runs_the_finally(tmp_path, monkeypatch):
+    """Review F2: sys.setswitchinterval is inside the loop's try, so if it raises, the finally still re-enables
+    the GC, restores the interval (and on the robot coasts, stops the watchdog, closes the HAT/IMU) and the logs
+    are written before the error is re-raised."""
+    import gc
+    real_set, before, calls = sys.setswitchinterval, sys.getswitchinterval(), []
+
+    def flaky_set(v):
+        calls.append(v)
+        if len(calls) == 1:
+            raise RuntimeError("setswitchinterval failed")
+        real_set(v)
+
+    monkeypatch.setattr(sys, "setswitchinterval", flaky_set)
+    with pytest.raises(RuntimeError, match="setswitchinterval failed"):
+        balance.main(["--sim", "--seconds", "1", "--switch-interval-us", "200", "--outdir", str(tmp_path)])
+    assert calls == [pytest.approx(200e-6), before] and sys.getswitchinterval() == before and gc.isenabled()
+    assert "crashed: RuntimeError" in next(tmp_path.glob("*_summary.txt")).read_text()
+
+
 def test_pacer_ticks_twice_per_line_at_the_offset():
     arr, period, _ = _arrivals(4)
     clock = control.LineClock()

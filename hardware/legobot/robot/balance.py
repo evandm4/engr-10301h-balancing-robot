@@ -526,8 +526,8 @@ def main(argv=None):
     ap.add_argument("--log-lines", action="store_true",
                     help="log every HAT data line's arrival stamp (reader thread) to <log>_lines.csv")
     ap.add_argument("--switch-interval-us", type=float, default=None,
-                    help="sys.setswitchinterval during the run, us (default Python's 5000): how long the loop "
-                         "may hold the GIL while the HAT reader waits to stamp a line (P7 step 1)")
+                    help="sys.setswitchinterval during the run, us, 10-10000 (default Python's 5000): how long the "
+                         "loop may hold the GIL while the HAT reader waits to stamp a line (P7 step 1)")
     ap.add_argument("--inject", choices=("loop", "hang", "stale", "vin", "fault", "imu", "unlock", "ood"))
     ap.add_argument("--inject-at", type=float, default=1.0, help="s after arming")
     ap.add_argument("--sim", action="store_true", help="closed loop with the simulator instead of hardware")
@@ -577,8 +577,9 @@ def main(argv=None):
                              f"policy acts on a {lc.OOD_INJECT_OFFSET} m/s phantom velocity, saturated until the trip")
     if a.compute_lead is not None and not (0.0 <= a.compute_lead <= dt):
         raise SystemExit(f"--compute-lead must be within 0..{dt} s, got {a.compute_lead}")
-    if a.switch_interval_us is not None and not (a.switch_interval_us > 0):
-        raise SystemExit(f"--switch-interval-us must be > 0, got {a.switch_interval_us}")
+    if a.switch_interval_us is not None and not (math.isfinite(a.switch_interval_us)
+                                                 and 10.0 <= a.switch_interval_us <= 10_000.0):
+        raise SystemExit(f"--switch-interval-us must be finite and in [10, 10000] us, got {a.switch_interval_us}")
     envelope_monitor = None
     if envelope is not None:
         try:
@@ -713,11 +714,12 @@ def main(argv=None):
     gc.disable()
     rows, stats, crash = [], {}, None
     old_switch = sys.getswitchinterval()
-    if a.switch_interval_us is not None:
-        sys.setswitchinterval(a.switch_interval_us * 1e-6)
-        notes["GIL switch interval"] = (f"{a.switch_interval_us:g} us requested, {sys.getswitchinterval() * 1e6:.0f} us "
-                                        f"set (--switch-interval-us; Python keeps whole us)")
     try:
+        if a.switch_interval_us is not None:    # inside the try, so the finally always restores it and coasts
+            sys.setswitchinterval(a.switch_interval_us * 1e-6)
+            notes["GIL switch interval"] = (f"{a.switch_interval_us:g} us requested, "
+                                            f"{sys.getswitchinterval() * 1e6:.0f} us set "
+                                            f"(--switch-interval-us; Python keeps whole us)")
         rows, reason, t_arm = run(hat, imu, clock, brain, safety, a.seconds, watchdog, on_arm,
                                   drive=not a.no_drive, inject=a.inject, inject_at=a.inject_at,
                                   line_clock=line_clock, pacer=pacer, rows=rows, stats=stats,
