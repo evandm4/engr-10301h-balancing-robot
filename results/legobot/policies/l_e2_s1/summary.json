@@ -1,0 +1,30 @@
+{
+  "method": "linear",
+  "search": "cma_es",
+  "run_seed": 1,
+  "profile": "full",
+  "n_params": 10,
+  "stop_reason": "cma-es stop: {'tolupsigma': 1e+20}",
+  "generations": 539,
+  "n_evals": 137985,
+  "robot_seconds": 1241865000.0,
+  "robot_seconds_total": 1241865000.0,
+  "charged_before": 0.0,
+  "elapsed_s": 10417.296302318573,
+  "selected": {
+    "robot_seconds": 898569000.0,
+    "generation": 390,
+    "which": "mean",
+    "train_objective": 7.789618614925632,
+    "dev20_objective": 7.853600798839479,
+    "dev20_falls": 0,
+    "dev60_objective": 19.71460162298225,
+    "dev60_falls": 0,
+    "gap20": 0.008213776190691968,
+    "file": "checkpoints/mean_8.986e08.npz"
+  },
+  "train_objective_float32": 7.789618614925632,
+  "train_objective_float64": 7.789618614925632,
+  "float32_float64_disagree": false,
+  "best_train_objective": 7.772956880119109
+}

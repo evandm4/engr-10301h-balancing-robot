@@ -324,3 +324,35 @@ Its unstarted seeds 2, 4, 6, 8 moved to the laptop. They use the same command an
 one or two seeds. Any such move will be recorded here, and the machine of every run must be disclosed with the E2.6
 selection: it decides the even/odd = desktop/laptop parity check, since the even seeds are now mostly on the laptop.
 
+## E2.7 (provisional): `l_e2_s1`, the first finished L run
+
+> **PROVISIONAL.** This is seed 1, exported only because it finished first, so Evan can start robot tests. It is
+> **not** the E2.6 selection: that is made over all ten seeds by re-scoring on one machine. Seed 1 must not be
+> preferred because it was tested first.
+
+Seed 1 (laptop EVANS-G16, worktree `4582fe7`) finished 2026-11-25 15:13:52 after 3.15 h. It ran 539 generations,
+1.242e9 robot-s (83 % of the 1.5e9 budget). The stop reason was CMA-ES's own `tolupsigma`; the stagnation stop is off.
+That stop is still active under `stagnation_checkpoints=0`: sigma had grown to ~2.6e3 by gen 383 while the steps shrank.
+The other seeds may stop the same way; that is a disclosure item for E2.6, not a defect. Within-run selection (dev60,
+in-run torch) picked `checkpoints/mean_8.986e08.npz` (gen 390). It had dev60 19.715 with 0 falls, against
+19.75–19.83 for every checkpoint from 3e8 on. All checkpoints from 2e8 on have 0 dev falls, so the plateau is flat and
+the pick is within noise.
+
+Re-score of `final.npz`: CPU NumPy, `CUDA_VISIBLE_DEVICES=-1`, scratch `e2_l_check.py`. No validation or fall-rate
+seeds were touched.
+
+| Tier | L f64 (falls) | L f32 (falls) | f32/f64 gap (D6) | L median cost | PID f64 (falls) | PID median | L / PID |
+|---|---|---|---|---|---|---|---|
+| dev 5000–5049 × 3, 60 s | 19.806 (0) | 19.735 (0) | −0.36 % | 19.63 | 106.842 (6) | 27.98 | 0.185 |
+| E2 train 150 × 3 | 7.914 (0/450) | 7.932 (0) | +0.23 % | 7.69 | 92.890 (20/450) | 10.63 | 0.085 |
+
+- **D6:** passes. There are no fall flips, and the gap is well inside the per-tier tolerance.
+- **Medians:** the L-vs-PID gain is not only fall luck. Median costs are 30 % lower on dev and 28 % lower on train.
+- **CPU vs in-run torch:** the CPU f64 re-score is higher than the in-run torch numbers: dev60 +0.47 % (19.806 vs
+  19.715), train +1.6 % (7.914 vs 7.790). Both have 0 falls. This is the cross-implementation gap behind the E2.6
+  re-score-on-one-machine rule. Check the train gap before E2.6, in case it is a train-scenario mismatch rather than
+  numerics.
+
+Bundle `results/legobot/policies/l_e2_s1`: linear, 10 params, 10 MAC/tick, sha256 `58cb3c615a43…`, golden 400 ticks,
+envelope 15 runs with 0 falls. Source label: "PROVISIONAL E2.5 L run seed 1 (first finished; not the E2.6 selection)".
+
