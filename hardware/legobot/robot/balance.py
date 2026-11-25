@@ -30,6 +30,7 @@ import math
 import signal
 import os
 import statistics as st
+import sys
 import threading
 import time
 
@@ -208,6 +209,7 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
     injected = False
     r_prev, imu_errors, imu_injected = None, 0, 0
     t0 = clock.now()
+    stats["t0"] = t0              # the raw log's time origin (for --log-lines)
     deadline = t0
     tick = 0
     pacer = pacer or control.Pacer(dt)
@@ -453,6 +455,20 @@ def write_logs(base, rows, reason, t_arm, meta, notes, seconds=None, columns=RAW
     return lines
 
 
+def write_line_log(base, data_log, t0):
+    """--log-lines: base_lines.csv, one row per HAT data line as the reader thread stamped it: t (s, the raw
+    log's time origin, so t - age_left at a tick is that tick's newest left line), port, and the raw speed,
+    pos, apos (the HAT's signs). For re-checking the line clock (P7 step 1: stamps held for the GIL)."""
+    import csv
+    os.makedirs(os.path.dirname(base) or ".", exist_ok=True)
+    lines = list(data_log)
+    with open(base + "_lines.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(("t", "port", "speed", "pos", "apos"))
+        w.writerows((t - t0, p, s, pos, apos) for t, p, s, pos, apos in lines)
+    return len(lines)
+
+
 def coast_check(hat, wait=1.0, window=0.1):
     """Wheel speeds (deg/s, forward-positive) `wait` s after the loop stopped: ~0 if the trip really coasted."""
     hat.coast()
@@ -505,6 +521,13 @@ def main(argv=None):
                     help="tick on the Pi's clock only, never on the HAT's line grid")
     ap.add_argument("--line-phase", type=float, help=f"command write phase after the line grid, s "
                     f"(default loop_config.LINE_WRITE_PHASE_S = {lc.LINE_WRITE_PHASE_S})")
+    ap.add_argument("--line-slope", choices=("lsq", "envelope"), default=None,
+                    help=f"line clock period fit (default loop_config.LINE_SLOPE = {lc.LINE_SLOPE})")
+    ap.add_argument("--log-lines", action="store_true",
+                    help="log every HAT data line's arrival stamp (reader thread) to <log>_lines.csv")
+    ap.add_argument("--switch-interval-us", type=float, default=None,
+                    help="sys.setswitchinterval during the run, us (default Python's 5000): how long the loop "
+                         "may hold the GIL while the HAT reader waits to stamp a line (P7 step 1)")
     ap.add_argument("--inject", choices=("loop", "hang", "stale", "vin", "fault", "imu", "unlock", "ood"))
     ap.add_argument("--inject-at", type=float, default=1.0, help="s after arming")
     ap.add_argument("--sim", action="store_true", help="closed loop with the simulator instead of hardware")
@@ -554,6 +577,8 @@ def main(argv=None):
                              f"policy acts on a {lc.OOD_INJECT_OFFSET} m/s phantom velocity, saturated until the trip")
     if a.compute_lead is not None and not (0.0 <= a.compute_lead <= dt):
         raise SystemExit(f"--compute-lead must be within 0..{dt} s, got {a.compute_lead}")
+    if a.switch_interval_us is not None and not (a.switch_interval_us > 0):
+        raise SystemExit(f"--switch-interval-us must be > 0, got {a.switch_interval_us}")
     envelope_monitor = None
     if envelope is not None:
         try:
@@ -568,6 +593,8 @@ def main(argv=None):
         from .sim_hw import SimWorld
         world = SimWorld(cfg, pitch=a.sim_pitch, noise=a.sim_noise)
         hat, imu, clock, on_arm = world.hat, world.imu, world.clock, world.release
+        if a.log_lines:
+            hat.data_log = []
         pitch_zero, cal = 0.0, {"source": "sim"}
         watchdog = None
     else:
@@ -581,7 +608,7 @@ def main(argv=None):
         pitch_zero = float(cal.get("pitch_zero", 0.0)) if a.pitch_zero is None else a.pitch_zero
         from .buildhat_serial import BuildHat, install_safety
         from .imu import Imu
-        hat = BuildHat()
+        hat = BuildHat(log_lines=a.log_lines)   # --log-lines: the reader thread appends each line (no loop cost)
         install_safety(hat)
         hat.configure(plimit=hc.RUN_PLIMIT)
         imu = Imu()
@@ -665,7 +692,8 @@ def main(argv=None):
     # D2: lock the ticks to the HAT's data-line grid (lines have been arriving through the gyro calibration)
     line_clock = pacer = None
     if lc.LINE_LOCK and not a.no_line_lock:
-        line_clock = control.LineClock(nominal_period=hat_period)
+        line_clock = control.LineClock(nominal_period=hat_period, slope=a.line_slope)
+        notes["line period fit"] = line_clock.slope
         write_phase = lc.LINE_WRITE_PHASE_S if a.line_phase is None else a.line_phase
         pacer = control.Pacer(dt, line_clock, (write_phase - compute_lead) % (0.5 * hat_period))
         if line_clock.update(hat.line_times(LEFT)):
@@ -684,6 +712,11 @@ def main(argv=None):
     gc.freeze()
     gc.disable()
     rows, stats, crash = [], {}, None
+    old_switch = sys.getswitchinterval()
+    if a.switch_interval_us is not None:
+        sys.setswitchinterval(a.switch_interval_us * 1e-6)
+        notes["GIL switch interval"] = (f"{a.switch_interval_us:g} us requested, {sys.getswitchinterval() * 1e6:.0f} us "
+                                        f"set (--switch-interval-us; Python keeps whole us)")
     try:
         rows, reason, t_arm = run(hat, imu, clock, brain, safety, a.seconds, watchdog, on_arm,
                                   drive=not a.no_drive, inject=a.inject, inject_at=a.inject_at,
@@ -694,6 +727,7 @@ def main(argv=None):
         reason, t_arm = f"crashed: {type(e).__name__}: {e}", stats.get("t_arm")
     finally:
         gc.enable()
+        sys.setswitchinterval(old_switch)
         if not a.sim:
             hat.emergency_coast()   # first, before the watchdog stops, and without the write lock
         if watchdog is not None:
@@ -715,6 +749,9 @@ def main(argv=None):
 
     stamp = time.strftime("%Y%m%d_%H%M%S")
     base = os.path.join(a.outdir, f"{stamp}_{a.label}")
+    if getattr(hat, "data_log", None) is not None and "t0" in stats:
+        n_lines = write_line_log(base, hat.data_log, stats["t0"])
+        notes["raw line arrivals"] = f"{n_lines} lines in {os.path.basename(base)}_lines.csv (--log-lines)"
     meta = {"label": f"{a.label} {stamp}", "source": "sim_hw" if a.sim else "legobot", "controller": desc,
             "duty_cap": duty_cap, "feedforward_gain": brain.feedforward.gain, "calibration": cal,
             "deployed": notes["deployed"], "inject": a.inject, "acted_ticks": stats.get("acted_ticks", 0),

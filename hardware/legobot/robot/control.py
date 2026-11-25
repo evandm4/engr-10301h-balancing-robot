@@ -674,18 +674,35 @@ class LineClock:
     transit delay plus non-negative jitter (sd about 0.65 ms; up to 20 ms when the reader thread is late),
     so the grid is the LOWER envelope of the arrivals:
 
-        period  = least-squares slope of arrival time against line index (index by rounding to the
-                  previous period estimate, so dropped lines don't shift it);
+        period  = slope of arrival time against line index (index by rounding to the previous period
+                  estimate, so dropped lines don't shift it): slope="lsq" (default, loop_config.LINE_SLOPE)
+                  least squares over every arrival; slope="envelope" least squares through the `envelope`
+                  quantile point of each run of `chunk` lines (a lower-envelope fit);
         t_ref   = the `envelope` quantile of arrival - period x index, placed at the newest line's index.
+
+    P7 step 1 (2026-11-24 logs): the reader thread is not pinned, but it stamps an arrival with perf_counter()
+    after ser.read() returns, which needs the GIL, so lines that arrive while the loop computes are stamped
+    when the loop releases it (most of an MLP's stamps landed within 0.3 ms after the command write; with
+    PID/L, inside the IMU read). The in-run period drifted -300 to -1000 ppm from its start value. Replaying
+    the reconstructed arrivals, the envelope slope was not clearly better than least squares (RMS window-slope
+    error 460 vs 523 ppm against the clean stamps, but worse in the PID/L runs), and even the clean stamps'
+    slope wandered or stepped, so the default stays "lsq". The period error hardly matters to the lock:
+    t_ref re-anchors every update (1000 ppm is 0.1 ms over 100 ms). balance.py --log-lines logs the raw
+    arrivals for a re-check (P7 step 2).
 
     locked() is true once `min_lines` lines are in and the newest line at the last update is under `stale` s
     old: longer than the loop's update interval (100 ms), since stale motor data trips the run at 50 ms anyway
     (Safety). Pure Python
     and cheap enough (about 0.2 ms for 256 lines on the Pi 3B) to update every few ticks."""
 
-    def __init__(self, nominal_period=0.010, window=256, min_lines=50, envelope=0.10, stale=0.25):
+    def __init__(self, nominal_period=0.010, window=256, min_lines=50, envelope=0.10, stale=0.25, slope=None,
+                 chunk=32):
         self.period = nominal_period
         self.window, self.min_lines, self.envelope, self.stale = window, min_lines, envelope, stale
+        self.slope = lc.LINE_SLOPE if slope is None else slope
+        if self.slope not in ("lsq", "envelope"):
+            raise ValueError(f"LineClock slope must be 'lsq' or 'envelope', got {self.slope!r}")
+        self.chunk = chunk
         self.smoothing = 0.1                  # each window's slope is good to about +-55 ppm (jitter sd 0.65 ms)
         self.t_ref = None
         self.newest = None
@@ -703,12 +720,29 @@ class LineClock:
         ref += r0[len(r0) // 2]
         ks = [round((t - ref) / p) for t in a]
         n = len(a)
-        km = sum(ks) / n
-        tm = sum(a) / n
-        skk = sum((k - km) ** 2 for k in ks)
+        if self.slope == "lsq":
+            pts_k, pts_t = ks, a
+        else:
+            # lower envelope: the `envelope` quantile of the residuals in each run of `chunk` lines, then a
+            # least-squares line through those points. A late stamp can only push an arrival later, so late
+            # stamps don't tilt it unless they fill nearly a whole run; a late outlier that rounds onto the
+            # next index (5-20 ms) reads as early, and the quantile (not the minimum) ignores a few of those.
+            m = max(2, n // self.chunk)
+            size = n // m
+            pts_k, pts_t = [], []
+            for j in range(m):
+                lo, hi = j * size, (n if j == m - 1 else (j + 1) * size)
+                r = sorted((a[i] - p * ks[i], i) for i in range(lo, hi))
+                i = r[min(len(r) - 1, int(self.envelope * len(r)))][1]
+                pts_k.append(ks[i])
+                pts_t.append(a[i])
+        npts = len(pts_k)
+        km = sum(pts_k) / npts
+        tm = sum(pts_t) / npts
+        skk = sum((k - km) ** 2 for k in pts_k)
         if skk <= 0:
             return False
-        period = sum((k - km) * (t - tm) for k, t in zip(ks, a)) / skk
+        period = sum((k - km) * (t - tm) for k, t in zip(pts_k, pts_t)) / skk
         if not (0.98 * p < period < 1.02 * p):
             return False                      # nonsense (e.g. a stream restart): keep the old estimate
         if self.t_ref is not None:            # after the first lock, smooth the period across updates

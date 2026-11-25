@@ -341,16 +341,94 @@ def _arrivals(seed, n=900, period=0.0099912, delay=0.0018):
     return sorted(arr), period, delay
 
 
+@pytest.mark.parametrize("slope", ["lsq", "envelope"])
 @pytest.mark.parametrize("seed", [1, 2, 3])
-def test_line_clock_finds_the_hat_grid(seed):
+def test_line_clock_finds_the_hat_grid(seed, slope):
     arr, period, delay = _arrivals(seed)
-    clock = control.LineClock()
+    clock = control.LineClock(slope=slope)
     for n in range(60, len(arr) + 1, 20):       # updated every 20 lines, as the loop does (every 100 ms)
         clock.update(arr[:n])
     assert abs(clock.period / period - 1) < 60e-6
     envelope_delay = (clock.t_ref - 100.0) % period
     assert delay < envelope_delay < delay + 0.0003       # the lower envelope, not the mean (0.65 ms later)
     assert clock.locked(arr[-1] + 0.01) and not clock.locked(arr[-1] + 1.0)
+
+
+def _late_stamped_arrivals(seed, n=256, period=0.0099912, delay=0.0018):
+    """P7 step 1: the reader stamps a line only once it gets the GIL, so while the loop computes, whole runs of
+    lines are stamped 1-2.5 ms late; here the share of late runs ramps from 0 to 60% across the window (the
+    load changing, e.g. arming), on top of small jitter (exp, mean 0.1 ms) and 2% dropped lines."""
+    import random
+    rng = random.Random(seed)
+    arr, late_left, late_by = [], 0, 0.0
+    for k in range(n):
+        if late_left == 0 and rng.random() < 0.6 * k / n / 4:   # runs of ~4 lines: share ~0.6 k/n
+            late_left, late_by = 4, rng.uniform(0.001, 0.0025)
+        late = late_by if late_left else 0.0
+        late_left = max(0, late_left - 1)
+        if rng.random() < 0.02:
+            continue
+        arr.append(100.0 + k * period + delay + rng.expovariate(1 / 0.0001) + late)
+    return arr, period
+
+
+def test_line_clock_envelope_slope_ignores_load_dependent_late_stamps():
+    """One window's (unsmoothed) slope: least squares tilts with the late share, the lower envelope doesn't."""
+    errs = {"lsq": [], "envelope": []}
+    for seed in range(20):
+        arr, period = _late_stamped_arrivals(seed)
+        for slope in errs:
+            clock = control.LineClock(slope=slope)
+            assert clock.update(arr)                  # the first update: no smoothing
+            errs[slope].append(abs(clock.period / period - 1) * 1e6)
+    worst_env, worst_lsq = max(errs["envelope"]), max(errs["lsq"])
+    mean_env, mean_lsq = sum(errs["envelope"]) / 20, sum(errs["lsq"]) / 20
+    assert worst_env < 60 and mean_lsq > 150 and mean_env < 0.25 * mean_lsq, (errs, worst_lsq)
+
+
+def test_line_clock_default_slope_is_least_squares():
+    """P7 step 1's replay didn't show the envelope fit clearly better, so the lock keeps its pre-P7 fit."""
+    assert lc.LINE_SLOPE == "lsq" and control.LineClock().slope == "lsq"
+    assert control.LineClock(slope="envelope").slope == "envelope"
+    with pytest.raises(ValueError):
+        control.LineClock(slope="median")
+    arr, period, _ = _arrivals(5)                       # bit for bit the pre-P7 estimate
+    a = arr[-256:]
+    ref = a[0]
+    k0 = [round((t - ref) / 0.010) for t in a]
+    r0 = sorted(t - ref - 0.010 * k for k, t in zip(k0, a))
+    ref += r0[len(r0) // 2]
+    ks = [round((t - ref) / 0.010) for t in a]
+    km, tm = sum(ks) / len(a), sum(a) / len(a)
+    expected = sum((k - km) * (t - tm) for k, t in zip(ks, a)) / sum((k - km) ** 2 for k in ks)
+    clock = control.LineClock()
+    assert clock.update(arr) and clock.period == expected
+
+
+def test_log_lines_writes_the_raw_arrivals(tmp_path):
+    """--log-lines: every data line's stamp, on the raw log's time base (so t - age_left at a tick is a logged
+    line); --line-slope and --switch-interval-us are logged, and the switch interval restored afterwards."""
+    import csv
+    from robot import hw_config as hc
+    before = sys.getswitchinterval()
+    reason = balance.main(["--sim", "--sim-noise", "--seconds", "2", "--log-lines", "--line-slope", "envelope",
+                           "--switch-interval-us", "200", "--outdir", str(tmp_path)])
+    assert reason == "done" and sys.getswitchinterval() == before
+    lines = list(csv.DictReader(open(next(tmp_path.glob("*_lines.csv")))))
+    raw = [r for r in csv.DictReader(open(next(tmp_path.glob("*_raw.csv"))))]
+    left = [float(r["t"]) for r in lines if r["port"] == str(hc.LEFT_PORT)]
+    right = [r for r in lines if r["port"] == str(hc.RIGHT_PORT)]
+    rate = (len(left) - 1) / (left[-1] - left[0])
+    assert len(right) == len(left) and abs(rate - 100.0) < 1.0          # the sim's one stream, both ports
+    assert left[0] < float(raw[0]["t"]) and left[-1] > float(raw[-1]["t"]) - 0.02   # from before the loop
+    stamps = set(round(t, 9) for t in left)
+    ticks = [r for r in raw if r["age_left"] not in ("", "None")]
+    assert ticks and all(round(float(r["t"]) - float(r["age_left"]), 9) in stamps for r in ticks)
+    summary = next(tmp_path.glob("*_summary.txt")).read_text()
+    assert f"raw line arrivals: {len(lines)} lines" in summary
+    assert "line period fit: envelope" in summary and "GIL switch interval: 200 us requested" in summary
+    reason = balance.main(["--sim", "--seconds", "1", "--label", "nolog", "--outdir", str(tmp_path)])
+    assert not list(tmp_path.glob("*nolog_lines.csv"))       # off by default
 
 
 def test_pacer_ticks_twice_per_line_at_the_offset():
