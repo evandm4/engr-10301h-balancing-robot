@@ -647,6 +647,43 @@ def test_bundle_round_trip_and_self_test(tmp_path, cfg):
     assert st["compute_lead_s"] == pytest.approx(lc.COMPUTE_LEAD_S + max(0.0, st["p99_s"] - st["pid_p99_s"]))
 
 
+@pytest.mark.parametrize("name", ["l_pid", "quick_l", "a_warm_zero", "b1_zero"])
+def test_fast_forward_is_bit_identical_on_the_committed_bundles(cfg, name):
+    """P3c: the robot's FastPolicyController returns the committed bundle's golden torques to the bit, and the
+    same torques, raw observations and flags as the reference PolicyController (fast_forward=False), on the
+    golden vectors and on random states."""
+    control.import_config()
+    from pathlib import Path
+    from balance_sim import FastPolicyController, PolicyController
+    bdir = Path(__file__).resolve().parents[3] / "results" / "legobot" / "policies" / name
+    fast, desc = control.build_controller(cfg, str(bdir), goal="still", allow_config_mismatch=True)
+    ref, desc_ref = control.build_controller(cfg, str(bdir), goal="still", allow_config_mismatch=True,
+                                             fast_forward=False)
+    assert type(fast) is FastPolicyController and type(ref) is PolicyController
+    assert desc["forward"] == "fast" and desc_ref["forward"] == "reference"
+    golden = fast.bundle["golden"]
+    st = control.self_test_policy(fast, golden, cfg=cfg)
+    assert st["max_torque_err"] == 0.0
+
+    rng = np.random.default_rng(len(name))
+    states = np.concatenate([np.asarray(golden["states"], dtype=float),
+                             rng.normal(0.0, [0.1, 0.5, 0.2, 2.0], (3000, 4))])
+    goals = list(np.asarray(golden["goals"], dtype=float)) + list(rng.normal(0.0, 0.3, 3000))
+    dt = float(golden["dt"])
+    for c in (fast, ref):
+        c.reset()
+    for k in range(len(states)):
+        for c in (fast, ref):
+            c.goal = float(goals[k])
+            if c.base is not None:
+                c.base.goal = float(goals[k])
+        u_f, u_r = fast.update(states[k], dt), ref.update(states[k], dt)
+        assert u_f == u_r and fast.last_pre_clip == ref.last_pre_clip and fast.last_residual == ref.last_residual
+        assert fast.last_saturated == ref.last_saturated
+        assert fast.last_integrators_frozen == ref.last_integrators_frozen
+        assert fast.last_raw == ref.last_raw.tolist()
+
+
 def test_bare_npz_requires_allow_unchecked(tmp_path, cfg, synthetic_bundles):
     """P2a: bare .npz refused without --allow-unchecked, accepted with --allow-unchecked."""
     import shutil

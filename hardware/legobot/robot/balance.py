@@ -354,7 +354,7 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
                None if t_cmd is None or line_clock is None or line_clock.t_ref is None
                else line_clock.phase(t_cmd))
         if n_policy:
-            row += ((*c.last_raw.tolist(), float(c.last_pre_clip), int(c.last_saturated),
+            row += ((*c.last_raw, float(c.last_pre_clip), int(c.last_saturated),
                      int(c.last_integrators_frozen), float(c.last_residual)) if acted else no_policy)
         rows.append(row)
         if acted:
@@ -482,6 +482,9 @@ def main(argv=None):
                     help="allow a bare policy .npz (no manifest, sha256, config check, self-test or envelope)")
     ap.add_argument("--allow-config-mismatch", action="store_true",
                     help="run a policy whose training config differs from legobot_config (logged)")
+    ap.add_argument("--reference-forward", action="store_true",
+                    help="policies: the reference PolicyController instead of the (bit-identical, faster) "
+                         "FastPolicyController, e.g. to time both on the Pi (P3c)")
     ap.add_argument("--envelope-trip", type=float, default=None, metavar="K",
                     help=f"policies: coast if any input stays past K x its envelope's max |value| for "
                          f"{lc.ENVELOPE_TRIP_S} s (default off: excursions are only logged)")
@@ -512,7 +515,8 @@ def main(argv=None):
     try:
         controller, desc = control.build_controller(cfg, a.controller, a.goal, allow_unchecked=a.allow_unchecked,
                                                     allow_config_mismatch=a.allow_config_mismatch,
-                                                    ff_gain_override=a.ff_gain)
+                                                    ff_gain_override=a.ff_gain,
+                                                    fast_forward=not a.reference_forward)
     except (ValueError, FileNotFoundError) as e:
         raise SystemExit(f"controller {a.controller!r} refused: {e}")
     duty_cap = a.duty_cap if a.duty_cap is not None else (lc.BENCH_DUTY_CAP if a.bench else lc.DUTY_CAP)
@@ -528,6 +532,7 @@ def main(argv=None):
     envelope = None if bundle is None else bundle.get("envelope")
     if bundle is not None:
         notes["policy"] = f"{desc['bundle_name']} (kind={desc['policy_kind']}, sha256={desc['sha256']})"
+        notes["policy forward pass"] = desc["forward"]
         if desc["unchecked"]:
             notes["policy check"] = ("UNCHECKED bare .npz (--allow-unchecked): no manifest sha256, config check, "
                                      "golden self-test or envelope")

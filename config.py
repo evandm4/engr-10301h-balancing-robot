@@ -1066,13 +1066,15 @@ class ProjectConfig:
                           output_scale=output_scale, t_leak=l.t_leak_s, integral_limits=tuple(l.integral_limits),
                           **extra)
 
-    def build_policy_controller(self, spec, params, goal=None):
-        """A balance_sim.PolicyController with this project's torque limit, goal and PID limits."""
-        from balance_sim import PolicyController
+    def build_policy_controller(self, spec, params, goal=None, fast=False):
+        """A balance_sim.PolicyController with this project's torque limit, goal and PID limits. fast: a
+        FastPolicyController instead (the robot's; same torques to the bit, faster forward pass)."""
+        from balance_sim import FastPolicyController, PolicyController
 
         c = self.controller
         goal = self.build_goal() if goal is None else goal
-        return PolicyController(spec, params, self.robot.max_torque, goal=goal,
+        return (FastPolicyController if fast else PolicyController)(
+                                spec, params, self.robot.max_torque, goal=goal,
                                 max_pitch_command=c.max_lean_rad, pitch_integral_limit=c.pitch_integral_limit,
                                 velocity_integral_limit=c.velocity_integral_limit)
 

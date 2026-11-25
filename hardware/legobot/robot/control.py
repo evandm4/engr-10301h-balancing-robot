@@ -304,7 +304,7 @@ def load_policy_bundle(path, cfg=None, *, allow_unchecked=False, allow_config_mi
 
 
 def build_controller(cfg, spec="hand", goal="still", *, allow_unchecked=False, allow_config_mismatch=False,
-                     ff_gain_override=None):
+                     ff_gain_override=None, fast_forward=True):
     """The controller and a small JSON-able description of it. spec:
       "hand" / "model"   the cascaded PID with legobot's hand-tuned / model-based gains;
       policy:<name>, a bundle folder or a .npz   a learned policy (load_policy_bundle), built by
@@ -312,7 +312,9 @@ def build_controller(cfg, spec="hand", goal="still", *, allow_unchecked=False, a
       anything else      a cascaded-PID gains JSON path (load_gains_file).
     goal: "still" (hold 0 m/s) or "scenario" (the tuning scenario's goal profile, from arming). It is passed
     when building, so a residual policy's base PID gets it too (plan problem 1). ff_gain_override (--ff-gain)
-    is refused for a policy: the feedforward gain is part of the plant it was trained on (P2c)."""
+    is refused for a policy: the feedforward gain is part of the plant it was trained on (P2c). fast_forward
+    (P3c): a policy is a balance_sim.FastPolicyController (bit-identical torques, a several times faster
+    forward pass); False (--reference-forward) the reference PolicyController, which replay_policy uses."""
     if goal not in ("still", "scenario"):
         raise ValueError(f"goal must be 'still' or 'scenario', not {goal!r}")
     goal_val = 0.0 if goal == "still" else cfg.build_goal()
@@ -321,12 +323,14 @@ def build_controller(cfg, spec="hand", goal="still", *, allow_unchecked=False, a
             raise ValueError("--ff-gain is refused for a policy: it runs its training config's feedforward gain")
         bundle = load_policy_bundle(spec, cfg, allow_unchecked=allow_unchecked,
                                     allow_config_mismatch=allow_config_mismatch)
-        controller = cfg.build_policy_controller(bundle["spec"], bundle["params"], goal=goal_val)
+        controller = cfg.build_policy_controller(bundle["spec"], bundle["params"], goal=goal_val,
+                                                 fast=fast_forward)
         controller.bundle = bundle
         desc = {
             "spec": str(spec),
             "kind": "policy",
             "policy_kind": bundle["kind"],
+            "forward": "fast" if fast_forward else "reference",
             "bundle_name": bundle["name"],
             "bundle_dir": str(bundle["bundle_dir"]) if bundle["bundle_dir"] else None,
             "sha256": bundle["sha256"],
