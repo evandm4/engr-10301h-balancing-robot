@@ -35,20 +35,29 @@ validation scenario. Reported, against a reference controller (default the ML-tu
         time at the torque limit, peak pitch, RMS velocity error;
     weight sensitivity: every controller re-scored, from the same simulations, with each Bryson
         limit of CostConfig halved and doubled, the effort term off, and the torque limit at the
-        motors' continuous (thermal) rating. Costs are rebuilt from each scenario's unweighted
+        motors' continuous (thermal) rating (the robot's ComparisonConfig: Pololu 0.253 N m, LEGO
+        0.50 N m). Costs are rebuilt from each scenario's unweighted
         integrals, so nothing is re-simulated. The controllers were trained on the configured
         cost, so this tests whether a ranking depends on the weights, not how each method would
         do if trained on another cost.
-With --latency-sweep, each controller also runs at the design latency (10 ms) and at every latency
-of a 2.5 ms grid from 15 to 45 ms (no chaos twins, every scenario at that one latency). Two
-pre-registered metrics (plan 3.4), and the full curves:
-    falls: the first latency with 4 or more falls. If the 10 ms baseline already has that many,
-        latency isn't what makes it fall, and the metric is reported as at or below 10 ms;
+With --latency-sweep, each controller also runs at every latency of the robot's sweep grid
+(config.ComparisonConfig; no chaos twins, every scenario at that one latency). Pololu: the design
+latency (10 ms) and a 2.5 ms grid from 15 to 45 ms; LEGO: 7.5 to 45 ms in 2.5 ms steps, so its
+7.5-12.5 ms training range is in it. The metrics are measured from the baseline latency: the robot's
+nominal latency (TimingConfig.latency_s, 10 ms on both) or --baseline-latency, never the grid's first
+entry. The baseline is always swept; latencies below it are reported but no metric uses them. Two
+pre-registered metrics (plan 3.4), a relative fall metric, and the full curves:
+    falls: the first latency with 4 or more falls. If the baseline already has that many,
+        latency isn't what makes it fall, and the metric is reported as at or below the baseline
+        (left-censored: every LEGO controller, whose baselines fall about 4% of the time);
+    excess falls: the first latency above the baseline with 4 or more falls more than the
+        controller's own at the baseline, on the same scenarios, where an exact one-sided McNemar
+        test of the paired fall flags gives p < 0.05. Readable whatever the baseline's fall rate;
     cost: the first latency at which the median per-scenario cost reaches 1.5x the controller's
-        own at 10 ms. A controller past its delay margin can oscillate for a whole run without
+        own at the baseline. A controller past its delay margin can oscillate for a whole run without
         falling, which only this metric sees;
 plus, at every latency, the median per-scenario cost ratio against the reference at that same
-latency, and the first latency where a controller that beats the reference at 10 ms stops
+latency, and the first latency where a controller that beats the reference at the baseline stops
 beating it.
 
 The validation and fall-rate tiers are frozen: used once, on final controllers. The script
@@ -58,11 +67,11 @@ controller in the comparison is frozen. Use --tier dev (or smoke) while developi
 plan's D2) needs no --final, but it is a confirmation tier, not a selection tier: it checks picks
 already made on dev (E2_PLAN.md D3's rule) and never chooses among candidates itself.
 
-From the project folder:
+From the project folder (ROBOT=legobot, or --robot legobot, for the LEGO robot):
     python optimization/compare_controllers.py --tier dev --policies "L=C:/balancebot_training/pololu/neuroevolution/linear/*/final.npz"
     python optimization/compare_controllers.py --tier fall_rate --final --latency-sweep --policies ...
 
-Results: results/pololu/comparison/<timestamp>-<tier>/ with comparison.json, per_scenario.csv and,
+Results: results/<robot>/comparison/<timestamp>-<tier>/ with comparison.json, per_scenario.csv and,
 with the sweep, latency_sweep.csv.
 """
 
@@ -84,18 +93,21 @@ sys.path.insert(0, str(ROOT))   # config.py; importing it puts simulation/ and o
 import numpy as np
 from scipy import stats
 
-from config import CONFIG, read_pid_comparison, results_dir
+from config import (CONFIG, POLOLU_COMPARISON, add_robot_argument, load_comparison_config, read_pid_comparison,
+                    results_dir)
 from balance_sim import load_policy
 from batch_tuning import BatchEvaluator
 from tuning import provenance
 
 TIERS = ("smoke", "dev", "confirm", "validation", "fall_rate")
 FROZEN = ("validation", "fall_rate")
-SWEEP_BASELINE_MS = 10.0             # the design latency (TimingConfig.latency_s), inside the training range
-SWEEP_LATENCIES_MS = (SWEEP_BASELINE_MS,) + tuple(15.0 + 2.5 * i for i in range(13))   # 10, then 15, 17.5, ..., 45 ms
-SWEEP_FALL_RATE_SEEDS = 333          # 6000-6332 x 3 tilts = 999 scenarios
-SWEEP_FALL_THRESHOLD = 4             # Clopper-Pearson upper bound passes 1% at about 4 / 1,000
-SWEEP_COST_FACTOR = 1.5              # cost metric: median per-scenario cost at 1.5x the controller's own at 10 ms
+# The latency sweep's grid, baseline and thresholds, and the thermal torque limit, are the robot's
+# (config.ComparisonConfig, through comparison_settings()); the Pololu values were constants here.
+
+
+def comparison_settings():
+    """The selected robot's ComparisonConfig (looked up through CONFIG, so tests can swap the robot)."""
+    return load_comparison_config(CONFIG.name)
 
 
 # ---- statistics -----------------------------------------------------------------------------
@@ -181,17 +193,13 @@ def paired_method_bootstrap(ratios_a, ratios_b, n_boot: int = 10_000, seed: int 
 
 # ---- weight sensitivity and side metrics ------------------------------------------------------
 
-# The motors' continuous rating: Pololu allows 25% of the 6.0 A stall current (1.5 A) continuously
-# (DATASHEET.md 3.1), so torque_constant x 1.5 A x gear ratio x gear efficiency x 2 motors.
-CONTINUOUS_CURRENT_A = 1.5
-
-
 def cost_variants() -> Dict[str, Tuple[float, float, float]]:
     """name -> (pitch_limit_rad, velocity_limit, torque_limit): the configured limits, each halved
-    and doubled, effort off, and the torque limit at the motors' continuous rating."""
-    c, a = CONFIG.cost, CONFIG.actuator
+    and doubled, effort off, and the torque limit at the motors' continuous rating (the robot's
+    ComparisonConfig.thermal_torque: Pololu 25% of its 6.0 A stall current, LEGO its 0.25 N m rating)."""
+    c = CONFIG.cost
     base = (c.pitch_limit_rad, c.velocity_limit, c.torque_limit)
-    thermal = a.torque_constant * CONTINUOUS_CURRENT_A * a.gear_ratio * a.gear_efficiency * a.n_motors
+    thermal = comparison_settings().thermal_torque(CONFIG.actuator)
     variants = {"configured": base}
     for i, name in enumerate(("pitch", "velocity", "torque")):
         for factor in (0.5, 2.0):
@@ -253,24 +261,58 @@ def side_metrics(s: dict, control_dt: float) -> dict:
     return {k: {"median": float(np.median(v)), "worst": float(np.max(v))} for k, v in per_scenario.items()}
 
 
-def first_latency_with_falls(latencies_ms, falls, threshold: int = SWEEP_FALL_THRESHOLD) -> Optional[float]:
+def first_latency_with_falls(latencies_ms, falls, threshold: int = POLOLU_COMPARISON.sweep_fall_threshold
+                             ) -> Optional[float]:
     """The pre-registered fall metric: the first latency with `threshold` or more falls; None if none.
-    When that is the first grid point (the 10 ms baseline), latency isn't what makes it fall: report
-    it as at or below that latency (sweep_metrics does)."""
+    The grid starts at the baseline. When the baseline itself reaches it, latency isn't what makes it
+    fall: report it as at or below that latency (latency_sweep does)."""
     for ms, n in zip(latencies_ms, falls):
         if n >= threshold:
             return float(ms)
     return None
 
 
-def first_latency_with_cost(latencies_ms, median_costs, factor: float = SWEEP_COST_FACTOR) -> Optional[float]:
+def first_latency_with_cost(latencies_ms, median_costs, factor: float = POLOLU_COMPARISON.sweep_cost_factor
+                            ) -> Optional[float]:
     """The pre-registered cost metric: the first latency whose median per-scenario cost is at least
-    `factor` times the controller's own at the first grid point (the 10 ms baseline); None if none."""
+    `factor` times the controller's own at the first grid point (the baseline); None if none."""
     base = median_costs[0]
     for ms, c in zip(latencies_ms[1:], median_costs[1:]):
         if c >= factor * base:
             return float(ms)
     return None
+
+
+def mcnemar_excess(fell, fell_baseline) -> dict:
+    """Exact one-sided McNemar test that a controller falls MORE at some latency than at its own
+    baseline latency, on the same scenarios: b = fell only here, c = fell only at the baseline,
+    p = P(Binomial(b + c, 1/2) >= b). excess = b - c, the difference in fall counts."""
+    fell, fell_baseline = np.asarray(fell, bool), np.asarray(fell_baseline, bool)
+    b, c = int(np.sum(fell & ~fell_baseline)), int(np.sum(~fell & fell_baseline))
+    p = 1.0 if b == 0 else float(stats.binomtest(b, b + c, 0.5, alternative="greater").pvalue)
+    return {"only_here": b, "only_at_baseline": c, "excess": b - c, "p_value": p}
+
+
+def first_latency_with_excess_falls(latencies_ms, excess, p_values,
+                                    min_excess: int = POLOLU_COMPARISON.sweep_excess_falls,
+                                    alpha: float = POLOLU_COMPARISON.sweep_excess_alpha) -> Optional[float]:
+    """The relative fall metric: over the grid above the baseline, the first latency with at least
+    `min_excess` more falls than the controller's own at the baseline (same scenarios) and a one-sided
+    McNemar p below `alpha` (mcnemar_excess); None if none. Unlike first_latency_with_falls it isn't
+    censored when the baseline already falls (the LEGO robot's ~4%)."""
+    for ms, e, p in zip(latencies_ms, excess, p_values):
+        if e >= min_excess and p < alpha:
+            return float(ms)
+    return None
+
+
+def sweep_grid(latencies_ms, baseline_ms: float) -> Tuple[float, ...]:
+    """The sweep's latencies, ascending, with the baseline always among them (added if missing).
+    The baseline is named, never taken from a position: '--latencies 7.5,10,15' keeps a 10 ms baseline."""
+    grid = sorted({round(float(ms), 9) for ms in latencies_ms} | {round(float(baseline_ms), 9)})
+    if grid[0] < 0:
+        raise ValueError(f"negative latency in the sweep: {grid[0]} ms")
+    return tuple(grid)
 
 
 def first_latency_losing(latencies_ms, median_ratios) -> Optional[float]:
@@ -467,15 +509,24 @@ def summarize(entries: Sequence[Entry], scores: Dict[str, dict], reference: str,
 
 
 def latency_sweep(entries: Sequence[Entry], config, robust, seeds, reference: str,
-                  latencies_ms=SWEEP_LATENCIES_MS, backend="numpy", device="cuda") -> Dict[str, dict]:
+                  latencies_ms=None, backend="numpy", device="cuda", baseline_ms: Optional[float] = None,
+                  settings=None) -> Dict[str, dict]:
     """Falls and cost at each latency: every scenario at that one latency, no chaos twins.
 
-    The first latency is the baseline the metrics are measured from (SWEEP_BASELINE_MS by default).
+    settings: a config.ComparisonConfig (default: the robot's). latencies_ms defaults to its grid and
+    baseline_ms, the latency every metric is measured from, to its baseline (the robot's nominal
+    latency). The grid is swept in ascending order with the baseline added if missing (sweep_grid);
+    the metrics use the baseline and the latencies above it only.
     """
+    settings = comparison_settings() if settings is None else settings
+    baseline_ms = settings.baseline_ms(CONFIG) if baseline_ms is None else float(baseline_ms)
+    grid = sweep_grid(settings.sweep_latencies_ms if latencies_ms is None else latencies_ms, baseline_ms)
+    i0 = grid.index(round(baseline_ms, 9))
     sweep_robust = replace(robust, latency_range=None, sensitivity_weight=0.0)
     fields = ("latency_ms", "falls", "mean_cost", "median_cost", "median_ratio_vs_reference", "fall_rate_95ci")
     curves = {e.label: {f: [] for f in fields} for e in entries}
-    for ms in latencies_ms:
+    fell = {e.label: [] for e in entries}
+    for ms in grid:
         scores = score(entries, replace(config, latency=ms / 1000), sweep_robust, seeds, backend, device)
         ref = scores[reference]["costs"]
         for e in entries:
@@ -486,17 +537,33 @@ def latency_sweep(entries: Sequence[Entry], config, robust, seeds, reference: st
             c["median_cost"].append(float(np.median(s["costs"])))
             c["median_ratio_vs_reference"].append(float(np.median(s["costs"] / ref)))
             c["fall_rate_95ci"].append(list(clopper_pearson(s["n_fell"], len(s["costs"]))))
-    for c in curves.values():
-        first = first_latency_with_falls(c["latency_ms"], c["falls"])
+            fell[e.label].append(np.asarray(s["fell"], bool))
+    for label, c in curves.items():
+        up = {k: c[k][i0:] for k in ("latency_ms", "falls", "median_cost", "median_ratio_vs_reference")}
+        first = first_latency_with_falls(up["latency_ms"], up["falls"], settings.sweep_fall_threshold)
         c["first_latency_with_falls"] = first
         # Already falling that often at the baseline: latency isn't the cause, so the true
         # threshold is unknown below the baseline (left-censored).
-        c["falls_at_or_below_baseline"] = first is not None and first == c["latency_ms"][0]
-        c["falls_at_baseline"] = c["falls"][0]
-        c["first_latency_with_cost"] = first_latency_with_cost(c["latency_ms"], c["median_cost"])
-        c["first_latency_losing_to_reference"] = first_latency_losing(c["latency_ms"], c["median_ratio_vs_reference"])
+        c["falls_at_or_below_baseline"] = first is not None and first == c["latency_ms"][i0]
+        c["falls_at_baseline"] = c["falls"][i0]
+        c["first_latency_with_cost"] = first_latency_with_cost(up["latency_ms"], up["median_cost"],
+                                                               settings.sweep_cost_factor)
+        c["first_latency_losing_to_reference"] = first_latency_losing(up["latency_ms"], up["median_ratio_vs_reference"])
+        # The relative fall metric: paired against this controller's own falls at the baseline.
+        tests = [mcnemar_excess(f, fell[label][i0]) for f in fell[label]]
+        c["excess_falls_vs_baseline"] = [t["excess"] for t in tests]
+        c["falls_only_here_vs_baseline"] = [t["only_here"] for t in tests]
+        c["falls_only_at_baseline"] = [t["only_at_baseline"] for t in tests]
+        c["mcnemar_p_vs_baseline"] = [t["p_value"] for t in tests]
+        c["first_latency_with_excess_falls"] = first_latency_with_excess_falls(
+            c["latency_ms"][i0 + 1:], c["excess_falls_vs_baseline"][i0 + 1:], c["mcnemar_p_vs_baseline"][i0 + 1:],
+            settings.sweep_excess_falls, settings.sweep_excess_alpha)
         c["scenarios"] = len(seeds) * len(config.start_pitches)
     return curves
+
+
+SWEEP_METRICS = ("first_latency_with_falls", "first_latency_with_cost", "first_latency_losing_to_reference",
+                 "first_latency_with_excess_falls")
 
 
 def sweep_by_method(entries, curves) -> dict:
@@ -505,7 +572,7 @@ def sweep_by_method(entries, curves) -> dict:
     for method in dict.fromkeys(e.method for e in entries):
         group = [curves[e.label] for e in entries if e.method == method]
         out[method] = {}
-        for metric in ("first_latency_with_falls", "first_latency_with_cost", "first_latency_losing_to_reference"):
+        for metric in SWEEP_METRICS:
             values = [c[metric] for c in group]
             med = float(np.median([v if v is not None else math.inf for v in values]))
             out[method][metric] = {"per_run": values, "median": None if math.isinf(med) else med}
@@ -536,12 +603,18 @@ def main(argv=None) -> Path:
     parser.add_argument("--seeds", type=int, default=None, help="only the tier's first N seeds (development)")
     parser.add_argument("--duration", type=float, default=None, help="run length (default: 60 s validation scenario)")
     parser.add_argument("--latencies", type=str, default=None,
-                        help="sweep latencies in ms, the first being the baseline, e.g. 10,15,30,45")
+                        help="sweep latencies in ms, e.g. 7.5,10,15,30,45 (default: the robot's grid, "
+                             "config.ComparisonConfig); the baseline is added if missing")
+    parser.add_argument("--baseline-latency", type=float, default=None,
+                        help="the sweep's baseline latency in ms, the one every sweep metric is measured from "
+                             "(default: the robot's, its nominal TimingConfig.latency_s); never the first of "
+                             "--latencies")
     parser.add_argument("--bootstrap", type=int, default=10_000)
     parser.add_argument("--backend", choices=("numpy", "torch"), default="numpy",
                         help="numpy float64 is the designated validation path; torch float64 for development")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--out", default=None)
+    add_robot_argument(parser)
     args = parser.parse_args(argv)
     if args.tier in FROZEN and not args.final:
         parser.error(f"the {args.tier} tier is frozen: pass --final once every controller is final")
@@ -598,14 +671,23 @@ def main(argv=None) -> Path:
                 w.writerow([e.label, e.method, e.run, seed, pitch, c, int(fell), "" if np.isnan(ft) else ft])
 
     if args.latency_sweep:
-        sweep_seeds = seeds[:SWEEP_FALL_RATE_SEEDS] if args.tier == "fall_rate" else seeds
-        latencies = (tuple(float(x) for x in args.latencies.split(",")) if args.latencies
-                     else SWEEP_LATENCIES_MS)
+        settings = comparison_settings()
+        sweep_seeds = seeds[:settings.sweep_fall_rate_seeds] if args.tier == "fall_rate" else seeds
+        baseline = settings.baseline_ms(CONFIG) if args.baseline_latency is None else args.baseline_latency
+        latencies = sweep_grid(tuple(float(x) for x in args.latencies.split(",")) if args.latencies
+                               else settings.sweep_latencies_ms, baseline)
         curves = latency_sweep(entries, config, robust, sweep_seeds, args.reference, latencies,
-                               args.backend, args.device)
-        report["latency_sweep"] = {"seeds": [sweep_seeds[0], sweep_seeds[-1]], "baseline_ms": latencies[0],
-                                   "threshold_falls": SWEEP_FALL_THRESHOLD, "cost_factor": SWEEP_COST_FACTOR,
-                                   "curves": curves, "by_method": sweep_by_method(entries, curves)}
+                               args.backend, args.device, baseline_ms=baseline, settings=settings)
+        report["latency_sweep"] = {"seeds": [sweep_seeds[0], sweep_seeds[-1]], "baseline_ms": baseline,
+                                   "threshold_falls": settings.sweep_fall_threshold,
+                                   "cost_factor": settings.sweep_cost_factor,
+                                   "curves": curves, "by_method": sweep_by_method(entries, curves),
+                                   "latencies_ms": list(latencies),
+                                   "excess_falls": {"min_excess": settings.sweep_excess_falls,
+                                                    "alpha": settings.sweep_excess_alpha,
+                                                    "test": "exact one-sided McNemar of the fall flags at each "
+                                                            "latency against the controller's own at baseline_ms, "
+                                                            "same scenarios"}}
         with open(folder / "latency_sweep.csv", "w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["controller", "latency_ms", "falls", "mean_cost", "median_cost", "median_ratio_vs_reference"])
@@ -636,13 +718,17 @@ def main(argv=None) -> Path:
             f"   WARNING: a non-fall run cost {v['max_non_fall_cost']:.0f}, above the fall penalty"
         print(f"{name:<32}" + "".join(f"{v['headline_median_ratio'][m]:>16.3f}" for m in methods) + flag)
     if args.latency_sweep:
-        print(f"\nLatency sweep (baseline {latencies[0]:g} ms): first latency with >= {SWEEP_FALL_THRESHOLD} falls; "
-              f"with median cost >= {SWEEP_COST_FACTOR}x baseline; losing to the reference")
+        sweep = report["latency_sweep"]
+        print(f"\nLatency sweep (baseline {baseline:g} ms; {', '.join(f'{ms:g}' for ms in latencies)} ms): first latency "
+              f"with >= {sweep['threshold_falls']} falls; with >= {settings.sweep_excess_falls} falls more than at "
+              f"the baseline (McNemar p < {settings.sweep_excess_alpha:g}); with median cost >= "
+              f"{sweep['cost_factor']}x baseline; losing to the reference")
         show = lambda v: "none" if v is None else f"{v:g} ms"
-        for label, c in report["latency_sweep"]["curves"].items():
+        for label, c in sweep["curves"].items():
             falls = show(c["first_latency_with_falls"]) + (" (at/below baseline)" if c["falls_at_or_below_baseline"] else "")
-            print(f"  {label[:40]:<42}{falls:>26}{show(c['first_latency_with_cost']):>10}"
-                  f"{show(c['first_latency_losing_to_reference']):>10}")
+            print(f"  {label[:40]:<42}{falls:>26}{show(c['first_latency_with_excess_falls']):>10}"
+                  f"{show(c['first_latency_with_cost']):>10}{show(c['first_latency_losing_to_reference']):>10}"
+                  f"   ({c['falls_at_baseline']} falls at baseline)")
     print("\nSide metrics (median over scenarios; not in the cost)")
     keys = [("torque_rms_change_per_tick_n_m", "dU/tick"), ("torque_variation_per_s_n_m", "TV/s"),
             ("torque_rms_n_m", "U rms"), ("time_at_torque_limit_fraction", "sat."),

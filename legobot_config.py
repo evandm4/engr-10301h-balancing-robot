@@ -27,6 +27,7 @@ from dataclasses import replace
 
 from config import (
     ActuatorConfig,
+    ComparisonConfig,
     ControllerConfig,
     CostConfig,
     SearchConfig,
@@ -406,4 +407,24 @@ LEGOBOT_CONFIG = ProjectConfig(
     robustness=ROBUSTNESS,
     search=SEARCH,
     learning=LEARNING,
+)
+
+# ------------------------------------------------------------ COMPARISON -
+# The final comparison's settings (optimization/compare_controllers.py; config.ComparisonConfig, which is
+# not part of LEGOBOT_CONFIG or its snapshot, so nothing that trains or scores sees it). Fixed 2026-11-25,
+# before E2.8 ran, from a review of the Pololu values compare_controllers.py hard-coded:
+#   - Baseline: the nominal latency, TIMING's 10 ms (as Pololu's, but now from the config, never from the
+#     grid's first entry). The grid adds D4's training bounds, 7.5 and 12.5 ms (ROBUSTNESS.latency_range_s),
+#     to Pololu's 2.5 ms grid up to 45 ms. Latencies below the baseline are reported, not used by the metrics.
+#   - Falls: the models' own baselines fall about 4% of the time at 10 ms (about 43 / 999 on a fall-rate
+#     sized set), so the absolute 4-fall metric is reached at the baseline by every controller (left-
+#     censored). The relative metric is the one to read here: 4 or more falls above the controller's own at
+#     10 ms, on the same scenarios, with an exact one-sided McNemar p < 0.05.
+#   - Thermal variant: LEGO rates the Large Angular Motor at 0.25 N m continuous (ROBOT.max_torque's note):
+#     0.50 N m for both. Pololu's 1.5 A rule would give 0.348 x 1.5 x 0.739 x 2 = 0.772 N m here.
+LEGOBOT_COMPARISON = ComparisonConfig(
+    sweep_baseline_ms=None,                                         # TIMING.latency_s: 10 ms
+    sweep_latencies_ms=tuple(7.5 + 2.5 * i for i in range(16)),     # 7.5, 10, 12.5, 15, ..., 45 ms
+    continuous_torque_n_m=2 * 0.25,                                 # N m: LEGO's rating, both motors
+    continuous_current_a=None,
 )
