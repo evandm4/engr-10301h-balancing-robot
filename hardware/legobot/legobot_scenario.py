@@ -87,6 +87,12 @@ def corner_robots(cfg: ProjectConfig, driver: str = None) -> BatchRobot:
     signs = np.array(list(itertools.product((-1.0, 1.0), repeat=n_rel + len(ranged))))
     changes = {name: getattr(base, name) * (1 + s * signs[:, j]) for j, (name, s) in enumerate(r.randomize)}
     changes.update({name: np.where(signs[:, n_rel + j] > 0, hi, lo) for j, (name, lo, hi) in enumerate(ranged)})
+    if r.max_total_backlash is not None and "coupling_backlash" in changes:
+        j_c = [name for name, _, _ in ranged].index("coupling_backlash")
+        lo_c, hi_c = ranged[j_c][1], ranged[j_c][2]
+        gb = changes.get("gearbox_backlash", getattr(base, "gearbox_backlash"))
+        hi_eff = np.minimum(hi_c, np.maximum(lo_c, r.max_total_backlash - gb))
+        changes["coupling_backlash"] = np.where(signs[:, n_rel + j_c] > 0, hi_eff, lo_c)
     return replace(base, **changes)
 
 
@@ -326,7 +332,11 @@ def describe_worst(cfg, R, index):
     for name, lo, hi in cfg.robustness.randomize_range:
         if name in NOT_IN_CORNERS:
             continue
-        out.append(f"{name} {'hi' if np.ravel(getattr(R, name))[index] > 0.5 * (lo + hi) else 'lo'}")
+        hi_eff = hi
+        if name == "coupling_backlash" and cfg.robustness.max_total_backlash is not None:
+            gb = float(np.ravel(getattr(R, "gearbox_backlash"))[index])
+            hi_eff = min(hi, max(lo, cfg.robustness.max_total_backlash - gb))
+        out.append(f"{name} {'hi' if np.ravel(getattr(R, name))[index] > 0.5 * (lo + hi_eff) else 'lo'}")
     if R.has_backlash:
         play = np.ravel(np.asarray(R.gearbox_backlash + R.coupling_backlash, float) * np.ones(size(R)))[index]
         out.append(f"play +-{math.degrees(play):.1f} deg in all")
@@ -380,15 +390,16 @@ LEAN_SOFTENING = 0.5
 POLOLU_PUSH_SHARE = 0.145 / 0.149             # push / largest catchable on every corner
 # What a full run of the catch simulations gives for legobot_config.py as of 2026-11-24 Bench C (measured robot,
 # slow PWM with the tick phase free since bench B1, latency to 12.5 ms: push reaction 27.5 ms, tilt 22.5 ms;
-# gearbox +-1.1-3.4 deg and coupling +-0-2.5 deg play, coulomb 0.030-0.060 N m, gear_efficiency 0.739, in its
-# worst position), for --quick. Before 2026-11-24 Bench C (gearbox +-1.1-1.6, coupling +-0-3.0, coulomb 0.030-0.055,
+# gearbox +-1.1-3.4 deg and coupling +-0-2.5 deg play capped at max_total_backlash = +-4.0 deg, coulomb 0.030-0.060 N m,
+# gear_efficiency 0.739, in its worst position), for --quick. Uncapped (+-5.9 deg corner) gave forward 0.0320,
+# backward 0.2980, tilt 0.406. Before 2026-11-24 Bench C (gearbox +-1.1-1.6, coupling +-0-3.0, coulomb 0.030-0.055,
 # eta 0.755): forward 0.03772, backward 0.3043, tilt 0.423, nominal forward 0.085, nominal tilt 0.559. Before the H3
 # play re-reading (gearbox +-2.6-3 deg): forward 0.03420, backward 0.3009, tilt 0.412, nominal forward 0.081, nominal
 # tilt 0.548. Re-run without --quick after changing the config (about 15-30 min). nominal_* are at the nominal 10 ms
 # (push 25 ms, tilt 20 ms). With the ticks locked (push 25 ms, tilt 15 ms): forward 0.03572, backward 0.3059,
 # tilt 0.436, nominal forward 0.085, nominal tilt 0.589. Without the play, locked: forward 0.0523, backward 0.3250,
 # tilt 0.486, nominal forward 0.099, nominal tilt 0.628.
-RECORDED_CATCH = dict(forward=0.0320, backward=0.2980, tilt=0.406, nominal_forward=0.081, nominal_tilt=0.546)
+RECORDED_CATCH = dict(forward=0.03665, backward=0.3019, tilt=0.420, nominal_forward=0.082, nominal_tilt=0.547)
 
 
 def lean_cap_table(N, R, caps_deg):

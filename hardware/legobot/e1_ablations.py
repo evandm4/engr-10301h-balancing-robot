@@ -106,7 +106,7 @@ def build_variants(base_cfg):
             replace(
                 base_cfg,
                 robot=replace(base_cfg.robot, gearbox_backlash=math.radians(1.5), coupling_backlash=math.radians(2.175)),
-                robustness=replace(rb, randomize_range=replace_range(rb.randomize_range, {"gearbox_backlash": (math.radians(1.0), math.radians(2.0)), "coupling_backlash": (0.0, math.radians(4.35))})),
+                robustness=replace(rb, max_total_backlash=None, randomize_range=replace_range(rb.randomize_range, {"gearbox_backlash": (math.radians(1.0), math.radians(2.0)), "coupling_backlash": (0.0, math.radians(4.35))})),
             ),
         ),
         (

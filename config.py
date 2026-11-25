@@ -613,6 +613,9 @@ class RobustnessSettings:
     # 2.5-20 ms since 2026-11-09 (was 5-20), so the scored latencies include the 1.7-5.6 ms
     # the reference build's latency budget gives (DATASHEET.md 6): 2.5, 5, ..., 20 ms.
     latency_range_s: Optional[Tuple[float, float]] = (0.0025, 0.020)
+    # Optional cap (half-width, rad) on gearbox_backlash + coupling_backlash when coupling play is
+    # inferred by subtracting encoder gearbox play from measured total tread play; None leaves them independent.
+    max_total_backlash: Optional[float] = None
     robot_seed: int = 0                # which set of random robots
     sensitivity_weight: float = 1.0    # chaos penalty weight; 0 turns it (and its twin runs) off
     sensitivity_nudge_deg: float = 0.0057   # start-tilt nudge for the twin runs (1e-4 rad)
@@ -882,7 +885,8 @@ class ProjectConfig:
                    "robustness.fresh_seed_start")
     # Keys added after runs were saved, with the value that leaves scoring as it was then: a saved snapshot
     # without one is read as having it.
-    ADDED_DEFAULTS = {"robot.gearbox_backlash": 0.0, "robot.coupling_backlash": 0.0}
+    ADDED_DEFAULTS = {"robot.gearbox_backlash": 0.0, "robot.coupling_backlash": 0.0,
+                      "robustness.max_total_backlash": None}
 
     def scoring_differences(self, snapshot: dict, ignore: tuple = ()) -> list:
         """Dotted keys (e.g. "robustness.latency_range_s") where a saved snapshot() differs from
@@ -923,6 +927,7 @@ class ProjectConfig:
         data = asdict(self)
         if self.name == "pololu":
             data["robustness"].pop("dev_extended_seeds", None)
+            data["robustness"].pop("max_total_backlash", None)
         # asdict leaves out properties; the weights are what the cost uses.
         data["cost"]["velocity_weight"] = self.cost.velocity_weight
         data["cost"]["effort_weight"] = self.cost.effort_weight
@@ -950,11 +955,12 @@ class ProjectConfig:
 
     def build_robustness(self):
         """Build a batch_tuning.RobustnessConfig that matches this project configuration."""
-        from batch_tuning import RobustnessConfig
+        from batch_tuning import RobustnessConfig, first_train_seeds
 
         r = self.robustness
+        reserved = (*r.validation_seeds, *r.dev_seeds, *r.dev_extended_seeds, *r.fall_rate_seeds, *r.retired_seeds)
         return RobustnessConfig(
-            train_seeds=tuple(range(1, r.n_train_seeds + 1)),
+            train_seeds=first_train_seeds(r.n_train_seeds, reserved),
             validation_seeds=tuple(r.validation_seeds),
             smoke_seeds=tuple(r.smoke_seeds),
             dev_seeds=tuple(r.dev_seeds),
@@ -964,6 +970,7 @@ class ProjectConfig:
             randomize=tuple(r.randomize),
             randomize_range=tuple(r.randomize_range),
             latency_range=r.latency_range_s,
+            max_total_backlash=r.max_total_backlash,
             robot_seed=r.robot_seed,
             sensitivity_weight=r.sensitivity_weight,
             sensitivity_nudge=r.sensitivity_nudge_rad,

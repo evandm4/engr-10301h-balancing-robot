@@ -69,6 +69,7 @@ class RobustnessConfig:
     randomize: Tuple[Tuple[str, float], ...] = ()  # (parameter, relative spread)
     randomize_range: Tuple[Tuple[str, float, float], ...] = ()   # (parameter, low, high): drawn uniformly
     latency_range: Optional[Tuple[float, float]] = None          # s, (low, high); None: the configured latency
+    max_total_backlash: Optional[float] = None                   # rad, cap on gearbox + coupling play; None: independent
     robot_seed: int = 0
     sensitivity_weight: float = 0.0               # 0 turns the chaos penalty (and its twin runs) off
     sensitivity_nudge: float = 1e-4               # rad: far below anything physical, far above rounding
@@ -97,6 +98,17 @@ class RobustnessConfig:
             raise ValueError(f"{sorted(both)} can't be in both randomize and randomize_range")
         if self.latency_range is not None and not 0 <= self.latency_range[0] <= self.latency_range[1]:
             raise ValueError(f"latency_range must have 0 <= low <= high, got {self.latency_range}")
+        if self.max_total_backlash is not None:
+            if self.max_total_backlash <= 0:
+                raise ValueError(f"max_total_backlash must be > 0, got {self.max_total_backlash}")
+            by_name = {name: (lo, hi) for name, lo, hi in self.randomize_range}
+            if "gearbox_backlash" in by_name and "coupling_backlash" in by_name:
+                min_sum = by_name["gearbox_backlash"][1] + by_name["coupling_backlash"][0]
+                if min_sum > self.max_total_backlash + 1e-12:
+                    raise ValueError(
+                        f"max_total_backlash ({self.max_total_backlash}) is below max gearbox_backlash + "
+                        f"min coupling_backlash ({min_sum})"
+                    )
         overlap = set(self.train_seeds) & set(self.validation_seeds)
         if overlap:
             # Validation seeds also pick the validation robots, so an overlap would score
@@ -112,7 +124,7 @@ class RobustnessConfig:
                     raise ValueError(f"{a} and {b} seeds overlap: {sorted(both)[:5]}...")
         if not set(self.smoke_seeds) <= set(self.dev_seeds):
             raise ValueError("smoke_seeds must be a subset of dev_seeds")
-        for name in ("validation", "dev", "dev_extended", "fall_rate"):
+        for name in ("train", "validation", "dev", "dev_extended", "fall_rate"):
             reused = set(tiers[name]) & set(self.retired_seeds)
             if reused:
                 raise ValueError(f"{name} seeds include retired seeds: {sorted(reused)[:5]}...")
@@ -122,6 +134,22 @@ class RobustnessConfig:
     @property
     def twin_runs(self) -> bool:
         return self.sensitivity_weight > 0
+
+
+def first_train_seeds(n: int, exclude: Sequence[int] = ()) -> Tuple[int, ...]:
+    """First `n` positive integer seeds from 1 upward, skipping any retired or held-out tier seeds.
+    For n <= 99 under the project's tiers this is exactly tuple(range(1, n + 1)); for larger n it
+    cleanly steps around retired 100-109 (and 1000-1099, 2000-2099, 3000+, 5000+, 6000+)."""
+    if n < 0:
+        raise ValueError(f"n must be >= 0, got {n}")
+    blocked = set(exclude)
+    out = []
+    seed = 1
+    while len(out) < n:
+        if seed not in blocked:
+            out.append(seed)
+        seed += 1
+    return tuple(out)
 
 
 def checking_tier(config: RobustnessConfig, final: bool) -> Tuple[RobustnessConfig, str]:
@@ -162,6 +190,16 @@ def sample_robots(base: BatchRobot, config: RobustnessConfig, seeds: Sequence[in
     changes = {name: getattr(base, name) * factors[:, j] for j, name in enumerate(names)
                if getattr(base, name) is not None}
     changes.update({name: values[:, j] for j, name in enumerate(ranged) if getattr(base, name) is not None})
+    if config.max_total_backlash is not None and "coupling_backlash" in changes:
+        j_c = ranged.index("coupling_backlash")
+        lo_c, hi_c = lows[j_c], highs[j_c]
+        gb = changes.get("gearbox_backlash", getattr(base, "gearbox_backlash"))
+        hi_eff = np.minimum(hi_c, np.maximum(lo_c, config.max_total_backlash - gb))
+        if hi_c > lo_c:
+            u_c = (values[:, j_c] - lo_c) / (hi_c - lo_c)
+            changes["coupling_backlash"] = lo_c + u_c * (hi_eff - lo_c)
+        else:
+            changes["coupling_backlash"] = np.minimum(changes["coupling_backlash"], hi_eff)
     return replace(base, **changes)
 
 

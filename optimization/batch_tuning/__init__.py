@@ -4,7 +4,8 @@ Builds on the CPU tuning package (EvalConfig, SearchSpace, TuningResult,
 save_result) in the same folder; see BATCHED.md.
 """
 
-from .robust import RobustnessConfig, checking_tier, pitch_bias_at, robot_at, sample_delay_steps, sample_robots
+from .robust import (RobustnessConfig, checking_tier, first_train_seeds, pitch_bias_at, robot_at,
+                     sample_delay_steps, sample_robots)
 from .evaluation import BatchEvalResult, BatchEvaluator, decode_units, robot_from_eval_config, spec_from_eval_config
 from .optimizers import (PolicySearch, PolicySearchResult, cma_es_policy_search, cma_es_search, differential_evolution_search,
                          random_search)
@@ -12,6 +13,7 @@ from .optimizers import (PolicySearch, PolicySearchResult, cma_es_policy_search,
 __all__ = [
     "RobustnessConfig",
     "checking_tier",
+    "first_train_seeds",
     "sample_robots",
     "sample_delay_steps",
     "robot_at",

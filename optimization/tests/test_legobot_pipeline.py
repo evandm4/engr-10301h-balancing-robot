@@ -38,6 +38,7 @@ def test_every_lego_feature_is_on():
     ranged = {name for name, _, _ in ROBUST.randomize_range}
     assert {"pitch_bias", "coulomb_friction", "gearbox_backlash", "coupling_backlash"} <= ranged
     assert ROBUST.randomize_range[-1] == ("pwm_tick_phase", 0.0, 1.0)     # drawn per scenario, last
+    assert ROBUST.max_total_backlash == pytest.approx(np.radians(4.0))
     assert SHORT.params.gearbox_backlash > 0 and SHORT.params.coupling_backlash > 0
     assert ROBUST.randomize and ROBUST.latency_range is not None
 
@@ -55,6 +56,7 @@ def test_robust_scores_match_reference_runs_scenario_by_scenario(locked):
     assert len(set(np.round(phases, 6))) > 1          # each scenario's own phase
     assert len(set(delays)) > 1
     assert len(set(robots.gearbox_backlash)) == len(set(robots.coupling_backlash)) == len(ev.scenarios())
+    assert np.all(robots.gearbox_backlash + robots.coupling_backlash <= robust.max_total_backlash + 1e-12)
     for i, (pitch, seed) in enumerate(ev.scenarios()):
         params, motor = robot_at(robots, i)
         assert params.gearbox_backlash == robots.gearbox_backlash[i] and params.backlash > 0

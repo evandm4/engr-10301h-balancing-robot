@@ -974,13 +974,17 @@ $\tau_c = 0.0288\text{ N·m}$ (`0.0281–0.0299` across `0.10–0.20`), so the t
 | Right | `8°` / `9°` | `6.34°` / `6.80°` (11 cycles `-356° ↔ -349°/-348°`, zero drift) | `4 mm` = `6.64°` (`±3.32°`) | `±3.2–3.4°` gearbox (confirmed at stops), `~0–0.8°` coupling |
 
 With the real 69 mm tires mounted (replacing the earlier 96 mm beam visual reading), both wheels show `~4 mm`
-(`6.64°` ptp, `±3.32°` half-width) total free play at the tread — smaller than `legobot_config.py`'s `±4.6°`
-worst-case total, confirming the left-side `coupling_backlash` range (`±0–3.0°`) is realistic. On the right
+(`6.64°` ptp, `±3.32°` half-width) total free play at the tread — smaller than `legobot_config.py`'s earlier `±4.6°`
+worst-case total, confirming the left-side `coupling_backlash` (`~±2.2°`) sits inside `±0–2.5°`. On the right
 motor, however, Evan confirmed by hand that the wheel cleanly hits the two internal gearbox stops without
 turning the rotor: the encoder swung between `-356°` and `-349°/-348°` across 11 consecutive cycles (`6.80°`
-cluster sep, `±3.4°` half-width, well above `legobot_config.ROBUSTNESS`'s `±1.1–1.6°` gearbox range from the
-left motor alone; right `lever` holds also moved `10–14°` vs left's `3–7°`). Two-motor mean gearbox play is
-`~±2.2–2.35°` (left `±1.0–1.3°`, right `±3.2–3.4°`).
+cluster sep, `±3.4°` half-width, well above `legobot_config.ROBUSTNESS`'s earlier `±1.1–1.6°` gearbox range from the
+left motor alone; right `lever` holds also moved `10–14°` vs left's `3–7°`). Two-motor mean play is `±2.3°` gearbox +
+`±1.1°` coupling (`±3.4°` total). Because coupling play is inferred by subtracting gearbox play from the `4 mm`
+(`±3.32°`) tread total on each wheel, gearbox and coupling play are negatively correlated: `legobot_config.ROBUSTNESS`
+draws `gearbox_backlash ∈ [1.1°, 3.4°]` and `coupling_backlash ∈ [0°, 2.5°]` with `max_total_backlash = ±4.0°`
+(`4.8 mm` at the 69 mm tread, i.e. `4 mm` + `< 1 mm` visual margin) rather than summing them independently to an
+unmeasured `±5.9°`, re-deriving `SCENARIO.pushes` to **`0.71 N × 50 ms`** (`jf = 0.0367 N·s`).
 
 **B4: slow-PWM ripple re-check, robot secured, both motors (2026-11-24, wheels off the ground, tires on,
 slow PWM `1 0.01`, `vin = 7.81–7.82 V`; `robot.measure.pwm_probe --wheels-off --side left` and `--side right`,

@@ -75,18 +75,16 @@ All of this runs on the Pi. The first two are also the robot code's drivers (pha
 | C4 | Fill in `legobot_config.py` from C3 and shrink the robustness spreads to the measurement uncertainty; update DATASHEET | S | — |
 
 **C3/C4 status, 2026-11-23.** The scripts are in `robot/measure/` (DATASHEET 8.7).
-- **Done:** the hands-free runs (duty map, spin-up and coast-down in three PWM modes, latency, IMU noise)
-  and the lever-on-scale torque test in two modes.
+- **Done (updated 2026-11-24 Bench B3/B4 & C1–C3):** the hands-free runs (duty map, spin-up and coast-down in three PWM modes, latency, IMU noise, `B3` rail scaling up to `8.04 V` full pack, `B4` secured `pwm_probe` on both ports), `lever` torque scale on both motors (`left 0.0597`, `right 0.0572`, mean `0.0585 N m/V` -> `gear_efficiency = 0.739`), `C2` `calibrate balance` (`pitch_zero = -0.00270 rad`), `C3` low-duty friction (`coulomb_friction = 0.045`, `0.030–0.060 N m`), and `69 mm` wheel-on backlash on both motors (`gearbox ±1.1–3.4°`, `coupling 0–2.5°` capped at `max_total_backlash = ±4.0°`, nominal `±2.3° + ±1.1° = ±3.4°`).
 - **Chosen:** slow PWM (`pwmparams 1 0.01`), which behaves as τ = |d| a (sgn(d) V − kω). The library
   mode's gain doubles at 0.65 duty, and fast PWM has a 0.4 dead band.
-- **C4, done:** every motor constant (k, a, rotor inertia, both friction terms, max_torque) and the sensor
-  noise in `legobot_config.py` are measured, and their spreads are shrunk (DATASHEET 2).
-- **Still open:**
-  - the balance point (`robot.calibrate balance`) and `discharge` (backlash measured: port B5);
-  - B1b is done; still open is the slow-PWM pulse ripple at low duty (re-run `pwm_probe` with the robot secured);
-  - ~~re-deriving the scenario (A3) and new hand-tuned gains~~ *done 2026-11-23*: lean cap 25°, cruise 0.40 m/s
+- **C4, done:** every motor constant (k, a, rotor inertia, both friction terms, max_torque, wheel-on play) and the sensor
+  noise in `legobot_config.py` are measured, and their spreads are shrunk (DATASHEET 2 and 8.7).
+- **Optional / non-blocking:**
+  - 1-hour `discharge` stand log, `C4` floor coast-down, and `C5` `0.4`-duty thermal check;
+  - ~~re-deriving the scenario (A3) and new hand-tuned gains~~ *done 2026-11-23, updated 2026-11-24*: lean cap 25°, cruise 0.40 m/s
     (the user's choice; the rule's 0.47 left no headroom for the acceleration overshoot), acceleration softened
-    to half of Pololu's lean shares, pushes 1.02 N (0.70 N since the play, B5; 0.67 N since bench B1; 0.73 N after Round-2 play fix), start tilts 0.05/−0.15/0.30 rad, cost limits 0.30/0.06/0.09;
+    to half of Pololu's lean shares, pushes 1.02 N (0.70 N since B5; 0.67 N since bench B1; 0.73 N for E1 after Round-2 play fix; **0.71 N** for E2 after Bench C + `±4.0°` total-play cap), start tilts 0.05/−0.15/0.30 rad, cost limits 0.30/0.06/0.09;
     hand-tuned PID (2.5, 1.5, 0.2, 0.5) in 13 trials. The LQR is dropped for this robot. A4_BASELINES.md.
 
 ### Phase D: Robot code (needs C1, C2; uses B's filter)

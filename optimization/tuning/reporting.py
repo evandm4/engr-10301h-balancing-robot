@@ -55,6 +55,10 @@ def save_result(result: TuningResult, folder, extra: dict = None) -> Path:
         summary["mean_gains"] = {n: float(g) for n, g in zip(result.gain_names, result.mean_gains)}
     summary["provenance"] = provenance()
     if extra:
+        extra = dict(extra)
+        if robot_name == "pololu" and isinstance(extra.get("robustness"), dict):
+            extra["robustness"] = {k: v for k, v in extra["robustness"].items()
+                                   if k not in ("dev_extended_seeds", "max_total_backlash")}
         summary.update(extra)
     json_path = folder / f"{result.method}.json"
     json_path.write_text(json.dumps(summary, indent=2))
