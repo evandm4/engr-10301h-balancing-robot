@@ -1,0 +1,11 @@
+{
+  "method": "warm",
+  "synthetic": "a_warm_zero",
+  "n_params": 492,
+  "reference_gains": [
+    2.5,
+    1.5,
+    0.2,
+    0.5
+  ]
+}

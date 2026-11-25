@@ -1,0 +1,53 @@
+{
+  "name": "a_warm_zero",
+  "robot": "legobot",
+  "kind": "warm",
+  "synthetic": "a_warm_zero",
+  "n_params": 492,
+  "multiply_adds_per_tick": 459,
+  "sha256": "6ba4ae87fbc7d019dcc89dc16831a2eaaee9cf867724fec5bdb974f9d27ec5fe",
+  "source_run": null,
+  "git_commit": "3ae6bc35cd23c773f70c437de6326a856ab2374d-dirty",
+  "dev_score": null,
+  "source_path": null,
+  "max_torque": 0.9,
+  "input_names": [
+    "v_meas",
+    "theta_meas",
+    "theta_dot_meas",
+    "goal",
+    "goal_minus_v",
+    "int_v",
+    "int_theta",
+    "cmd_1",
+    "cmd_2",
+    "cmd_3",
+    "cmd_4"
+  ],
+  "observation_names": [
+    "v_meas",
+    "theta_meas",
+    "theta_dot_meas",
+    "goal",
+    "goal_minus_v",
+    "int_v",
+    "int_theta",
+    "cmd_1",
+    "cmd_2",
+    "cmd_3",
+    "cmd_4"
+  ],
+  "source_git_commit": null,
+  "config_differences": [],
+  "golden_ticks": 400,
+  "envelope_runs": 15,
+  "envelope_falls": 0,
+  "golden_saturated_ticks": 0,
+  "files_sha256": {
+    "final.npz": "6ba4ae87fbc7d019dcc89dc16831a2eaaee9cf867724fec5bdb974f9d27ec5fe",
+    "snapshot.json": "f5b99acbbb5ba8e4d77b76004c2655fac9a3bbe79f06449d4e27838707b50264",
+    "summary.json": "190af7231d26b63729da1c297a2fd7f7d2fb5f54546555b81c3ad3ff8e7d5349",
+    "golden.npz": "f51f8c11e7aee3b7e01196caf8dad618e90af6a58b5ed798f0186a5337a36db4",
+    "envelope.json": "649d7dcd3c40689af218d9b25b3fcb692ae2ad8aceee6633a0dfc371e8850d67"
+  }
+}

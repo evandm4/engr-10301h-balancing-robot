@@ -798,16 +798,17 @@ class ProjectConfig:
         """The scenario's pushes as force (N) vs time, for simulate(disturbance=...); None if there are none."""
         return push_profile(self.scenario.pushes) if self.scenario.pushes else None
 
-    def build_controller(self, gains=None) -> CascadedPIDController:
+    def build_controller(self, gains=None, goal=None) -> CascadedPIDController:
         """The cascaded controller the tuner scores, with the configured goal
         profile, lean cap, integral limits, and torque limit. Defaults to the
         hand-tuned gains."""
         gains = self.controller.hand_tuned_gains if gains is None else gains
+        goal = self.build_goal() if goal is None else goal
         return CascadedPIDController.from_gains(
             gains,
             torque_limit=self.robot.max_torque,
             pitch_integral_limit=self.controller.pitch_integral_limit,
-            goal=self.build_goal(),
+            goal=goal,
             max_pitch_command=self.controller.max_lean_rad,
             integral_limit=self.controller.velocity_integral_limit,
         )
@@ -1057,12 +1058,13 @@ class ProjectConfig:
                           output_scale=output_scale, t_leak=l.t_leak_s, integral_limits=tuple(l.integral_limits),
                           **extra)
 
-    def build_policy_controller(self, spec, params):
+    def build_policy_controller(self, spec, params, goal=None):
         """A balance_sim.PolicyController with this project's torque limit, goal and PID limits."""
         from balance_sim import PolicyController
 
         c = self.controller
-        return PolicyController(spec, params, self.robot.max_torque, goal=self.build_goal(),
+        goal = self.build_goal() if goal is None else goal
+        return PolicyController(spec, params, self.robot.max_torque, goal=goal,
                                 max_pitch_command=c.max_lean_rad, pitch_integral_limit=c.pitch_integral_limit,
                                 velocity_integral_limit=c.velocity_integral_limit)
 

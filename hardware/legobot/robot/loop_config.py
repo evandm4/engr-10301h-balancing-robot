@@ -71,3 +71,11 @@ RUNAWAY_FRACTION = 0.85    # of the no-load speed at the measured vin (control.r
 
 # ---- logging (D5) ----
 LOG_DIR = "logs"
+
+# ---- learned policies (POLICY_ON_ROBOT_PLAN P2-P5) ----
+POLICIES_DIR = "policies"  # in ~/legobot (deploy.sh copies results/legobot/policies/ here); --controller policy:<name>
+GOLDEN_TOL = 1e-9          # N m: largest torque error the startup golden-vector self-test accepts (P2d)
+GOLDEN_MIN_TICKS = 100     # fewest golden ticks a bundle may carry for the self-test to mean anything
+POLICY_MAX_P99_FRACTION = 0.6  # refuse a policy whose self-test forward pass p99 exceeds this fraction of dt (P3b)
+ENVELOPE_TRIP_S = 0.10     # s: --envelope-trip K coasts once an input stays past K x its envelope max |value| this long (P5a)
+OOD_INJECT_OFFSET = 10.0   # m/s added to the measured velocity (state[1]) on every armed tick after --inject ood fires (P5a)

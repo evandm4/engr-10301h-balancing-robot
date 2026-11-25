@@ -7,7 +7,9 @@ runs what was tuned:
   - wheel speed is the difference of the two newest encoder counts over the HAT's 10 ms sample period,
     as balance_sim.Encoder computes it (B3), and velocity = r (wheel speed + gyro rate) as SensorNoise does;
   - the controller is balance_sim's CascadedPIDController, built by legobot_config's
-    ProjectConfig with its torque cap, lean cap and integral limits;
+    ProjectConfig with its torque cap, lean cap and integral limits; or a learned policy, balance_sim's own
+    PolicyController (not a port) from an exported bundle, checked against the deployed config and its golden
+    vectors before it runs (POLICY_ON_ROBOT_PLAN P2-P5: load_policy_bundle, self_test_policy, EnvelopeMonitor);
   - the duty is the config's actuator model's own drive() (B1, B1b) with its nominal constants and the
     measured battery voltage, per wheel with that wheel's speed: SlowPwmActuator's inverse of the HAT's slow
     PWM ("slow_pwm"), or VoltageModeActuator's voltage divided by vin ("voltage").
@@ -20,6 +22,7 @@ Robot code on the Pi imports config.py and legobot_config.py from ~/legobot and 
 import json
 from collections import deque
 import math
+import re
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -71,13 +74,270 @@ def load_gains_file(path):
     return out
 
 
-def build_controller(cfg, spec="hand", goal="still"):
-    """The cascaded PID (CascadedPIDController, built by ProjectConfig.build_controller). spec: "hand"
-    (legobot hand-tuned gains), "model" (model-based baseline), or a gains JSON path. goal: "still" (hold
-    0 m/s) or "scenario" (the tuning scenario's goal profile, from the moment the loop arms). Returns
-    (controller, description dict)."""
+# --------------------------------------------------------------------------- learned policies (P2) ---
+KNOWN_POLICY_KINDS = ("linear", "mlp", "warm", "residual")
+BUNDLE_FILES = ("manifest.json", "final.npz", "snapshot.json", "golden.npz", "envelope.json")
+# .npz keys (or key fragments) of a policy with hidden state, which balance_sim.PolicyController can't run
+RECURRENT_KEY_FRAGMENTS = ("gru", "lstm", "rnn", "recurrent", "hidden_state")
+
+
+def classify_policy_kind(spec):
+    """'linear' (L), 'mlp' (A), 'warm' (A-warm) or 'residual' (B1) for a balance_sim.PolicySpec; ValueError
+    for any other combination (e.g. a residual policy with a linear path)."""
+    hidden, linear = bool(spec.hidden), bool(spec.linear_path)
+    if spec.residual:
+        if hidden and not linear:
+            return "residual"
+    elif linear and not hidden:
+        return "linear"
+    elif hidden and not linear:
+        return "mlp"
+    elif hidden and linear:
+        return "warm"
+    raise ValueError(f"unsupported policy spec (residual={spec.residual}, hidden={tuple(spec.hidden)}, "
+                     f"linear_path={spec.linear_path}); this robot code runs {KNOWN_POLICY_KINDS}")
+
+
+def is_policy_spec(spec):
+    """Whether a --controller value names a policy: policy:<name>, a bundle folder, or a .npz path."""
+    s = str(spec)
+    return bool(s) and (s.startswith("policy:") or s.lower().endswith(".npz") or Path(s).is_dir())
+
+
+def resolve_policy_path(path):
+    """policy:<name> -> lc.POLICIES_DIR/<name> (~/legobot/policies on the Pi) if it exists, else
+    <repo>/results/legobot/policies/<name>; FileNotFoundError if neither. Any other value is a plain path."""
+    s = str(path)
+    if not s.startswith("policy:"):
+        return Path(s)
+    name = s[len("policy:"):].strip()
+    if not name:
+        raise ValueError("policy:<name> needs a name")
+    if not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9_.-]*", name) or name.endswith("."):
+        raise ValueError(f"policy name {name!r} may only use letters, digits, '_', '.' and '-', not start or end "
+                         f"with '.' (no paths)")
+    candidates = [Path(lc.POLICIES_DIR) / name,
+                  Path(__file__).resolve().parents[3] / "results" / "legobot" / "policies" / name]
+    for c in candidates:
+        if c.exists():
+            return c
+    raise FileNotFoundError(f"policy {name!r} not found in {' or '.join(str(c) for c in candidates)}")
+
+
+def _sha256(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 16), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _load_policy_npz(path):
+    """(spec, params, max_torque, kind) from a save_policy .npz, refusing corrupt files, a different
+    observation list, recurrent (hidden-state) keys, an unknown or inconsistent "kind" key, a spec kind
+    this code doesn't know, and non-finite weights. All refusals are ValueError."""
+    import zipfile
+    import numpy as np
+    import_config()
+    from balance_sim import load_policy
+    try:
+        with np.load(path, allow_pickle=False) as f:
+            keys = list(f.files)
+            bad = [k for k in keys if any(frag in k.lower() for frag in RECURRENT_KEY_FRAGMENTS)]
+            if bad:
+                raise ValueError(f"has recurrent-policy keys {bad}: hidden-state policies are not supported")
+            stored_kind = str(f["kind"]) if "kind" in keys else None
+        spec, params, max_torque = load_policy(path)
+    except ValueError as e:
+        raise ValueError(f"{path}: refused: {e}") from e
+    except (KeyError, OSError, EOFError, zipfile.BadZipFile, TypeError, AttributeError, IndexError) as e:
+        raise ValueError(f"{path}: corrupt or not a policy file ({type(e).__name__}: {e})") from e
+    if stored_kind is not None and stored_kind not in KNOWN_POLICY_KINDS:
+        raise ValueError(f"{path}: unknown policy kind {stored_kind!r}; this robot code runs {KNOWN_POLICY_KINDS}")
+    kind = classify_policy_kind(spec)
+    if stored_kind is not None and stored_kind != kind:
+        raise ValueError(f"{path}: says kind {stored_kind!r} but its spec is {kind!r}")
+    params = np.asarray(params, dtype=float)
+    if not np.all(np.isfinite(params)) or not math.isfinite(max_torque):
+        raise ValueError(f"{path}: non-finite weights or max_torque")
+    return spec, params, float(max_torque), kind
+
+
+def _read_json(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except ValueError as e:
+        raise ValueError(f"{path}: not valid JSON ({e})") from e
+
+
+def _check_max_torque(path, max_torque, cfg):
+    if cfg is not None and abs(max_torque - cfg.robot.max_torque) > 1e-12:
+        raise ValueError(f"{path}: policy max_torque {max_torque} N m differs from legobot_config's "
+                         f"{cfg.robot.max_torque} N m (refused even with --allow-config-mismatch)")
+
+
+def _load_golden(path):
+    import zipfile
+    import numpy as np
+    try:
+        with np.load(path, allow_pickle=False) as f:
+            golden = {k: np.array(f[k]) for k in f.files}
+    except (OSError, EOFError, ValueError, KeyError, TypeError, AttributeError, zipfile.BadZipFile) as e:
+        raise ValueError(f"{path}: corrupt golden vectors ({type(e).__name__}: {e})") from e
+    missing = {"states", "torques", "goals", "dt"} - set(golden)
+    if missing:
+        raise ValueError(f"{path}: golden vectors lack {sorted(missing)}")
+    n = len(golden["torques"]) if golden["torques"].ndim == 1 else -1
+    if n < lc.GOLDEN_MIN_TICKS or golden["states"].shape != (n, 4) or golden["goals"].shape != (n,) or \
+            golden["dt"].size != 1 or not float(golden["dt"]) > 0:
+        raise ValueError(f"{path}: malformed golden vectors (states {golden['states'].shape}, torques "
+                         f"{golden['torques'].shape}, goals {golden['goals'].shape}, dt {golden['dt']}; "
+                         f"need >= {lc.GOLDEN_MIN_TICKS} ticks)")
+    if not all(np.all(np.isfinite(golden[k])) for k in ("states", "torques", "goals", "dt")):
+        raise ValueError(f"{path}: golden vectors hold NaN or inf")
+    return golden
+
+
+def _check_files_sha256(p, manifest):
+    """The manifest must hash every bundle file but itself (files_sha256, H5), and each must still match:
+    otherwise an edited snapshot, golden or envelope would slip past the config check, self-test or trip."""
+    files = manifest.get("files_sha256")
+    if not isinstance(files, dict):
+        raise ValueError(f"{p}: manifest has no files_sha256 mapping (re-export with optimization/export_policy.py)")
+    missing = [f for f in BUNDLE_FILES if f != "manifest.json" and f not in files]
+    if missing:
+        raise ValueError(f"{p}: manifest files_sha256 does not cover {missing}")
+    for name, want in files.items():
+        f = p / name
+        if Path(name).name != name or not f.is_file():
+            raise ValueError(f"{p}: manifest hashes {name!r}, which is not a file in the bundle")
+        got = _sha256(f)
+        if got != want:
+            raise ValueError(f"{f}: sha256 {got} does not match the manifest's {want} (corrupt or edited)")
+
+
+def _check_envelope(path, envelope, spec):
+    import_config()
+    from balance_sim.policy import OBSERVATIONS, RESIDUAL_INPUTS
+    names = list(OBSERVATIONS + (RESIDUAL_INPUTS if spec.residual else ()))
+    if list(envelope.get("observation_names", ())) != names:
+        raise ValueError(f"{path}: envelope observation list {envelope.get('observation_names')} is not {names}")
+    obs = envelope.get("observations", {})
+    for n in names:
+        e = obs.get(n)
+        if not isinstance(e, dict) or any(not isinstance(e.get(k), (int, float)) or isinstance(e.get(k), bool)
+                                          or not math.isfinite(e.get(k)) for k in ("p00_1", "p99_9", "max_abs")):
+            raise ValueError(f"{path}: envelope entry for {n!r} lacks finite numeric p00_1, p99_9, max_abs")
+        if not (e["p00_1"] <= e["p99_9"] and e["max_abs"] >= 0):
+            raise ValueError(f"{path}: envelope entry for {n!r} is inconsistent ({e})")
+    if not (isinstance(envelope.get("n_ticks"), (int, float)) and envelope["n_ticks"] > 0):
+        raise ValueError(f"{path}: envelope has no ticks (n_ticks {envelope.get('n_ticks')!r})")
+
+
+def load_policy_bundle(path, cfg=None, *, allow_unchecked=False, allow_config_mismatch=False):
+    """A policy bundle (P1: a folder with BUNDLE_FILES, from optimization/export_policy.py), policy:<name>, or a
+    bare .npz (only with allow_unchecked). Checks (P2a, P2b), each a ValueError with the reason:
+      - final.npz loads with balance_sim.load_policy (same observation list), has no recurrent keys, and its
+        spec is a kind this code knows, the manifest's kind;
+      - sha256(final.npz) is the manifest's;
+      - with cfg: max_torque is legobot_config's (always), and cfg.scoring_differences(snapshot config) is
+        empty unless allow_config_mismatch (the differences are returned, for the log).
+    Returns a dict: kind, spec, params, max_torque, name, sha256, bundle_dir, manifest, snapshot, golden,
+    envelope, config_differences (None if not checked), feedforward_gain (snapshot's; None if unknown),
+    unchecked."""
+    p = resolve_policy_path(path)
+    if p.is_dir():
+        missing = [f for f in BUNDLE_FILES if not (p / f).is_file()]
+        if missing:
+            raise ValueError(f"{p}: not a policy bundle, missing {missing}")
+        manifest = _read_json(p / "manifest.json")
+        kind = manifest.get("kind")
+        if kind not in KNOWN_POLICY_KINDS:
+            raise ValueError(f"{p}: unknown policy kind {kind!r}; this robot code runs {KNOWN_POLICY_KINDS}")
+        npz = p / "final.npz"
+        sha = _sha256(npz)
+        if sha != manifest.get("sha256"):
+            raise ValueError(f"{npz}: sha256 {sha} does not match the manifest's {manifest.get('sha256')} "
+                             f"(corrupt or edited weights)")
+        _check_files_sha256(p, manifest)
+        spec, params, max_torque, spec_kind = _load_policy_npz(npz)
+        if spec_kind != kind:
+            raise ValueError(f"{p}: manifest says kind {kind!r} but final.npz holds a {spec_kind!r} policy")
+        _check_max_torque(npz, max_torque, cfg)
+        snapshot = _read_json(p / "snapshot.json")
+        if not isinstance(snapshot.get("config"), dict):
+            raise ValueError(f"{p / 'snapshot.json'}: no training config ('config')")
+        diffs = None
+        if cfg is not None:
+            diffs = list(cfg.scoring_differences(snapshot["config"]))
+            if diffs and not allow_config_mismatch:
+                raise ValueError(f"{p}: trained under a config that differs from legobot_config in {diffs} "
+                                 f"(--allow-config-mismatch to run it anyway; logged)")
+        try:
+            ff_gain = float(snapshot["config"]["actuator"]["voltage_feedforward_gain"])
+        except (KeyError, TypeError, ValueError) as e:
+            raise ValueError(f"{p / 'snapshot.json'}: no actuator.voltage_feedforward_gain ({e})") from e
+        golden = _load_golden(p / "golden.npz")
+        if cfg is not None and abs(float(golden["dt"]) - cfg.timing.control_dt_s) > 1e-12:
+            raise ValueError(f"{p / 'golden.npz'}: golden dt {float(golden['dt'])} s is not legobot_config's "
+                             f"control dt {cfg.timing.control_dt_s} s")
+        envelope = _read_json(p / "envelope.json")
+        _check_envelope(p / "envelope.json", envelope, spec)
+        return {"kind": kind, "spec": spec, "params": params, "max_torque": max_torque,
+                "name": manifest.get("name") or p.name, "sha256": sha, "bundle_dir": p, "manifest": manifest,
+                "snapshot": snapshot, "golden": golden, "envelope": envelope, "config_differences": diffs,
+                "feedforward_gain": ff_gain, "unchecked": False}
+    if not p.exists():
+        raise FileNotFoundError(f"no policy at {p}")
+    if p.suffix.lower() != ".npz":
+        raise ValueError(f"{p}: not a policy bundle folder or .npz")
+    if not allow_unchecked:
+        raise ValueError(f"{p}: a bare .npz has no manifest, sha256, training config, golden vectors or envelope; "
+                         f"export a bundle (optimization/export_policy.py) or pass --allow-unchecked")
+    spec, params, max_torque, kind = _load_policy_npz(p)
+    _check_max_torque(p, max_torque, cfg)
+    return {"kind": kind, "spec": spec, "params": params, "max_torque": max_torque, "name": p.stem,
+            "sha256": _sha256(p), "bundle_dir": None, "manifest": None, "snapshot": None, "golden": None,
+            "envelope": None, "config_differences": None, "feedforward_gain": None, "unchecked": True}
+
+
+def build_controller(cfg, spec="hand", goal="still", *, allow_unchecked=False, allow_config_mismatch=False,
+                     ff_gain_override=None):
+    """The controller and a small JSON-able description of it. spec:
+      "hand" / "model"   the cascaded PID with legobot's hand-tuned / model-based gains;
+      policy:<name>, a bundle folder or a .npz   a learned policy (load_policy_bundle), built by
+                         cfg.build_policy_controller; the bundle is attached as controller.bundle;
+      anything else      a cascaded-PID gains JSON path (load_gains_file).
+    goal: "still" (hold 0 m/s) or "scenario" (the tuning scenario's goal profile, from arming). It is passed
+    when building, so a residual policy's base PID gets it too (plan problem 1). ff_gain_override (--ff-gain)
+    is refused for a policy: the feedforward gain is part of the plant it was trained on (P2c)."""
+    if goal not in ("still", "scenario"):
+        raise ValueError(f"goal must be 'still' or 'scenario', not {goal!r}")
+    goal_val = 0.0 if goal == "still" else cfg.build_goal()
+    if spec not in ("hand", "model") and is_policy_spec(spec):
+        if ff_gain_override is not None:
+            raise ValueError("--ff-gain is refused for a policy: it runs its training config's feedforward gain")
+        bundle = load_policy_bundle(spec, cfg, allow_unchecked=allow_unchecked,
+                                    allow_config_mismatch=allow_config_mismatch)
+        controller = cfg.build_policy_controller(bundle["spec"], bundle["params"], goal=goal_val)
+        controller.bundle = bundle
+        desc = {
+            "spec": str(spec),
+            "kind": "policy",
+            "policy_kind": bundle["kind"],
+            "bundle_name": bundle["name"],
+            "bundle_dir": str(bundle["bundle_dir"]) if bundle["bundle_dir"] else None,
+            "sha256": bundle["sha256"],
+            "n_params": bundle["spec"].n_params,
+            "goal": goal,
+            "feedforward_gain": bundle["feedforward_gain"],
+            "config_differences": bundle["config_differences"],
+            "unchecked": bundle["unchecked"],
+        }
+        return controller, desc
     ff_gain = None
-    kind = "pid"
     if spec == "hand":
         gains = list(cfg.controller.hand_tuned_gains)
     elif spec == "model":
@@ -85,12 +345,184 @@ def build_controller(cfg, spec="hand", goal="still"):
     else:
         loaded = load_gains_file(spec)
         gains, ff_gain = loaded["gains"], loaded["feedforward_gain"]
-    controller = cfg.build_controller(gains)
-    if goal == "still":
-        controller.goal = 0.0
-    elif goal != "scenario":
-        raise ValueError(f"goal must be 'still' or 'scenario', not {goal!r}")
-    return controller, {"spec": spec, "kind": kind, "gains": gains, "goal": goal, "feedforward_gain": ff_gain}
+    controller = cfg.build_controller(gains, goal=goal_val)
+    return controller, {"spec": spec, "kind": "pid", "gains": gains, "goal": goal, "feedforward_gain": ff_gain}
+
+
+def _quantile(sorted_xs, q):
+    return sorted_xs[min(len(sorted_xs) - 1, int(q * len(sorted_xs)))]
+
+
+def _time_updates(controller, states, dt, goals=None, base=None):
+    """(torques, per-tick seconds) of controller.update over states, goals set per tick if given. gc is off
+    while timing, as it is in the loop."""
+    import gc
+    import time
+    torques, times = [], []
+    was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        for k in range(len(states)):
+            if goals is not None:
+                controller.goal = goals[k]
+                if base is not None:
+                    base.goal = goals[k]
+            s = states[k]
+            t0 = time.perf_counter()
+            u = controller.update(s, dt)
+            times.append(time.perf_counter() - t0)
+            torques.append(u)
+    finally:
+        if was_enabled:
+            gc.enable()
+    return torques, times
+
+
+def self_test_policy(controller, golden, cfg=None, tol=lc.GOLDEN_TOL):
+    """P2d, P3b: replay the bundle's golden vectors (states and goals into update(), the torques the laptop's
+    reference run returned) through the controller; ValueError if any torque differs by more than tol N m (a
+    NaN counts as a failure). The controller is reset and its goal (and a residual base PID's) restored
+    afterwards, pass or fail. Also times the forward pass, and with cfg a fresh cascaded PID over the same
+    states, for the compute lead: lc.COMPUTE_LEAD_S + max(0, policy p99 - PID p99)."""
+    import numpy as np
+    states = np.asarray(golden["states"], dtype=float)
+    expected = np.asarray(golden["torques"], dtype=float)
+    goals = [float(g) for g in np.asarray(golden["goals"], dtype=float)]
+    dt = float(golden["dt"])
+    n = len(expected)
+    if n == 0 or states.shape != (n, 4) or len(goals) != n:
+        raise ValueError(f"malformed golden vectors: states {states.shape}, torques {expected.shape}, goals {len(goals)}")
+    base = getattr(controller, "base", None)
+    orig_goal = controller.goal
+    orig_base_goal = base.goal if base is not None else None
+    try:
+        controller.reset()
+        torques, times = _time_updates(controller, states, dt, goals, base)
+    finally:
+        controller.goal = orig_goal
+        if base is not None:
+            base.goal = orig_base_goal
+        controller.reset()
+    errs = [abs(float(u) - float(e)) for u, e in zip(torques, expected)]
+    bad = [k for k, err in enumerate(errs) if not err <= tol]          # catches NaN
+    max_err = math.inf if any(not math.isfinite(x) for x in errs) else max(errs)
+    if bad:
+        k = bad[0]
+        raise ValueError(f"policy self-test failed: {len(bad)} of {n} golden torques off by more than {tol:g} N m "
+                         f"(max {max_err:.3g}); first at tick {k}: {float(torques[k])!r} vs {float(expected[k])!r} "
+                         f"(a last-bit tanh difference at the saturation edge can flip the integrator freeze; "
+                         f"anything else means the weights or the code differ from the laptop's)")
+    ts = sorted(times)
+    p99 = _quantile(ts, 0.99)
+    if p99 > lc.POLICY_MAX_P99_FRACTION * dt:
+        raise ValueError(f"policy self-test: forward pass p99 {p99 * 1e3:.3f} ms exceeds "
+                         f"{lc.POLICY_MAX_P99_FRACTION:g} x dt ({dt * 1e3:g} ms): too slow for this loop")
+    pid_p99 = None
+    if cfg is not None:
+        _, pid_times = _time_updates(cfg.build_controller(goal=0.0), states, dt)
+        pid_p99 = _quantile(sorted(pid_times), 0.99)
+    lead = lc.COMPUTE_LEAD_S + (max(0.0, p99 - pid_p99) if pid_p99 is not None else p99)
+    return {"n_ticks": n, "max_torque_err": float(max_err), "mean_s": sum(ts) / n, "p50_s": _quantile(ts, 0.5),
+            "p99_s": p99, "max_s": ts[-1], "pid_p99_s": pid_p99, "compute_lead_s": lead}
+
+
+class EnvelopeMonitor:
+    """P4c, P5a: each acted tick's raw policy observation (PolicyController.last_raw) against the bundle's
+    envelope (envelope.json, P1c). Counts, per input, ticks outside [p0.1, p99.9], ticks past max |value|,
+    non-finite values, and the worst |value|. An input whose envelope max |value| is 0 (never seen nonzero in
+    the reference runs) counts any nonzero value as outside and past max. With trip_k, observe() returns a trip
+    reason once an input the policy reads (active_names, default all; spec.input_names) has stayed past
+    trip_k x its max |value| for trip_s (rounded to ticks, at least one), or at once on a NaN/inf in one;
+    otherwise None."""
+
+    def __init__(self, envelope, dt, trip_k=None, trip_s=lc.ENVELOPE_TRIP_S, active_names=None):
+        if trip_k is not None and not (math.isfinite(trip_k) and trip_k > 0):
+            raise ValueError(f"envelope trip K must be a positive number, got {trip_k}")
+        if not dt > 0:
+            raise ValueError(f"dt must be positive, got {dt}")
+        self.envelope = envelope
+        self.names = list(envelope["observation_names"])
+        obs = envelope["observations"]
+        self.lo = [float(obs[n]["p00_1"]) for n in self.names]
+        self.hi = [float(obs[n]["p99_9"]) for n in self.names]
+        self.max_abs = [float(obs[n]["max_abs"]) for n in self.names]
+        if active_names is None:
+            active_names = self.names
+        unknown = set(active_names) - set(self.names)
+        if unknown:
+            raise ValueError(f"policy inputs {sorted(unknown)} are not in the envelope")
+        self.active = [n in set(active_names) for n in self.names]
+        self.trip_k, self.trip_s, self.dt = trip_k, trip_s, dt
+        self.trip_ticks = max(1, int(round(trip_s / dt)))
+        self._limit = [None if trip_k is None or not act else trip_k * m
+                       for m, act in zip(self.max_abs, self.active)]
+        m = len(self.names)
+        self.n_ticks = 0
+        self.n_outside = [0] * m
+        self.n_past_max = [0] * m
+        self.n_nonfinite = [0] * m
+        self.worst_abs = [0.0] * m
+        self.worst_val = [0.0] * m
+        self.consecutive = [0] * m
+        self.tripped = None
+
+    def observe(self, raw):
+        vals = raw.tolist() if hasattr(raw, "tolist") else list(raw)
+        if len(vals) != len(self.names):
+            raise ValueError(f"observation has {len(vals)} values, the envelope {len(self.names)}")
+        self.n_ticks += 1
+        reason = None
+        for i, v in enumerate(vals):
+            v = float(v)
+            finite = math.isfinite(v)
+            a = abs(v)
+            if not finite:
+                self.n_nonfinite[i] += 1
+            if not (self.lo[i] <= v <= self.hi[i]):
+                self.n_outside[i] += 1
+            if not a <= self.max_abs[i]:                 # max 0: any nonzero value; NaN counts too
+                self.n_past_max[i] += 1
+            if not finite:
+                if self.worst_abs[i] != math.inf:
+                    self.worst_abs[i], self.worst_val[i] = math.inf, v
+            elif a > self.worst_abs[i]:
+                self.worst_abs[i], self.worst_val[i] = a, v
+            if self.trip_k is None or not self.active[i]:
+                continue
+            if not finite:
+                self.consecutive[i] = self.trip_ticks
+                if reason is None:
+                    reason = f"input {self.names[i]} out of envelope (non-finite value {v})"
+                continue
+            lim = self._limit[i]
+            if lim is not None and a > lim:
+                self.consecutive[i] += 1
+                if reason is None and self.consecutive[i] >= self.trip_ticks:
+                    reason = (f"input {self.names[i]} out of envelope ({v:+.4g}, > {self.trip_k:g} x max "
+                              f"{self.max_abs[i]:.4g} for {self.trip_s:g} s)")
+            else:
+                self.consecutive[i] = 0
+        if reason is not None and self.tripped is None:
+            self.tripped = reason
+        return reason
+
+    def summary_lines(self):
+        e = self.envelope
+        n = self.n_ticks
+        pct = lambda c: 100.0 * c / n if n else 0.0
+        trip = "off" if self.trip_k is None else f"{self.trip_k:g} x max |value| for {self.trip_s:g} s"
+        lines = [f"envelope ({e.get('n_runs', '?')} reference runs x {e.get('duration_s', '?')} s, seeds "
+                 f"{e.get('seeds', '?')}): {n} acted ticks checked; trip {trip}"]
+        for i, name in enumerate(self.names):
+            m = self.max_abs[i]
+            ratio = f"{self.worst_abs[i] / m:.2f} x max" if m > 0 else "max 0"
+            nonfinite = f"; {self.n_nonfinite[i]} non-finite" if self.n_nonfinite[i] else ""
+            lines.append(f"  {name}: outside [{self.lo[i]:+.4g}, {self.hi[i]:+.4g}] {pct(self.n_outside[i]):.2f}% "
+                         f"of ticks; past max |{m:.4g}| {pct(self.n_past_max[i]):.2f}%; worst {self.worst_val[i]:+.4g} "
+                         f"({ratio}){nonfinite}")
+        if self.tripped:
+            lines.append(f"envelope trip: {self.tripped}")
+        return lines
 
 
 # ------------------------------------------------------------------------------------- sensing ---
@@ -161,10 +593,19 @@ class Feedforward:
         self.set_supply(cfg.actuator.supply_voltage)
 
     def set_supply(self, vin):
+        """Use battery voltage vin for the duty scale; a non-finite or non-positive reading is ignored (the
+        last good one stays). Returns whether it was used."""
+        try:
+            vin = float(vin)
+        except (TypeError, ValueError):
+            return False
+        if not (math.isfinite(vin) and vin > 0):
+            return False
         self.supply = vin * self.plimit
         m = replace(self.motor, supply_voltage=self.supply)
         self.actuator = self._cls(m, m, max_torque=self.max_torque, feedforward=self.enabled,
                                   feedforward_gain=self.gain)
+        return True
 
     def duties(self, torque, w_left, w_right):
         d = self.actuator.drive
@@ -197,11 +638,13 @@ class Brain:
         return [x, v, theta, gyro], {"tilt": tilt, "w_left": wl, "w_right": wr}
 
     def act(self, state, w_left, w_right):
-        """Returns (torque command, duty_left, duty_right), duties clamped to duty_cap."""
+        """Returns (torque command, duty_left, duty_right), duties clamped to duty_cap. A non-finite duty is
+        returned as is (clamping would turn a NaN into +duty_cap), for the loop to trip on."""
         torque = self.controller.update(state, self.dt)
         dl, dr = self.feedforward.duties(torque, w_left, w_right)
         cap = self.duty_cap
-        return torque, max(-cap, min(cap, dl)), max(-cap, min(cap, dr))
+        clamp = lambda d: max(-cap, min(cap, d)) if math.isfinite(d) else d
+        return torque, clamp(dl), clamp(dr)
 
 
 # ------------------------------------------------------------------------- HAT line clock (D2) ---

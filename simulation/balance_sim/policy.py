@@ -256,8 +256,11 @@ class PolicyController(Controller):
         self._history = [0.0] * N_HISTORY
         self._saturated = False
         self._time = 0.0
+        self.last_raw = np.zeros(N_OBS + (len(RESIDUAL_INPUTS) if self.spec.residual else 0), dtype=float)
         self.last_pre_clip = 0.0
         self.last_residual = 0.0
+        self.last_saturated = False
+        self.last_integrators_frozen = False
         if self.base is not None:
             self.base.reset()
 
@@ -304,16 +307,21 @@ class PolicyController(Controller):
         return 0.0 if self.base is None else self.base.pitch_reference()
 
     def update(self, state: np.ndarray, dt: float) -> float:
+        frozen = self._saturated
         raw = self.observation(state, dt)
         if self.base is None:
             pre = self.spec.output_scale * self.forward(raw)
+            self.last_residual = 0.0
         else:
             pid = self.base.update(state, dt)
             raw = np.concatenate([raw, [self.base.pitch_pid.setpoint, self.base.pitch_pid._integral]])
             self.last_residual = self.spec.output_scale * float(np.tanh(self.forward(raw)))
             pre = pid + self.last_residual
+        self.last_raw = raw
         self.last_pre_clip = pre
+        self.last_integrators_frozen = frozen
         self._saturated = abs(pre) > self.max_torque
+        self.last_saturated = self._saturated
         torque = min(max(pre, -self.max_torque), self.max_torque)
         self._history = [torque] + self._history[:-1]
         self._time += dt
