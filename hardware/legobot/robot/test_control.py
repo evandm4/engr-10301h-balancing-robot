@@ -390,6 +390,162 @@ def test_every_robot_module_compiles():
             compile(f.read(), path, "exec")
 
 
+# ------------------------------------------------- the Pi layout: only what deploy.sh ships (2026-11-25) ---
+# The laptop's tests run with optimization/ (tuning, batch_tuning) and scipy importable (pytest.ini), so they
+# can't see a robot-side import of either. On the Pi there is neither: deploy.sh ships config.py,
+# legobot_config.py, simulation/balance_sim, robot/ and the policy bundles, and ~/legobot-venv has numpy but no
+# scipy (and no room for it). The policy config check once failed there (scoring_differences -> snapshot() ->
+# build_search_space -> tuning, and build_lqr_gain -> scipy). This rebuilds that layout and runs the robot code in
+# a subprocess that can import nothing else.
+PI_BLOCKED = ("scipy", "tuning", "batch_tuning", "batch_sim", "torch", "cma", "matplotlib", "export_policy")
+
+_PI_CHILD = r'''
+import importlib, importlib.abc, json, os, pkgutil, sys, tempfile, types
+repo, blocked = os.path.normcase(os.path.abspath(sys.argv[1])), set(sys.argv[2].split(","))
+attempts = []
+
+class PiBlocker(importlib.abc.MetaPathFinder):
+    def find_spec(self, name, path=None, target=None):
+        if name.split(".")[0] in blocked:
+            attempts.append(name)
+            raise ModuleNotFoundError(f"{name} is not on the Pi", name=name)
+        return None
+
+sys.meta_path.insert(0, PiBlocker())
+# Nothing from the repository: '' (the working directory, ~/legobot's stand-in) and the standard library and venv.
+sys.path[:] = [p for p in sys.path if not os.path.normcase(os.path.abspath(p or ".")).startswith(repo)]
+for probe in ("scipy", "tuning"):
+    try:
+        importlib.import_module(probe)
+        raise SystemExit(f"blocker failed: {probe} imported")
+    except ModuleNotFoundError:
+        pass
+probes = len(attempts)
+# The Pi has pyserial, smbus2 and fcntl; this machine may not. Stand-ins, so the hardware modules import.
+for hw in ("serial", "smbus2", "fcntl"):
+    try:
+        importlib.import_module(hw)
+    except ImportError:
+        stub = types.ModuleType(hw)
+        stub.__getattr__ = lambda attr: object
+        sys.modules[hw] = stub
+
+import robot
+from robot import control, balance
+modules = sorted(m.name for m in pkgutil.walk_packages(robot.__path__, "robot."))
+for m in modules:
+    importlib.import_module(m)
+
+cfg = control.load_robot_config()
+bundles = {}
+for name in sorted(os.listdir("policies")):
+    b = control.load_policy_bundle("policy:" + name, cfg, allow_config_mismatch=True)
+    strict = None
+    if not b["config_differences"]:
+        strict = control.load_policy_bundle("policy:" + name, cfg)["config_differences"]
+    controller, desc = control.build_controller(cfg, "policy:" + name, allow_config_mismatch=True)
+    st = control.self_test_policy(controller, b["golden"], cfg=cfg)
+    bundles[name] = {"differences": b["config_differences"], "strict": strict, "kind": desc["policy_kind"],
+                     "self_test_max_err": st["max_torque_err"]}
+with tempfile.TemporaryDirectory() as out:
+    reason = balance.main(["--sim", "--sim-noise", "--seconds", "1", "--controller", "policy:l_pid", "--outdir", out])
+print(json.dumps({"modules": modules, "bundles": bundles, "sim_reason": reason, "attempts": attempts[probes:],
+                  "loaded_blocked": sorted(m for m in sys.modules if m.split(".")[0] in blocked),
+                  "config_file": os.path.abspath(sys.modules["config"].__file__),
+                  "balance_sim_file": os.path.abspath(sys.modules["balance_sim"].__file__)}))
+'''
+
+
+def deploy_files(root):
+    """deploy.sh's FILES list (the repo-root files and folders it ships besides robot/ and the policies)."""
+    import re
+    from pathlib import Path
+    text = (Path(root) / "hardware" / "legobot" / "deploy.sh").read_text()
+    match = re.search(r"^FILES=\(([^)]*)\)", text, re.M)
+    assert match, "deploy.sh has no FILES=(...) line"
+    return match.group(1).split()
+
+
+def build_pi_layout(root, dst):
+    """~/legobot as deploy.sh leaves it: FILES at the top, hardware/legobot/robot as robot/, the bundles as
+    policies/, without __pycache__ and test_*.py (deploy.sh's excludes)."""
+    import shutil
+    from pathlib import Path
+    root, dst = Path(root), Path(dst)
+    skip = shutil.ignore_patterns("__pycache__", "test_*.py", "*.pyc")
+    for rel in deploy_files(root):
+        src, out = root / rel, dst / rel
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if src.is_dir():
+            shutil.copytree(src, out, ignore=skip)
+        else:
+            shutil.copy2(src, out)
+    shutil.copytree(root / "hardware" / "legobot" / "robot", dst / "robot", ignore=skip)
+    if (root / "results" / "legobot" / "policies").is_dir():
+        shutil.copytree(root / "results" / "legobot" / "policies", dst / "policies", ignore=skip)
+    return dst
+
+
+def run_on_pi_layout(root, layout):
+    """Run _PI_CHILD in `layout` (a build_pi_layout folder): (returncode, parsed JSON or None, stdout+stderr)."""
+    import subprocess
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP")}
+    env["ROBOT"] = "legobot"
+    proc = subprocess.run([sys.executable, "-c", _PI_CHILD, str(root), ",".join(PI_BLOCKED)], cwd=str(layout),
+                          env=env, capture_output=True, text=True, timeout=600)
+    lines = proc.stdout.strip().splitlines()
+    try:
+        data = json.loads(lines[-1]) if lines else None
+    except ValueError:
+        data = None
+    return proc.returncode, data, proc.stdout + proc.stderr
+
+
+def test_robot_code_runs_on_the_deployed_layout_without_scipy_or_tuning(tmp_path, cfg):
+    """P2b on the Pi: every robot module imports, and each committed bundle loads, passes the config check
+    (the same differences the laptop finds, with optimization/ and scipy), builds and passes its golden
+    self-test, with only deploy.sh's files importable and scipy, tuning, batch_tuning (...) blocked. A
+    policy then runs 1 s closed loop in --sim. Nothing may even try to import a blocked module."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[3]
+    assert "config.py" in deploy_files(root) and "simulation/balance_sim" in deploy_files(root)
+    layout = build_pi_layout(root, tmp_path / "legobot")
+    code, data, output = run_on_pi_layout(root, layout)
+    assert code == 0 and data is not None, output[-4000:]
+    assert data["attempts"] == [] and data["loaded_blocked"] == [], data
+    assert Path(data["config_file"]).parent == layout.resolve()                     # the deployed copy, not the repo's
+    assert Path(data["balance_sim_file"]).parent == (layout / "simulation" / "balance_sim").resolve()
+    assert {"robot.balance", "robot.control", "robot.calibrate", "robot.replay_policy", "robot.score_run",
+            "robot.sim_hw", "robot.measure.fit"} <= set(data["modules"])
+    assert data["sim_reason"] == "done"
+    committed = sorted(p.name for p in (root / "results" / "legobot" / "policies").iterdir() if p.is_dir())
+    assert sorted(data["bundles"]) == committed and {"l_pid", "a_warm_zero", "b1_zero", "quick_l"} <= set(committed)
+    for name, b in data["bundles"].items():
+        snapshot = json.loads((root / "results" / "legobot" / "policies" / name / "snapshot.json").read_text())
+        laptop = cfg.scoring_differences(snapshot["config"])     # here, with tuning and scipy importable
+        assert b["differences"] == laptop, name
+        assert b["strict"] == ([] if not laptop else None), name   # no difference -> loads without the override
+        assert b["self_test_max_err"] <= lc.GOLDEN_TOL, name
+    # Today every committed bundle matches legobot_config; when E2 changes the config, re-export them.
+    assert all(b["differences"] == [] for b in data["bundles"].values()), data["bundles"]
+
+
+def test_scoring_differences_needs_no_derived_section(cfg):
+    """scoring_differences compares snapshot(derived=False): "derived" is NOT_SCORING, so leaving it out
+    changes nothing it reports, for either robot, and saved snapshots keep their derived section."""
+    import config
+    assert "derived" in cfg.NOT_SCORING
+    for c in (cfg, config.load_config("pololu")):
+        full, lean = c.snapshot(), c.snapshot(derived=False)
+        assert "derived" in full and "derived" not in lean
+        assert {k: v for k, v in full.items() if k != "derived"} == lean
+        assert c.scoring_differences(full) == [] and c.scoring_differences(lean) == []
+    changed = cfg.snapshot()
+    changed["timing"]["control_dt_s"] *= 2
+    changed["derived"]["cost_matched_lqr_gain"] = [0.0]           # NOT_SCORING: never reported
+    assert cfg.scoring_differences(changed) == ["timing.control_dt_s"]
+
+
 def test_port_lag_reads_the_offset_between_the_two_ports_line_grids():
     """B1 (2026-11-23): each port streams on its own grid, and the lag between them changes per run."""
     rng = np.random.default_rng(1)

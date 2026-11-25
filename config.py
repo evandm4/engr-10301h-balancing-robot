@@ -903,7 +903,10 @@ class ProjectConfig:
         import json
 
         normalize = lambda value: json.loads(json.dumps(value, default=str))
-        now = normalize(self.snapshot())
+        # derived=False: "derived" is NOT_SCORING, so it is skipped below either way. Leaving it out keeps
+        # this check runnable where only numpy, balance_sim and the config files are (the robot: no
+        # optimization/tuning for the search bounds, no scipy for the cost-matched LQR gain).
+        now = normalize(self.snapshot(derived=False))
         then = normalize(snapshot)
         differences = []
         for section in sorted(set(now) | set(then)):
@@ -921,7 +924,7 @@ class ProjectConfig:
                     differences.append(name)
         return differences
 
-    def snapshot(self) -> dict:
+    def snapshot(self, derived: bool = True) -> dict:
         """Everything this configuration defines, as plain JSON-friendly data.
 
         Saved alongside every tuning run so results can always be traced back
@@ -929,6 +932,11 @@ class ProjectConfig:
         produced them. Includes every field as written above, plus a "derived"
         section with values computed from them (radian conversions, the
         physics-derived minimum Kp, the resolved search bounds, motor limits).
+
+        derived=False leaves the "derived" section out. It is NOT_SCORING, and
+        building it needs optimization/tuning (search bounds) and scipy (the
+        cost-matched LQR gain), which the robot doesn't have; scoring_differences
+        uses this form, so the robot's policy config check runs on what deploy.sh ships.
         """
         data = asdict(self)
         if self.name == "pololu":
@@ -938,6 +946,8 @@ class ProjectConfig:
         # asdict leaves out properties; the weights are what the cost uses.
         data["cost"]["velocity_weight"] = self.cost.velocity_weight
         data["cost"]["effort_weight"] = self.cost.effort_weight
+        if not derived:
+            return data
         dyn = self.build_dynamics()
         space = self.build_search_space()
         derived = {
