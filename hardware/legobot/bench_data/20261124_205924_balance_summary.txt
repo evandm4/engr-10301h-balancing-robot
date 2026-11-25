@@ -1,0 +1,27 @@
+reason: done
+armed at: 0.5041421050000281
+vin at start: 7.94
+watchdog priority: SCHED_FIFO 51
+reader priority: SCHED_FIFO 49
+loop priority: SCHED_FIFO 50
+memory locked: True
+gyro bias: 0.04775540588433952
+gyro sd at rest: 0.0029219554250860956
+accel |g| ratio: 1.0063231364953804
+line period at start: 10.00107 ms (+107 ppm vs nominal)
+line lock: command write phase 6.50 ms, tick offset 0.30 ms
+right lines lag left: 1.69 ms
+wheels 1 s after stop (deg/s): [0.0, 0.0]
+line lock lost while armed: 1 times (fell back to the Pi's clock)
+line period at end: 9.98809 ms (-1191 ppm vs nominal)
+run: 5.00 s, 1001 ticks
+period: mean 5.000  sd 0.003  p50 5.000  p99 5.008  max 5.034 ms (n=1000)
+lateness: mean 0.001  sd 0.002  p50 0.000  p99 0.003  max 0.034 ms (n=1001)
+overruns (> 7.5 ms late): 0
+compute (IMU read to command sent): mean 1.510  sd 0.239  p50 1.515  p99 2.015  max 2.134 ms (n=1001)
+IMU read: mean 0.648  sd 0.043  p50 0.654  p99 0.715  max 0.755 ms (n=1001)
+ticks locked to the HAT's lines: 201 of 1001
+command write phase after the line grid, mod 5 ms: mean 2.143  sd 1.165  p50 1.520  p99 4.882  max 4.998 ms (n=1001)
+motor data age at the tick, left: mean 3.250  sd 2.757  p50 3.576  p99 8.378  max 8.575 ms (n=1001)
+motor data age at the tick, right: mean 4.920  sd 2.883  p50 3.812  p99 8.810  max 9.721 ms (n=1001)
+pitch: mean +0.0023 sd 0.0007 rad; |duty| max 0.30

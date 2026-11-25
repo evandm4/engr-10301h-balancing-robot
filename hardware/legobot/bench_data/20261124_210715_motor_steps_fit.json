@@ -1,0 +1,87 @@
+{
+  "script": "motor_steps",
+  "meta": {
+    "pwmparams": [
+      1.0,
+      0.01
+    ],
+    "vin": {
+      "left": [
+        7.88,
+        7.85
+      ]
+    },
+    "side": "left",
+    "wheel": "on",
+    "wheels_off_ground": true,
+    "args": {
+      "wheels_off": true,
+      "side": "left",
+      "wheel": "on",
+      "duties": [
+        1.0,
+        0.5
+      ],
+      "repeats": 2,
+      "hold": 1.5,
+      "coast": 1.5,
+      "pwmparams": [
+        1.0,
+        0.01
+      ],
+      "outdir": "logs"
+    },
+    "firmware": "Firmware version: 1674818421 2023-01-27T11:20:21+00:00",
+    "stamp": "20261124_210715"
+  },
+  "constants": {
+    "tau@left": {
+      "value": 0.04462037854548972,
+      "se": 0.005354129067239928,
+      "unit": "s",
+      "n": 8,
+      "se_kind": "repeats"
+    },
+    "t_d@left": {
+      "value": 0.01715,
+      "se": 0.0034203174455847553,
+      "unit": "s",
+      "n": 8,
+      "se_kind": "repeats"
+    },
+    "alpha@left": {
+      "value": 23.767133258028455,
+      "se": 1.1039313194274987,
+      "unit": "rad/s^2",
+      "n": 8,
+      "se_kind": "repeats"
+    },
+    "beta@left": {
+      "value": 2.428062645952031,
+      "se": 0.21466119172290174,
+      "unit": "1/s",
+      "n": 8,
+      "se_kind": "repeats"
+    }
+  },
+  "diagnostics": {
+    "duty_map@left": [
+      {
+        "duty": 0.5,
+        "w_pos": 18.71534182021917,
+        "w_pos_sd": 0.04902938024804483,
+        "w_neg": -18.496009544120408,
+        "w_neg_sd": 0.02680619943802303,
+        "dev_pct": null
+      },
+      {
+        "duty": 1.0,
+        "w_pos": 20.313865345640863,
+        "w_pos_sd": 0.01255533824615621,
+        "w_neg": -20.165330729802324,
+        "w_neg_sd": 0.047211584651882445,
+        "dev_pct": null
+      }
+    ]
+  }
+}
