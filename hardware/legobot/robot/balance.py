@@ -30,6 +30,7 @@ import math
 import signal
 import os
 import statistics as st
+import sys
 import threading
 import time
 
@@ -40,7 +41,8 @@ from . import loop_config as lc
 LEFT, RIGHT = hc.LEFT_PORT, hc.RIGHT_PORT
 RAW_COLUMNS = ("tick", "t", "late", "compute", "phase", "imu_t", "imu_read", "pitch_rate_raw", "acc_fwd", "acc_up",
                "tilt", "theta", "gyro", "x", "v", "w_left", "w_right", "pos_left", "pos_right", "age_left",
-               "age_right", "torque", "duty_left", "duty_right", "pitch_ref", "goal", "vin", "locked", "cmd_phase")
+               "age_right", "torque", "duty_left", "duty_right", "pitch_ref", "goal", "vin", "locked", "cmd_phase",
+               "cmd_at")
 POLICY_EXTRA_COLUMNS = ("pre_clip", "saturated", "integrators_frozen", "residual_torque")
 
 
@@ -178,9 +180,11 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
     pacer (control.Pacer) sets the tick times: locked to line_clock's HAT data-line grid when it has a lock,
     else every dt. line_clock is re-estimated from the left port's line arrivals every LINE_UPDATE_TICKS
     ticks, after that tick's command is out. cmd_phase in the log is when the command write started,
-    in s after the grid's latest line (lower envelope of arrivals). The goal column is the goal the controller
-    used that tick (c.goal_velocity(c._time) just before it ran, its own clock as in the simulator; 0 where it
-    didn't act), so a replay can feed it back exactly.
+    in s after the grid's latest line (lower envelope of arrivals; driving runs only). cmd_at is the command
+    point, s from the tick start to the write (in --no-drive, to where it would be): what the compute lead
+    (P3b) aims at, without the watchdog kick and envelope check the compute column also counts. The goal
+    column is the goal the controller used that tick (c.goal_velocity(c._time) just before it ran, its own
+    clock as in the simulator; 0 where it didn't act), so a replay can feed it back exactly.
 
     A non-finite state on an armed tick trips before the controller runs; a non-finite torque or duty trips
     and coasts before the command is sent (a NaN would pass the tilt check and clamp to +cap).
@@ -205,6 +209,7 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
     injected = False
     r_prev, imu_errors, imu_injected = None, 0, 0
     t0 = clock.now()
+    stats["t0"] = t0              # the raw log's time origin (for --log-lines)
     deadline = t0
     tick = 0
     pacer = pacer or control.Pacer(dt)
@@ -335,8 +340,8 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
                 hat.coast()
             else:
                 duties = (dl, dr)
+                t_cmd = clock.now()       # the command point (cmd_at), in --no-drive too
                 if drive:
-                    t_cmd = clock.now()
                     hat.set_pwm(dl, dr)
                 if watchdog is not None:
                     watchdog.kick()
@@ -351,10 +356,11 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
                ages[0], ages[1], torque if acted else 0.0, duties[0] if acted else 0.0,
                duties[1] if acted else 0.0, c.pitch_reference() if phase else 0.0,
                goal_used, None if vr is None else vr[1], int(locked),
-               None if t_cmd is None or line_clock is None or line_clock.t_ref is None
-               else line_clock.phase(t_cmd))
+               None if not drive or t_cmd is None or line_clock is None or line_clock.t_ref is None
+               else line_clock.phase(t_cmd),
+               None if t_cmd is None else t_cmd - t)
         if n_policy:
-            row += ((*c.last_raw.tolist(), float(c.last_pre_clip), int(c.last_saturated),
+            row += ((*c.last_raw, float(c.last_pre_clip), int(c.last_saturated),
                      int(c.last_integrators_frozen), float(c.last_residual)) if acted else no_policy)
         rows.append(row)
         if acted:
@@ -421,6 +427,8 @@ def write_logs(base, rows, reason, t_arm, meta, notes, seconds=None, columns=RAW
             f"lateness: {stats_ms(lates)}",
             f"overruns (> {lc.OVERRUN_S * 1e3:.1f} ms late): {sum(1 for x in lates if x > lc.OVERRUN_S)}",
             f"compute (IMU read to command sent): {stats_ms([r[i['compute']] for r in run_rows])}",
+            f"command point (tick start to command write, cmd_at; compute lead target): "
+            f"{stats_ms([r[i['cmd_at']] for r in run_rows])}",
             f"IMU read: {stats_ms([r[i['imu_read']] for r in run_rows])}",
             f"ticks locked to the HAT's lines: {sum(r[i['locked']] for r in run_rows)} of {len(run_rows)}",
             f"command write phase after the line grid, mod 5 ms: "
@@ -445,6 +453,20 @@ def write_logs(base, rows, reason, t_arm, meta, notes, seconds=None, columns=RAW
     if hasattr(os, "sync"):
         os.sync()             # to the SD card now: a battery swap cuts the Pi's power
     return lines
+
+
+def write_line_log(base, data_log, t0):
+    """--log-lines: base_lines.csv, one row per HAT data line as the reader thread stamped it: t (s, the raw
+    log's time origin, so t - age_left at a tick is that tick's newest left line), port, and the raw speed,
+    pos, apos (the HAT's signs). For re-checking the line clock (P7 step 1: stamps held for the GIL)."""
+    import csv
+    os.makedirs(os.path.dirname(base) or ".", exist_ok=True)
+    lines = list(data_log)
+    with open(base + "_lines.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(("t", "port", "speed", "pos", "apos"))
+        w.writerows((t - t0, p, s, pos, apos) for t, p, s, pos, apos in lines)
+    return len(lines)
 
 
 def coast_check(hat, wait=1.0, window=0.1):
@@ -482,6 +504,9 @@ def main(argv=None):
                     help="allow a bare policy .npz (no manifest, sha256, config check, self-test or envelope)")
     ap.add_argument("--allow-config-mismatch", action="store_true",
                     help="run a policy whose training config differs from legobot_config (logged)")
+    ap.add_argument("--reference-forward", action="store_true",
+                    help="policies: the reference PolicyController instead of the (bit-identical, faster) "
+                         "FastPolicyController, e.g. to time both on the Pi (P3c)")
     ap.add_argument("--envelope-trip", type=float, default=None, metavar="K",
                     help=f"policies: coast if any input stays past K x its envelope's max |value| for "
                          f"{lc.ENVELOPE_TRIP_S} s (default off: excursions are only logged)")
@@ -496,6 +521,13 @@ def main(argv=None):
                     help="tick on the Pi's clock only, never on the HAT's line grid")
     ap.add_argument("--line-phase", type=float, help=f"command write phase after the line grid, s "
                     f"(default loop_config.LINE_WRITE_PHASE_S = {lc.LINE_WRITE_PHASE_S})")
+    ap.add_argument("--line-slope", choices=("lsq", "envelope"), default=None,
+                    help=f"line clock period fit (default loop_config.LINE_SLOPE = {lc.LINE_SLOPE})")
+    ap.add_argument("--log-lines", action="store_true",
+                    help="log every HAT data line's arrival stamp (reader thread) to <log>_lines.csv")
+    ap.add_argument("--switch-interval-us", type=float, default=None,
+                    help="sys.setswitchinterval during the run, us, 10-10000 (default Python's 5000): how long the "
+                         "loop may hold the GIL while the HAT reader waits to stamp a line (P7 step 1)")
     ap.add_argument("--inject", choices=("loop", "hang", "stale", "vin", "fault", "imu", "unlock", "ood"))
     ap.add_argument("--inject-at", type=float, default=1.0, help="s after arming")
     ap.add_argument("--sim", action="store_true", help="closed loop with the simulator instead of hardware")
@@ -512,7 +544,8 @@ def main(argv=None):
     try:
         controller, desc = control.build_controller(cfg, a.controller, a.goal, allow_unchecked=a.allow_unchecked,
                                                     allow_config_mismatch=a.allow_config_mismatch,
-                                                    ff_gain_override=a.ff_gain)
+                                                    ff_gain_override=a.ff_gain,
+                                                    fast_forward=not a.reference_forward)
     except (ValueError, FileNotFoundError) as e:
         raise SystemExit(f"controller {a.controller!r} refused: {e}")
     duty_cap = a.duty_cap if a.duty_cap is not None else (lc.BENCH_DUTY_CAP if a.bench else lc.DUTY_CAP)
@@ -528,6 +561,7 @@ def main(argv=None):
     envelope = None if bundle is None else bundle.get("envelope")
     if bundle is not None:
         notes["policy"] = f"{desc['bundle_name']} (kind={desc['policy_kind']}, sha256={desc['sha256']})"
+        notes["policy forward pass"] = desc["forward"]
         if desc["unchecked"]:
             notes["policy check"] = ("UNCHECKED bare .npz (--allow-unchecked): no manifest sha256, config check, "
                                      "golden self-test or envelope")
@@ -543,6 +577,9 @@ def main(argv=None):
                              f"policy acts on a {lc.OOD_INJECT_OFFSET} m/s phantom velocity, saturated until the trip")
     if a.compute_lead is not None and not (0.0 <= a.compute_lead <= dt):
         raise SystemExit(f"--compute-lead must be within 0..{dt} s, got {a.compute_lead}")
+    if a.switch_interval_us is not None and not (math.isfinite(a.switch_interval_us)
+                                                 and 10.0 <= a.switch_interval_us <= 10_000.0):
+        raise SystemExit(f"--switch-interval-us must be finite and in [10, 10000] us, got {a.switch_interval_us}")
     envelope_monitor = None
     if envelope is not None:
         try:
@@ -557,6 +594,8 @@ def main(argv=None):
         from .sim_hw import SimWorld
         world = SimWorld(cfg, pitch=a.sim_pitch, noise=a.sim_noise)
         hat, imu, clock, on_arm = world.hat, world.imu, world.clock, world.release
+        if a.log_lines:
+            hat.data_log = []
         pitch_zero, cal = 0.0, {"source": "sim"}
         watchdog = None
     else:
@@ -570,7 +609,7 @@ def main(argv=None):
         pitch_zero = float(cal.get("pitch_zero", 0.0)) if a.pitch_zero is None else a.pitch_zero
         from .buildhat_serial import BuildHat, install_safety
         from .imu import Imu
-        hat = BuildHat()
+        hat = BuildHat(log_lines=a.log_lines)   # --log-lines: the reader thread appends each line (no loop cost)
         install_safety(hat)
         hat.configure(plimit=hc.RUN_PLIMIT)
         imu = Imu()
@@ -623,8 +662,8 @@ def main(argv=None):
             notes["self-test"] = (f"{self_test['n_ticks']} golden ticks, max torque error "
                                   f"{self_test['max_torque_err']:.3g} N m (tol {lc.GOLDEN_TOL:g}); forward pass mean "
                                   f"{self_test['mean_s'] * 1e6:.1f} p50 {self_test['p50_s'] * 1e6:.1f} p99 "
-                                  f"{self_test['p99_s'] * 1e6:.1f} max {self_test['max_s'] * 1e6:.1f} us; PID p99 "
-                                  f"{self_test['pid_p99_s'] * 1e6:.1f} us")
+                                  f"{self_test['p99_s'] * 1e6:.1f} max {self_test['max_s'] * 1e6:.1f} us; PID p50 "
+                                  f"{self_test['pid_p50_s'] * 1e6:.1f} p99 {self_test['pid_p99_s'] * 1e6:.1f} us")
             print(f"policy self-test passed: {notes['self-test']}")
         elif bundle is not None:
             notes["self-test"] = "none (no golden vectors)"
@@ -654,7 +693,8 @@ def main(argv=None):
     # D2: lock the ticks to the HAT's data-line grid (lines have been arriving through the gyro calibration)
     line_clock = pacer = None
     if lc.LINE_LOCK and not a.no_line_lock:
-        line_clock = control.LineClock(nominal_period=hat_period)
+        line_clock = control.LineClock(nominal_period=hat_period, slope=a.line_slope)
+        notes["line period fit"] = line_clock.slope
         write_phase = lc.LINE_WRITE_PHASE_S if a.line_phase is None else a.line_phase
         pacer = control.Pacer(dt, line_clock, (write_phase - compute_lead) % (0.5 * hat_period))
         if line_clock.update(hat.line_times(LEFT)):
@@ -673,7 +713,13 @@ def main(argv=None):
     gc.freeze()
     gc.disable()
     rows, stats, crash = [], {}, None
+    old_switch = sys.getswitchinterval()
     try:
+        if a.switch_interval_us is not None:    # inside the try, so the finally always restores it and coasts
+            sys.setswitchinterval(a.switch_interval_us * 1e-6)
+            notes["GIL switch interval"] = (f"{a.switch_interval_us:g} us requested, "
+                                            f"{sys.getswitchinterval() * 1e6:.0f} us set "
+                                            f"(--switch-interval-us; Python keeps whole us)")
         rows, reason, t_arm = run(hat, imu, clock, brain, safety, a.seconds, watchdog, on_arm,
                                   drive=not a.no_drive, inject=a.inject, inject_at=a.inject_at,
                                   line_clock=line_clock, pacer=pacer, rows=rows, stats=stats,
@@ -683,6 +729,7 @@ def main(argv=None):
         reason, t_arm = f"crashed: {type(e).__name__}: {e}", stats.get("t_arm")
     finally:
         gc.enable()
+        sys.setswitchinterval(old_switch)
         if not a.sim:
             hat.emergency_coast()   # first, before the watchdog stops, and without the write lock
         if watchdog is not None:
@@ -704,6 +751,9 @@ def main(argv=None):
 
     stamp = time.strftime("%Y%m%d_%H%M%S")
     base = os.path.join(a.outdir, f"{stamp}_{a.label}")
+    if getattr(hat, "data_log", None) is not None and "t0" in stats:
+        n_lines = write_line_log(base, hat.data_log, stats["t0"])
+        notes["raw line arrivals"] = f"{n_lines} lines in {os.path.basename(base)}_lines.csv (--log-lines)"
     meta = {"label": f"{a.label} {stamp}", "source": "sim_hw" if a.sim else "legobot", "controller": desc,
             "duty_cap": duty_cap, "feedforward_gain": brain.feedforward.gain, "calibration": cal,
             "deployed": notes["deployed"], "inject": a.inject, "acted_ticks": stats.get("acted_ticks", 0),

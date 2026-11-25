@@ -26,7 +26,20 @@ LINE_WRITE_PHASE_S = 0.0065  # s after the grid's line (lower envelope of the le
                            # 6.5 ms is before the earlier one with margin: waits of about 1.8 ms (left) and 3.8 ms
                            # (right) for the tick, against 0-10 ms each at a random phase. Used mod half a period
 COMPUTE_LEAD_S = 0.0012    # tick start to command write: IMU read + control (1.07-1.30 ms mean, bench 2026-11-23)
+POLICY_LEAD_EXTRA_S = 0.00016  # P3b: added to a policy's lead (control.compute_lead = COMPUTE_LEAD_S + max(0,
+                           # policy self-test p50 - PID p50) + this). The in-loop cost the self-test misses. Fitted
+                           # on l_pid's P7 step 1 in-loop command point (p50 1.423 ms vs 1.263 without it;
+                           # quick_l, held out, 1.403 vs 1.414 predicted). Likely the CPU clock: light controllers
+                           # run mostly in a slow state (IMU read and the rest ~1.9x slower, as at 600 vs 1200 MHz
+                           # under the ondemand governor), the busy self-test at full clock. The MLPs' reference
+                           # forward pass kept them fast (leads 0.20-0.27 ms early); after P3c every policy is
+                           # light, the regime this was fitted in. Re-measure in P7 step 2 (cmd_at column, ideally
+                           # with the performance governor; see P7_STEP1_NOTES.md).
 LINE_UPDATE_TICKS = 20     # re-estimate the line grid every 20 ticks (100 ms)
+LINE_SLOPE = "lsq"         # control.LineClock's period fit: "lsq" (least squares over every arrival) or "envelope"
+                           # (lower-envelope fit; balance.py --line-slope). P7 step 1: replaying the reconstructed
+                           # arrivals, envelope was not clearly better (RMS window-slope error 460 vs 523 ppm against
+                           # the clean stamps, worse in the PID/L runs), so the pre-P7 fit stays the default
 
 # ---- startup and calibration (D4) ----
 CALIBRATION_FILE = "calibration.json"   # in ~/legobot; written by robot.calibrate

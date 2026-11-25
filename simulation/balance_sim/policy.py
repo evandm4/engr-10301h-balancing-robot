@@ -272,6 +272,7 @@ class PolicyController(Controller):
 
     def observation(self, state: np.ndarray, dt: float) -> np.ndarray:
         """Advance the integrators and return the raw (unscaled) OBSERVATIONS for this tick."""
+        dt = float(dt)          # as in update()
         v, theta, theta_dot = float(state[1]), float(state[2]), float(state[3])
         goal = self.goal_velocity(self._time)
         error_v = goal - v
@@ -307,6 +308,9 @@ class PolicyController(Controller):
         return 0.0 if self.base is None else self.base.pitch_reference()
 
     def update(self, state: np.ndarray, dt: float) -> float:
+        # A Python float, so a numpy float32 dt can't make the integrators (and _time) float32 under NumPy 2's
+        # scalar promotion (NEP 50); a no-op for a float or float64 dt. FastPolicyController does the same.
+        dt = float(dt)
         frozen = self._saturated
         raw = self.observation(state, dt)
         if self.base is None:
@@ -323,6 +327,131 @@ class PolicyController(Controller):
         self._saturated = abs(pre) > self.max_torque
         self.last_saturated = self._saturated
         torque = min(max(pre, -self.max_torque), self.max_torque)
+        self._history = [torque] + self._history[:-1]
+        self._time += dt
+        return torque
+
+
+def _float_literal(v: float) -> str:
+    """Python source for the float64 v, exact: repr round-trips every finite double (and -0.0)."""
+    v = float(v)
+    if math.isnan(v):
+        return "_nan"
+    if math.isinf(v):
+        return "_inf" if v > 0 else "(-_inf)"
+    return f"({v!r})"
+
+
+def compile_forward(spec: PolicySpec, linear, layers) -> Tuple[Callable[[Sequence[float]], float], str]:
+    """(forward, source): PolicyController.forward for these weights as one generated Python function.
+
+    Same float64 operations in the same order as PolicyController.forward, so the same bits:
+      x_k   = raw[i_k] * (1 / scale_i)                         (one product per input)
+      lin   = 0.0 + w_0 * x_0 + w_1 * x_1 + ...                 (left to right, as `acc = acc + w * x`)
+      h_j   = b_j + W_j0 * h_0 + W_j1 * h_1 + ...               (every hidden and the output unit)
+      tanh  = numpy.tanh on the float64 array of a whole hidden layer, as the reference does
+      z     = lin + output
+    Python's + is left-associative, so `a + b * c + d * e` is ((a + b*c) + d*e): no reassociation, no
+    builtin sum() (Neumaier-compensated since Python 3.12), no numpy dot (blocked / pairwise sums). Every
+    term is kept, zero weights included (0 * inf is nan, and 0.0 + -0.0 is 0.0, as in the reference). The
+    weights become literals (repr is exact for float64), which is what makes it fast: no numpy scalar
+    indexing or float() per weight. The raw entries must be Python floats (FastPolicyController's are)."""
+    inv = spec.inverse_scales
+    lines = ["def forward(raw):"]
+    xs = []
+    for k, i in enumerate(spec.input_indices):
+        lines.append(f"    x{k} = raw[{int(i)}] * {_float_literal(inv[i])}")
+        xs.append(f"x{k}")
+    out = None
+    if linear is not None:
+        w = np.asarray(linear, dtype=float)
+        lines.append("    lin = 0.0" + "".join(f" + {_float_literal(w[k])} * {x}" for k, x in enumerate(xs)))
+        out = "lin"
+    if layers:
+        h = xs
+        for n, (W, b) in enumerate(layers):
+            W, b = np.asarray(W, dtype=float), np.asarray(b, dtype=float)
+            units = []
+            for j in range(W.shape[0]):
+                name = f"h{n}_{j}"
+                lines.append(f"    {name} = {_float_literal(b[j])}"
+                             + "".join(f" + {_float_literal(W[j, i])} * {x}" for i, x in enumerate(h)))
+                units.append(name)
+            if n < len(layers) - 1:
+                h = [f"a{n}_{j}" for j in range(len(units))]
+                lines.append(f"    {', '.join(h)}, = _tanh(_array([{', '.join(units)}])).tolist()")
+            else:
+                h = units
+        out = h[0] if out is None else f"{out} + {h[0]}"
+    lines.append(f"    return {out}")
+    source = "\n".join(lines) + "\n"
+    namespace = {"_tanh": np.tanh, "_array": np.array, "_inf": math.inf, "_nan": math.nan}
+    exec(compile(source, "<balance_sim.policy.compile_forward>", "exec"), namespace)
+    return namespace["forward"], source
+
+
+class FastPolicyController(PolicyController):
+    """PolicyController with the same arithmetic, several times faster in CPython (POLICY_ON_ROBOT_PLAN P3c).
+
+    The robot's controller (control.build_controller). Its torques, last_raw, last_pre_clip, last_residual
+    and saturation flags are bit-identical to PolicyController's (the tests check every committed bundle's
+    golden vectors and random observations with ==), so the laptop's replay (replay_policy, through the
+    reference PolicyController) still checks the robot exactly. What differs is only how it gets there:
+      * forward() is compile_forward's generated function (weights as literals, one expression per unit);
+      * update() builds the raw observation as a Python list (last_raw is a list, not an array) and reads
+        the spec's derived constants (inverse scales, input indices, leak rate) once, not every tick.
+    The weights are compiled at reset() (construction included) and recompiled there only if
+    linear / layers changed since (compared by their bytes), so change the weights in place, then reset().
+    PolicyController.forward(self, raw) is still there as the reference.
+    """
+
+    def reset(self) -> None:
+        super().reset()
+        self.last_raw = self.last_raw.tolist()
+        key = (None if self.linear is None else np.asarray(self.linear, dtype=float).tobytes(),
+               tuple((np.asarray(W, dtype=float).tobytes(), np.asarray(b, dtype=float).tobytes())
+                     for W, b in self.layers))
+        if getattr(self, "_compiled_key", None) != key:
+            self._forward, self.forward_source = compile_forward(self.spec, self.linear, self.layers)
+            self._compiled_key = key
+        self._leak = float(self.spec.leak_rate)
+        self._limit_v, self._limit_theta = (float(v) for v in self.spec.integral_limits)
+        self._output_scale = float(self.spec.output_scale)
+
+    def forward(self, raw) -> float:
+        """z for one raw observation vector, as PolicyController.forward: any sequence of numbers (a numpy
+        float32 array included); the entries become Python floats first, so the arithmetic is float64."""
+        return float(self._forward([float(x) for x in raw]))
+
+    def update(self, state, dt: float) -> float:
+        dt = float(dt)          # as PolicyController.update: a float32 dt must not make the integrators float32
+        frozen = self._saturated
+        v, theta, theta_dot = float(state[1]), float(state[2]), float(state[3])
+        goal = self.goal_velocity(self._time)
+        error_v = goal - v
+        if not frozen:          # PolicyController._integrate, inlined
+            leak, int_v, int_theta = self._leak, self._int_v, self._int_theta
+            lim = self._limit_v
+            self._int_v = min(max(int_v + dt * (error_v - leak * int_v), -lim), lim)
+            lim = self._limit_theta
+            self._int_theta = min(max(int_theta + dt * (theta - leak * int_theta), -lim), lim)
+        raw = [v, theta, theta_dot, goal, error_v, self._int_v, self._int_theta] + self._history
+        if self.base is None:
+            pre = self._output_scale * self._forward(raw)
+            self.last_residual = 0.0
+        else:
+            pid = self.base.update(state, dt)
+            pitch = self.base.pitch_pid
+            raw += [float(pitch.setpoint), float(pitch._integral)]
+            self.last_residual = self._output_scale * float(np.tanh(self._forward(raw)))
+            pre = pid + self.last_residual
+        self.last_raw = raw
+        self.last_pre_clip = pre
+        self.last_integrators_frozen = frozen
+        mt = self.max_torque
+        self._saturated = abs(pre) > mt
+        self.last_saturated = self._saturated
+        torque = min(max(pre, -mt), mt)
         self._history = [torque] + self._history[:-1]
         self._time += dt
         return torque

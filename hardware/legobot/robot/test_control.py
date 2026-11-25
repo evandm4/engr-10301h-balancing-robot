@@ -8,6 +8,7 @@ import math
 import os
 import sys
 from collections import namedtuple
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -341,16 +342,138 @@ def _arrivals(seed, n=900, period=0.0099912, delay=0.0018):
     return sorted(arr), period, delay
 
 
+@pytest.mark.parametrize("slope", ["lsq", "envelope"])
 @pytest.mark.parametrize("seed", [1, 2, 3])
-def test_line_clock_finds_the_hat_grid(seed):
+def test_line_clock_finds_the_hat_grid(seed, slope):
     arr, period, delay = _arrivals(seed)
-    clock = control.LineClock()
+    clock = control.LineClock(slope=slope)
     for n in range(60, len(arr) + 1, 20):       # updated every 20 lines, as the loop does (every 100 ms)
         clock.update(arr[:n])
     assert abs(clock.period / period - 1) < 60e-6
     envelope_delay = (clock.t_ref - 100.0) % period
     assert delay < envelope_delay < delay + 0.0003       # the lower envelope, not the mean (0.65 ms later)
     assert clock.locked(arr[-1] + 0.01) and not clock.locked(arr[-1] + 1.0)
+
+
+def _late_stamped_arrivals(seed, n=256, period=0.0099912, delay=0.0018):
+    """P7 step 1: the reader stamps a line only once it gets the GIL, so while the loop computes, whole runs of
+    lines are stamped 1-2.5 ms late; here the share of late runs ramps from 0 to 60% across the window (the
+    load changing, e.g. arming), on top of small jitter (exp, mean 0.1 ms) and 2% dropped lines."""
+    import random
+    rng = random.Random(seed)
+    arr, late_left, late_by = [], 0, 0.0
+    for k in range(n):
+        if late_left == 0 and rng.random() < 0.6 * k / n / 4:   # runs of ~4 lines: share ~0.6 k/n
+            late_left, late_by = 4, rng.uniform(0.001, 0.0025)
+        late = late_by if late_left else 0.0
+        late_left = max(0, late_left - 1)
+        if rng.random() < 0.02:
+            continue
+        arr.append(100.0 + k * period + delay + rng.expovariate(1 / 0.0001) + late)
+    return arr, period
+
+
+def test_line_clock_envelope_slope_ignores_load_dependent_late_stamps():
+    """One window's (unsmoothed) slope: least squares tilts with the late share, the lower envelope doesn't."""
+    errs = {"lsq": [], "envelope": []}
+    for seed in range(20):
+        arr, period = _late_stamped_arrivals(seed)
+        for slope in errs:
+            clock = control.LineClock(slope=slope)
+            assert clock.update(arr)                  # the first update: no smoothing
+            errs[slope].append(abs(clock.period / period - 1) * 1e6)
+    worst_env, worst_lsq = max(errs["envelope"]), max(errs["lsq"])
+    mean_env, mean_lsq = sum(errs["envelope"]) / 20, sum(errs["lsq"]) / 20
+    assert worst_env < 60 and mean_lsq > 150 and mean_env < 0.25 * mean_lsq, (errs, worst_lsq)
+
+
+def test_line_clock_default_slope_is_least_squares():
+    """P7 step 1's replay didn't show the envelope fit clearly better, so the lock keeps its pre-P7 fit."""
+    assert lc.LINE_SLOPE == "lsq" and control.LineClock().slope == "lsq"
+    assert control.LineClock(slope="envelope").slope == "envelope"
+    with pytest.raises(ValueError):
+        control.LineClock(slope="median")
+    arr, period, _ = _arrivals(5)                       # bit for bit the pre-P7 estimate
+    a = arr[-256:]
+    ref = a[0]
+    k0 = [round((t - ref) / 0.010) for t in a]
+    r0 = sorted(t - ref - 0.010 * k for k, t in zip(k0, a))
+    ref += r0[len(r0) // 2]
+    ks = [round((t - ref) / 0.010) for t in a]
+    km, tm = sum(ks) / len(a), sum(a) / len(a)
+    expected = sum((k - km) * (t - tm) for k, t in zip(ks, a)) / sum((k - km) ** 2 for k in ks)
+    clock = control.LineClock()
+    assert clock.update(arr) and clock.period == expected
+
+
+@pytest.mark.parametrize("slope", ["lsq", "envelope"])
+@pytest.mark.parametrize("min_lines", [0, 1, 2])
+def test_line_clock_with_too_few_lines_keeps_its_estimate(slope, min_lines):
+    """Review F5: with min_lines set below 2, fewer than 2 lines return False (no lock, estimate unchanged)
+    instead of an IndexError / ZeroDivisionError; from 2 lines on it fits."""
+    clock = control.LineClock(min_lines=min_lines, slope=slope)
+    for arrivals in ([], [1.0]):
+        assert clock.update(arrivals) is False
+        assert clock.t_ref is None and clock.period == 0.010 and not clock.locked(1.0)
+    for n in (2, 3, 5):
+        clock = control.LineClock(min_lines=min_lines, slope=slope)
+        assert clock.update([1.0 + 0.0099912 * k for k in range(n)]) is True
+        assert clock.period == pytest.approx(0.0099912, abs=1e-12) and clock.locked(1.05)
+
+
+def test_log_lines_writes_the_raw_arrivals(tmp_path):
+    """--log-lines: every data line's stamp, on the raw log's time base (so t - age_left at a tick is a logged
+    line); --line-slope and --switch-interval-us are logged, and the switch interval restored afterwards."""
+    import csv
+    from robot import hw_config as hc
+    before = sys.getswitchinterval()
+    reason = balance.main(["--sim", "--sim-noise", "--seconds", "2", "--log-lines", "--line-slope", "envelope",
+                           "--switch-interval-us", "200", "--outdir", str(tmp_path)])
+    assert reason == "done" and sys.getswitchinterval() == before
+    lines = list(csv.DictReader(open(next(tmp_path.glob("*_lines.csv")))))
+    raw = [r for r in csv.DictReader(open(next(tmp_path.glob("*_raw.csv"))))]
+    left = [float(r["t"]) for r in lines if r["port"] == str(hc.LEFT_PORT)]
+    right = [r for r in lines if r["port"] == str(hc.RIGHT_PORT)]
+    rate = (len(left) - 1) / (left[-1] - left[0])
+    assert len(right) == len(left) and abs(rate - 100.0) < 1.0          # the sim's one stream, both ports
+    assert left[0] < float(raw[0]["t"]) and left[-1] > float(raw[-1]["t"]) - 0.02   # from before the loop
+    stamps = set(round(t, 9) for t in left)
+    ticks = [r for r in raw if r["age_left"] not in ("", "None")]
+    assert ticks and all(round(float(r["t"]) - float(r["age_left"]), 9) in stamps for r in ticks)
+    summary = next(tmp_path.glob("*_summary.txt")).read_text()
+    assert f"raw line arrivals: {len(lines)} lines" in summary
+    assert "line period fit: envelope" in summary and "GIL switch interval: 200 us requested" in summary
+    reason = balance.main(["--sim", "--seconds", "1", "--label", "nolog", "--outdir", str(tmp_path)])
+    assert not list(tmp_path.glob("*nolog_lines.csv"))       # off by default
+
+
+@pytest.mark.parametrize("us", ["inf", "-inf", "nan", "0", "5", "9.9", "10000.1", "20000", "1e300"])
+def test_switch_interval_out_of_range_is_refused(tmp_path, us):
+    """Review F2: --switch-interval-us must be finite and in [10, 10000] us, refused before anything starts."""
+    before = sys.getswitchinterval()
+    with pytest.raises(SystemExit, match="switch-interval-us"):
+        balance.main(["--sim", "--seconds", "1", f"--switch-interval-us={us}", "--outdir", str(tmp_path)])
+    assert sys.getswitchinterval() == before and not list(tmp_path.iterdir())
+
+
+def test_switch_interval_failure_still_runs_the_finally(tmp_path, monkeypatch):
+    """Review F2: sys.setswitchinterval is inside the loop's try, so if it raises, the finally still re-enables
+    the GC, restores the interval (and on the robot coasts, stops the watchdog, closes the HAT/IMU) and the logs
+    are written before the error is re-raised."""
+    import gc
+    real_set, before, calls = sys.setswitchinterval, sys.getswitchinterval(), []
+
+    def flaky_set(v):
+        calls.append(v)
+        if len(calls) == 1:
+            raise RuntimeError("setswitchinterval failed")
+        real_set(v)
+
+    monkeypatch.setattr(sys, "setswitchinterval", flaky_set)
+    with pytest.raises(RuntimeError, match="setswitchinterval failed"):
+        balance.main(["--sim", "--seconds", "1", "--switch-interval-us", "200", "--outdir", str(tmp_path)])
+    assert calls == [pytest.approx(200e-6), before] and sys.getswitchinterval() == before and gc.isenabled()
+    assert "crashed: RuntimeError" in next(tmp_path.glob("*_summary.txt")).read_text()
 
 
 def test_pacer_ticks_twice_per_line_at_the_offset():
@@ -379,6 +502,8 @@ def test_closed_loop_ticks_are_locked(tmp_path):
     phases = [float(r["cmd_phase"]) % 0.0049956 for r in rows]      # the sim's control takes no time
     target = (0.004 - lc.COMPUTE_LEAD_S) % 0.0049956
     assert max(abs(p - target) for p in phases) < 0.0003
+    cmd_at = [float(r["cmd_at"]) for r in rows]                     # P3b: tick start -> command write
+    assert all(0.0 <= x < 0.0005 for x in cmd_at)
 
 
 def test_every_robot_module_compiles():
@@ -821,8 +946,81 @@ def test_bundle_round_trip_and_self_test(tmp_path, cfg):
     st = control.self_test_policy(controller, bundle["golden"], cfg=cfg)
     assert st["n_ticks"] == len(bundle["golden"]["states"]) and st["n_ticks"] >= 300
     assert st["max_torque_err"] <= lc.GOLDEN_TOL
-    assert st["compute_lead_s"] >= lc.COMPUTE_LEAD_S
-    assert st["compute_lead_s"] == pytest.approx(lc.COMPUTE_LEAD_S + max(0.0, st["p99_s"] - st["pid_p99_s"]))
+    assert st["compute_lead_s"] >= lc.COMPUTE_LEAD_S + lc.POLICY_LEAD_EXTRA_S
+    assert st["pid_p50_s"] <= st["pid_p99_s"]
+    assert st["compute_lead_s"] == pytest.approx(lc.COMPUTE_LEAD_S + max(0.0, st["p50_s"] - st["pid_p50_s"])
+                                                 + lc.POLICY_LEAD_EXTRA_S)
+
+
+def test_compute_lead_reproduces_the_p7_step1_calibration():
+    """P3b: compute_lead from the Pi self-test medians (P7 step 1: l_pid 0.0876, quick_l 0.079, a_warm_zero
+    1.054, b1_zero 1.162 ms; PID ~0.025 ms) against the in-loop command point p50s (1.423, 1.403, 2.123,
+    2.293 ms). Fitted on l_pid, so it lands there; quick_l is held out; the MLPs (reference forward pass,
+    full clock) come out early, never late. Without a PID timing the whole policy median is added."""
+    pid = 0.025e-3
+    # name: (self-test p50, in-loop p50, largest early error allowed)
+    observed = {"l_pid": (0.0876e-3, 1.423e-3, 0.02e-3), "quick_l": (0.079e-3, 1.403e-3, 0.02e-3),
+                "a_warm_zero": (1.054e-3, 2.123e-3, 0.3e-3), "b1_zero": (1.162e-3, 2.293e-3, 0.3e-3)}
+    for name, (p50, in_loop, early) in observed.items():
+        err = control.compute_lead(p50, pid) - in_loop          # + early, - late
+        assert -0.02e-3 <= err <= early, (name, err)
+    assert control.compute_lead(0.0, 0.025e-3) == pytest.approx(lc.COMPUTE_LEAD_S + lc.POLICY_LEAD_EXTRA_S)
+    assert control.compute_lead(0.1e-3) == pytest.approx(lc.COMPUTE_LEAD_S + 0.1e-3 + lc.POLICY_LEAD_EXTRA_S)
+
+
+_COMMITTED_POLICIES = Path(__file__).resolve().parents[3] / "results" / "legobot" / "policies"
+# The committed bundle set changes between branches (E2.4 retires quick_l), so the bit-identity test runs on
+# every bundle that is there; the three synthetic kinds (linear, warm MLP, residual MLP) must always be there.
+_REQUIRED_POLICIES = {"l_pid", "a_warm_zero", "b1_zero"}
+
+
+def _committed_policy_names():
+    if not _COMMITTED_POLICIES.is_dir():
+        return []
+    return sorted(p.name for p in _COMMITTED_POLICIES.iterdir()
+                  if p.is_dir() and (p / "final.npz").is_file() and (p / "golden.npz").is_file())
+
+
+def test_committed_policy_bundles_cover_every_kind():
+    """P3c: the bit-identity test below covers a linear, a warm-started MLP and a residual MLP bundle."""
+    found = set(_committed_policy_names())
+    assert _REQUIRED_POLICIES <= found, sorted(_REQUIRED_POLICIES - found)
+
+
+@pytest.mark.parametrize("name", _committed_policy_names())
+def test_fast_forward_is_bit_identical_on_the_committed_bundles(cfg, name):
+    """P3c: the robot's FastPolicyController returns the committed bundle's golden torques to the bit, and the
+    same torques, raw observations and flags as the reference PolicyController (fast_forward=False), on the
+    golden vectors and on random states. Runs on whichever bundles are committed (see above)."""
+    control.import_config()
+    from balance_sim import FastPolicyController, PolicyController
+    bdir = _COMMITTED_POLICIES / name
+    fast, desc = control.build_controller(cfg, str(bdir), goal="still", allow_config_mismatch=True)
+    ref, desc_ref = control.build_controller(cfg, str(bdir), goal="still", allow_config_mismatch=True,
+                                             fast_forward=False)
+    assert type(fast) is FastPolicyController and type(ref) is PolicyController
+    assert desc["forward"] == "fast" and desc_ref["forward"] == "reference"
+    golden = fast.bundle["golden"]
+    st = control.self_test_policy(fast, golden, cfg=cfg)
+    assert st["max_torque_err"] == 0.0
+
+    rng = np.random.default_rng(len(name))
+    states = np.concatenate([np.asarray(golden["states"], dtype=float),
+                             rng.normal(0.0, [0.1, 0.5, 0.2, 2.0], (3000, 4))])
+    goals = list(np.asarray(golden["goals"], dtype=float)) + list(rng.normal(0.0, 0.3, 3000))
+    dt = float(golden["dt"])
+    for c in (fast, ref):
+        c.reset()
+    for k in range(len(states)):
+        for c in (fast, ref):
+            c.goal = float(goals[k])
+            if c.base is not None:
+                c.base.goal = float(goals[k])
+        u_f, u_r = fast.update(states[k], dt), ref.update(states[k], dt)
+        assert u_f == u_r and fast.last_pre_clip == ref.last_pre_clip and fast.last_residual == ref.last_residual
+        assert fast.last_saturated == ref.last_saturated
+        assert fast.last_integrators_frozen == ref.last_integrators_frozen
+        assert fast.last_raw == ref.last_raw.tolist()
 
 
 def test_bare_npz_requires_allow_unchecked(tmp_path, cfg, synthetic_bundles):

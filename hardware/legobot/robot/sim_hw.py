@@ -15,6 +15,7 @@ from collections import deque, namedtuple
 import numpy as np
 
 from . import control
+from . import hw_config as hc
 
 # Same fields as buildhat_serial.MotorReading and imu.ImuReading (not imported: they need pyserial, smbus2, fcntl)
 MotorReading = namedtuple("MotorReading", "t speed pos apos")
@@ -99,6 +100,8 @@ class SimWorld:
             t_arr, pos = self._encoder.popleft()
             self._pair = (self._pair[1], MotorReading(t_arr, 0, pos, pos))
             self._line_times.append(t_arr)
+            if self.hat.data_log is not None:     # --log-lines: one stream stands in for both ports
+                self.hat.data_log.extend((t_arr, p, 0, pos, pos) for p in (hc.LEFT_PORT, hc.RIGHT_PORT))
 
     def specific_force(self):
         """(forward, up) specific force at the IMU, as balance_sim.accelerometer_tilt computes it."""
@@ -157,6 +160,7 @@ class SimHat:
         self.fault = None
         self.vin_reading = None
         self.write_log = []
+        self.data_log = None      # a list for --log-lines: (t, port, speed, pos, apos), as BuildHat's
 
     def configure(self, **kw):
         pass

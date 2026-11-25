@@ -304,7 +304,7 @@ def load_policy_bundle(path, cfg=None, *, allow_unchecked=False, allow_config_mi
 
 
 def build_controller(cfg, spec="hand", goal="still", *, allow_unchecked=False, allow_config_mismatch=False,
-                     ff_gain_override=None):
+                     ff_gain_override=None, fast_forward=True):
     """The controller and a small JSON-able description of it. spec:
       "hand" / "model"   the cascaded PID with legobot's hand-tuned / model-based gains;
       policy:<name>, a bundle folder or a .npz   a learned policy (load_policy_bundle), built by
@@ -312,7 +312,9 @@ def build_controller(cfg, spec="hand", goal="still", *, allow_unchecked=False, a
       anything else      a cascaded-PID gains JSON path (load_gains_file).
     goal: "still" (hold 0 m/s) or "scenario" (the tuning scenario's goal profile, from arming). It is passed
     when building, so a residual policy's base PID gets it too (plan problem 1). ff_gain_override (--ff-gain)
-    is refused for a policy: the feedforward gain is part of the plant it was trained on (P2c)."""
+    is refused for a policy: the feedforward gain is part of the plant it was trained on (P2c). fast_forward
+    (P3c): a policy is a balance_sim.FastPolicyController (bit-identical torques, a several times faster
+    forward pass); False (--reference-forward) the reference PolicyController, which replay_policy uses."""
     if goal not in ("still", "scenario"):
         raise ValueError(f"goal must be 'still' or 'scenario', not {goal!r}")
     goal_val = 0.0 if goal == "still" else cfg.build_goal()
@@ -321,12 +323,14 @@ def build_controller(cfg, spec="hand", goal="still", *, allow_unchecked=False, a
             raise ValueError("--ff-gain is refused for a policy: it runs its training config's feedforward gain")
         bundle = load_policy_bundle(spec, cfg, allow_unchecked=allow_unchecked,
                                     allow_config_mismatch=allow_config_mismatch)
-        controller = cfg.build_policy_controller(bundle["spec"], bundle["params"], goal=goal_val)
+        controller = cfg.build_policy_controller(bundle["spec"], bundle["params"], goal=goal_val,
+                                                 fast=fast_forward)
         controller.bundle = bundle
         desc = {
             "spec": str(spec),
             "kind": "policy",
             "policy_kind": bundle["kind"],
+            "forward": "fast" if fast_forward else "reference",
             "bundle_name": bundle["name"],
             "bundle_dir": str(bundle["bundle_dir"]) if bundle["bundle_dir"] else None,
             "sha256": bundle["sha256"],
@@ -383,7 +387,8 @@ def self_test_policy(controller, golden, cfg=None, tol=lc.GOLDEN_TOL):
     reference run returned) through the controller; ValueError if any torque differs by more than tol N m (a
     NaN counts as a failure). The controller is reset and its goal (and a residual base PID's) restored
     afterwards, pass or fail. Also times the forward pass, and with cfg a fresh cascaded PID over the same
-    states, for the compute lead: lc.COMPUTE_LEAD_S + max(0, policy p99 - PID p99)."""
+    states, for the compute lead (compute_lead: from the two medians).
+    The returned timings are those of the forward path the controller uses (fast or reference, P3c)."""
     import numpy as np
     states = np.asarray(golden["states"], dtype=float)
     expected = np.asarray(golden["torques"], dtype=float)
@@ -417,13 +422,26 @@ def self_test_policy(controller, golden, cfg=None, tol=lc.GOLDEN_TOL):
     if p99 > lc.POLICY_MAX_P99_FRACTION * dt:
         raise ValueError(f"policy self-test: forward pass p99 {p99 * 1e3:.3f} ms exceeds "
                          f"{lc.POLICY_MAX_P99_FRACTION:g} x dt ({dt * 1e3:g} ms): too slow for this loop")
-    pid_p99 = None
+    p50 = _quantile(ts, 0.5)
+    pid_p50 = pid_p99 = None
     if cfg is not None:
         _, pid_times = _time_updates(cfg.build_controller(goal=0.0), states, dt)
-        pid_p99 = _quantile(sorted(pid_times), 0.99)
-    lead = lc.COMPUTE_LEAD_S + (max(0.0, p99 - pid_p99) if pid_p99 is not None else p99)
-    return {"n_ticks": n, "max_torque_err": float(max_err), "mean_s": sum(ts) / n, "p50_s": _quantile(ts, 0.5),
-            "p99_s": p99, "max_s": ts[-1], "pid_p99_s": pid_p99, "compute_lead_s": lead}
+        pid_ts = sorted(pid_times)
+        pid_p50, pid_p99 = _quantile(pid_ts, 0.5), _quantile(pid_ts, 0.99)
+    lead = compute_lead(p50, pid_p50)
+    return {"n_ticks": n, "max_torque_err": float(max_err), "mean_s": sum(ts) / n, "p50_s": p50,
+            "p99_s": p99, "max_s": ts[-1], "pid_p50_s": pid_p50, "pid_p99_s": pid_p99, "compute_lead_s": lead}
+
+
+def compute_lead(policy_p50, pid_p50=None):
+    """P3b: tick start -> command write for a policy controller, from its self-test forward-pass median:
+    lc.COMPUTE_LEAD_S (the hand PID's) + max(0, policy p50 - PID p50) + lc.POLICY_LEAD_EXTRA_S; without a
+    PID timing the whole policy p50 is added. Medians, not p99s: COMPUTE_LEAD_S is a typical figure, and the
+    tail is absorbed by the margin from LINE_WRITE_PHASE_S to the left motor's tick cliff (0.7 ms or more;
+    P7 step 1's worst in-loop p99 was 0.5 ms past its lead). The extra is the in-loop cost the self-test
+    doesn't see (see loop_config)."""
+    delta = policy_p50 - pid_p50 if pid_p50 is not None else policy_p50
+    return lc.COMPUTE_LEAD_S + max(0.0, delta) + lc.POLICY_LEAD_EXTRA_S
 
 
 class EnvelopeMonitor:
@@ -656,18 +674,36 @@ class LineClock:
     transit delay plus non-negative jitter (sd about 0.65 ms; up to 20 ms when the reader thread is late),
     so the grid is the LOWER envelope of the arrivals:
 
-        period  = least-squares slope of arrival time against line index (index by rounding to the
-                  previous period estimate, so dropped lines don't shift it);
+        period  = slope of arrival time against line index (index by rounding to the previous period
+                  estimate, so dropped lines don't shift it): slope="lsq" (default, loop_config.LINE_SLOPE)
+                  least squares over every arrival; slope="envelope" least squares through the `envelope`
+                  quantile point of each run of `chunk` lines (a lower-envelope fit);
         t_ref   = the `envelope` quantile of arrival - period x index, placed at the newest line's index.
+
+    P7 step 1 (2026-11-24 logs): the reader thread is not pinned, but it stamps an arrival with perf_counter()
+    after ser.read() returns, which needs the GIL, so lines that arrive while the loop computes are stamped
+    when the loop releases it (most of an MLP's stamps landed within 0.3 ms after the command write; with
+    PID/L, inside the IMU read). The in-run period moved from its start value by -290 to -1187 ppm in 7 of the 13
+    runs, +126 to +554 ppm in 5 (mostly runs whose start fit was a low outlier) and -155 in 1. Replaying
+    the reconstructed arrivals, the envelope slope was not clearly better than least squares (RMS window-slope
+    error 460 vs 523 ppm against the clean stamps, but worse in the PID/L runs), and even the clean stamps'
+    slope wandered or stepped, so the default stays "lsq". The period error hardly matters to the lock:
+    t_ref re-anchors every update (1000 ppm is 0.1 ms over 100 ms). balance.py --log-lines logs the raw
+    arrivals for a re-check (P7 step 2).
 
     locked() is true once `min_lines` lines are in and the newest line at the last update is under `stale` s
     old: longer than the loop's update interval (100 ms), since stale motor data trips the run at 50 ms anyway
     (Safety). Pure Python
     and cheap enough (about 0.2 ms for 256 lines on the Pi 3B) to update every few ticks."""
 
-    def __init__(self, nominal_period=0.010, window=256, min_lines=50, envelope=0.10, stale=0.25):
+    def __init__(self, nominal_period=0.010, window=256, min_lines=50, envelope=0.10, stale=0.25, slope=None,
+                 chunk=32):
         self.period = nominal_period
         self.window, self.min_lines, self.envelope, self.stale = window, min_lines, envelope, stale
+        self.slope = lc.LINE_SLOPE if slope is None else slope
+        if self.slope not in ("lsq", "envelope"):
+            raise ValueError(f"LineClock slope must be 'lsq' or 'envelope', got {self.slope!r}")
+        self.chunk = chunk
         self.smoothing = 0.1                  # each window's slope is good to about +-55 ppm (jitter sd 0.65 ms)
         self.t_ref = None
         self.newest = None
@@ -675,7 +711,7 @@ class LineClock:
 
     def update(self, arrivals):
         a = arrivals[-self.window:]
-        if len(a) < self.min_lines:
+        if len(a) < max(2, self.min_lines):   # a slope needs 2 lines, whatever min_lines is set to (review F5)
             return False
         p = self.period
         ref = a[0] if self.t_ref is None else self.t_ref
@@ -685,12 +721,29 @@ class LineClock:
         ref += r0[len(r0) // 2]
         ks = [round((t - ref) / p) for t in a]
         n = len(a)
-        km = sum(ks) / n
-        tm = sum(a) / n
-        skk = sum((k - km) ** 2 for k in ks)
+        if self.slope == "lsq":
+            pts_k, pts_t = ks, a
+        else:
+            # lower envelope: the `envelope` quantile of the residuals in each run of `chunk` lines, then a
+            # least-squares line through those points. A late stamp can only push an arrival later, so late
+            # stamps don't tilt it unless they fill nearly a whole run; a late outlier that rounds onto the
+            # next index (5-20 ms) reads as early, and the quantile (not the minimum) ignores a few of those.
+            m = max(2, n // self.chunk)
+            size = n // m
+            pts_k, pts_t = [], []
+            for j in range(m):
+                lo, hi = j * size, (n if j == m - 1 else (j + 1) * size)
+                r = sorted((a[i] - p * ks[i], i) for i in range(lo, hi))
+                i = r[min(len(r) - 1, int(self.envelope * len(r)))][1]
+                pts_k.append(ks[i])
+                pts_t.append(a[i])
+        npts = len(pts_k)
+        km = sum(pts_k) / npts
+        tm = sum(pts_t) / npts
+        skk = sum((k - km) ** 2 for k in pts_k)
         if skk <= 0:
             return False
-        period = sum((k - km) * (t - tm) for k, t in zip(ks, a)) / skk
+        period = sum((k - km) * (t - tm) for k, t in zip(pts_k, pts_t)) / skk
         if not (0.98 * p < period < 1.02 * p):
             return False                      # nonsense (e.g. a stream restart): keep the old estimate
         if self.t_ref is not None:            # after the first lock, smooth the period across updates
