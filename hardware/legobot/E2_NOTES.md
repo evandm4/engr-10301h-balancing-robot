@@ -428,6 +428,23 @@ selection: it decides the even/odd = desktop/laptop parity check, since the even
     selected gen-13 policy re-scored, so it is a different quantity.
   - The in-run dev60 is not the E2.6 selection score. **E2.6 (K=5 CPU re-score, `e2_rescore_k5.py`) has not been run**;
     it waits for Evan's OK.
+- **E2.6 done (Evan's OK 17:05; run 17:06–17:14 on EVANS-G16).**
+  - Command: `e2_rescore_k5.py --require-all --code-root C:\balancebot_training\e2_L_worktree --workers 8 --batch-size 16
+    --priority idle`, NumPy float64, `CUDA_VISIBLE_DEVICES=-1`.
+  - The sandboxed first attempt was refused before scoring (git could not read the worktree); the rerun's drift check
+    passed: all 10 runs clean at `4582fe7`.
+  - Scored 311 candidates (1 MB PID + 310 L; 266 unique) × K=5 × 150 dev scenarios × 60 s in 317 s. Output:
+    `results/legobot/e2_selection/20261126-170931-e26-k5/` (`e2_notes_tables.md` has the full provenance, per-run and
+    top-25 tables).
+  - **Selected: `L / s8 / mean_7.488e08`** (run seed 8, laptop): mean-of-means 19.724, median 19.576, both-up 19.655, 0/750
+    falls.
+  - Runner-up: `L / s9 / mean_8.986e08`, 19.726. That is 0.002 apart, so no 3-dp tie and the pre-registered rule picks
+    s8. The 8 good runs' best candidates span 19.724–19.794, so the choice among them is practically immaterial.
+  - The provisional E2.7 export `l_e2_s1` is seed 1, whose best scores 19.794 (0 falls). It is 0.07 (0.35 %) behind the
+    selected policy.
+  - MB PID baseline: mean-of-means 98.957, median 28.093, both-up 28.872, 27/750 falls (6, 4, 5, 6, 6 per realization).
+  - Bad runs: s0 543.0 (1/750 falls), s7 620.0 (10/750).
+  - Next (E2_PLAN E2.7): export `l_e2` from seed 8's `checkpoints/mean_7.488e08.npz` and redeploy. This waits for Evan.
 
 ## E2.7 (provisional): `l_e2_s1`, the first finished L run
 
