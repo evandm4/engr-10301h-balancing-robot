@@ -1,186 +1,258 @@
 # Project Architecture: ML-Tuned Control of a Two-Wheeled Balancing Robot
 
-Living document. Updated as components are designed and built.
-Last updated: 2026-09-28
+Living document: how the repository is laid out and how its parts connect.
+Last updated: 2026-11-26
 
 See also:
-- `README.md` — the folder layout, and the exact order everything runs in.
-- `config.py` (project root) — the single place to edit the robot, actuator model, sensor noise, delays, cost weights, search ranges, and the batched tuner's robustness test.
-- `simulation/CONDITIONS.md` — the running list of real-world effects the simulation includes.
-- `BATCHED.md` — the batched (NumPy/GPU) engine: design, verification, speed.
-- `PHYSICS.md` — derivation of every equation in the simulator, checked numerically by `simulation/examples/physics_checks.py`, with limitations and next steps.
-- `DATASHEET.md` — realistic values for every physical constant, from a reference build of real parts (motors, wheels, driver, battery, IMU, servo), compared against `config.py`; derived numbers from `simulation/examples/datasheet_numbers.py`.
-- `archive/CHANGES_FROM_ORIGINAL.md` — what was corrected from the first version of the code.
+- `README.md`: what to run, in order.
+- `config.py` (project root): the single place to edit the robot, actuator model, sensor noise, delays, cost weights, search ranges and robustness test. `legobot_config.py` is the LEGO robot's version.
+- `simulation/CONDITIONS.md`: the real-world effects the simulation includes.
+- `PHYSICS.md`: every equation in the simulator, checked by `simulation/examples/physics_checks.py`.
+- `BATCHED.md`: the batched (NumPy/GPU) engine. `LQR.md`: the LQR controller. `PIVOT.md`: the pivot side project.
+- `DATASHEET.md` (Pololu reference build) and `hardware/legobot/DATASHEET.md` (LEGO robot).
+- `hardware/legobot/SOFTWARE_PLAN.md`: the LEGO robot's software plan (phases A-E). `hardware/legobot/POLICY_ON_ROBOT_PLAN.md`: running learned policies on it (P1-P8).
+- `simulation/balance_sim/STABILITY_PIPELINE.md`: delay margins with the LEGO sensor pipeline.
+- `docs/ml-baselines-plan.md`: the learned-controller plan and results.
 
-## Status legend
+## Repository layout
 
-- **Planned**: designed on paper, no code yet
-- **In progress**: code being written
-- **Built**: working and tested
-- **Stretch**: may not fit within the course timeline
+Only tracked files are listed. Training runs and Pi logs live outside the repository (see "Data flow").
 
-## System flowchart
+```
+config.py              project config, robot selection, results_dir(), the Pololu robot (POLOLU_CONFIG)
+legobot_config.py      the LEGO SPIKE robot's config (selected by --robot legobot / ROBOT=legobot)
+pivot_config.py        the pivot side project (Pololu robot only)
+pytest.ini             testpaths = simulation/tests optimization/tests
+requirements.txt
+simulation/
+  balance_sim/         reference simulator, one robot at a time (pure Python)
+  batch_sim/           batched simulator: NumPy, and PyTorch/CUDA in torch_sim.py
+  pivot_sim/           the pivot side project's model
+  examples/            demos and checks (run_demo, run_velocity_demo, run_pivot_demo, physics_checks, datasheet_numbers)
+  animate.py           side-view animation of runs or of logged CSVs
+  stability_pipeline_table.py   LEGO delay-margin table (L vs model-based PID)
+  tests/
+optimization/
+  tuning/              reference tuner: SearchSpace, Evaluator, optimizers, reporting
+  batch_tuning/        batched tuner: BatchEvaluator, vectorized DE, CMA-ES, PolicySearch, robust scoring
+  pivot_tuning/
+  run_tuning.py, run_batch_tuning.py, run_lqr_comparison.py, run_pivot_tuning.py
+  run_neuroevolution.py, compare_controllers.py, export_policy.py
+  benchmark.py, benchmark_batch.py, benchmark_policies.py, power.py
+  tests/
+hardware/legobot/      the physical LEGO robot
+  robot/               code that runs on the Pi (plus laptop-only analysis tools)
+  robot/measure/       bench measurement scripts and their fits (fit.py)
+  bench_data/          recorded bench logs
+  deploy.sh            copies the robot code and policy bundles to the Pi
+  legobot_*.py, e1_*.py, e2_*.py, backlash_check.py, pwm_pulse_check.py   laptop-side derivations and experiment scripts
+  *.md                 plans, datasheet, bench checks, experiment notes and preregistrations
+results/
+  pololu/<kind>/       Pololu results (batch_tuning, lqr_comparison, pivot_tuning, ...)
+  legobot/<kind>/      LEGO results (batch_tuning, benchmarks, comparison, e1_ablations, e1_policy_dev_preview,
+                       e2_selection, policies, reference_pid)
+scripts/               slurm_neuroevolution.sh (cluster wrapper for run_neuroevolution.py)
+docs/                  plans, reviews (docs/legobot-review/), slides and drafts
+paper/                 methods draft, figures, results-planning notes
+literature/            reference papers (PDF)
+archive/               the original code and its results; CHANGES_FROM_ORIGINAL.md
+```
+
+## Data flow
 
 ```mermaid
 flowchart TD
-    CFGFILE["config.py (project root)<br/>robot, actuator, sensor, timing,<br/>cost weights, search bounds"]
-    LIT["Literature<br/>ML + control systems"]
+    CFG["config.py / legobot_config.py"]
 
     subgraph SIM["simulation/"]
-        DYN["Dynamics interface<br/>derivatives(state, torque)"]
-        P2D["Planar2D model<br/>wheeled inverted pendulum"]
-        D3["3D / PyBullet model<br/>validation of 2D assumptions"]
-        ACT["Actuator model<br/>ideal or DC motor"]
-        CTRL["Controller interface<br/>update(state, dt)"]
-        PID["Cascaded PID controller<br/>outer velocity loop sets lean angle,<br/>inner pitch loop sets torque"]
-        SENS["Sensor model<br/>noise, gyro bias"]
-        LOOP["Simulator loop<br/>RK4, control rate, latency"]
-        MET["Metrics / cost function<br/>pitch error, effort,<br/>velocity error, fall penalty"]
-        BATCH["batch_sim<br/>same loop for many robots at once<br/>(NumPy or GPU)"]
+        REF["balance_sim<br/>reference simulator"]
+        BAT["batch_sim<br/>NumPy + torch_sim"]
+        STAB["stability.py, stability_pipeline.py<br/>linear delay margins"]
     end
 
     subgraph OPT["optimization/"]
-        EVAL["Evaluator / BatchEvaluator<br/>scores gains over start tilts, noise seeds<br/>(and randomized robots, chaos penalty)"]
-        TUNER["Tuner<br/>differential evolution, random search,<br/>Bayesian optimization, CMA-ES"]
-        VAL["Validation<br/>re-score winners on unseen seeds"]
+        TUNE["run_tuning / run_batch_tuning<br/>PID and LQR gains"]
+        NEURO["run_neuroevolution<br/>learned policies (CMA-ES)"]
+        CMP["compare_controllers<br/>run-level statistics"]
+        EXP["export_policy<br/>policy bundle"]
     end
 
-    RES["results/<br/>logged runs, plots, data"]
-    PAPER["paper/<br/>literature review, methods,<br/>setbacks, sim vs real"]
+    TRAIN["training runs<br/>C:/balancebot_training/robot/"]
+    RES["results/robot/"]
 
-    subgraph HW["hardware/ (stretch)"]
-        ROBOT["Physical robot<br/>built to match config"]
-        HLOG["Hardware test logs"]
+    subgraph PI["Raspberry Pi (~/legobot)"]
+        LOOP["robot.balance<br/>200 Hz loop"]
+        LOGS["logs/stamp_label_run.csv, _raw.csv, _summary.txt"]
     end
-    GAP["Sim-vs-real comparison"]
 
-    CFGFILE -. "builds" .-> P2D
-    CFGFILE -. "builds" .-> ACT
-    CFGFILE -. "builds" .-> SENS
-    CFGFILE -. "builds" .-> PID
-    CFGFILE -. "builds" .-> MET
-    CFGFILE -. "builds" .-> EVAL
-    CFGFILE -. "builds" .-> TUNER
+    subgraph ANA["analysis (laptop)"]
+        REPLAY["replay_policy"]
+        SCORE["score_run"]
+        SVR["sim_vs_real"]
+        SESS["session_metrics"]
+    end
 
-    P2D -. implements .-> DYN
-    D3 -. implements .-> DYN
-    PID -. implements .-> CTRL
-    ACT -. "used inside" .-> P2D
-
-    LOOP -- "true state" --> SENS
-    SENS -- "measured state" --> CTRL
-    CTRL -- "torque command" --> LOOP
-    LOOP -- "torque (after latency)" --> DYN
-    DYN -- "state derivatives" --> LOOP
-
-    LOOP -- "trajectory + goal velocity" --> MET
-    MET -- "cost per run" --> EVAL
-    EVAL -- "mean cost" --> TUNER
-    TUNER -- "candidate gains" --> EVAL
-    EVAL -- "runs simulation with gains" --> LOOP
-    EVAL -- "whole populations" --> BATCH
-    BATCH -. "checked against" .-> LOOP
-    BATCH -- "cost per run" --> EVAL
-    TUNER -- "best gains" --> VAL
-    VAL -- "validation cost" --> RES
-    TUNER -- "run history" --> RES
-
-    D3 -. "cross-check trajectories" .-> P2D
-    RES --> PAPER
-    LIT --> PAPER
-    LIT -. informs tuner choice .-> TUNER
-
-    VAL -- "validated gains" --> ROBOT
-    CFGFILE -. "build spec" .-> ROBOT
-    ROBOT --> HLOG
-    HLOG --> GAP
-    RES --> GAP
-    GAP --> PAPER
+    CFG --> REF
+    CFG --> BAT
+    CFG --> STAB
+    BAT -. "checked against" .-> REF
+    BAT --> TUNE
+    BAT --> NEURO
+    TUNE --> RES
+    NEURO --> TRAIN
+    TRAIN --> CMP
+    RES --> CMP
+    TRAIN --> EXP
+    EXP -- "results/legobot/policies/name" --> RES
+    RES -- "deploy.sh" --> LOOP
+    LOOP --> LOGS
+    LOGS --> REPLAY
+    LOGS --> SCORE
+    LOGS --> SVR
+    LOGS --> SESS
+    SCORE --> SESS
 ```
 
-## Component status
+1. **Config.** `config.py` holds every adjustable number and builds the objects the rest of the code uses (`RobotParams`, `Planar2D`, `EvalConfig`, `SearchSpace`, ...). The robot is chosen once at import: `--robot NAME`, else the `ROBOT` environment variable, else `pololu` (`load_config`, `add_robot_argument`). `legobot_config.py` is the LEGO robot. `results_dir(...)` gives `results/<robot>/<kind>`.
+2. **Simulation.** At each control tick the sensor model turns the true state into a measurement, the controller turns it into a command, and the command reaches the actuator after the latency. Metrics turn a finished run into a cost (pitch, effort, velocity error, fall penalty).
+3. **Tuning and training.**
+   - `run_tuning.py` (reference engine) and `run_batch_tuning.py` (batched engine) search PID or LQR gains and write to `results/<robot>/`.
+   - `run_neuroevolution.py` trains learned policies with CMA-ES. It writes to `<base>/<robot>/` (`ProjectConfig.training_output_root`): `<base>` is `$BALANCEBOT_TRAINING_DIR`, else `LearningConfig.output_dir` (`C:/balancebot_training`) if that drive exists, else `results/`.
+   - `compare_controllers.py` compares controllers on fixed seed tiers.
+4. **Export.** `optimization/export_policy.py` turns a training run (or a synthetic policy: `l_pid`, `a_warm_zero`, `b1_zero`) into a bundle in `results/<robot>/policies/<name>/`: `final.npz`, `snapshot.json`, `summary.json`, `manifest.json`, `golden.npz`, `envelope.json`. Committed LEGO bundles: `a_warm_zero`, `b1_zero`, `l_e2_s1`, `l_pid`.
+5. **Deploy.** `bash hardware/legobot/deploy.sh [host]` (default `legopi`) copies `config.py`, `legobot_config.py`, `simulation/balance_sim`, `hardware/legobot/robot` (no tests) and `results/legobot/policies` to `~/legobot` on the Pi. It writes `~/legobot/DEPLOYED` with the commit (`-dirty` if the tree had changes) and the time.
+6. **Run.** On the Pi, `robot/run_safe.sh robot.balance ...` runs the loop. It writes `logs/<stamp>_<label>{_run.csv,_raw.csv,_summary.txt}`.
+7. **Analyze.** Logs are copied to the laptop by tools outside this repository. The analysis scripts in `hardware/legobot/robot/` read them (see "Analysis tools").
 
-| Component | Location | Status |
-|---|---|---|
-| Project configuration (single source of truth) | config.py | Built |
-| Robot config (parameters) | simulation/balance_sim/params.py | Built |
-| Dynamics interface | simulation/balance_sim/dynamics.py | Built |
-| Planar2D model | simulation/balance_sim/planar2d.py | Built |
-| Actuator model (ideal, DC motor) | simulation/balance_sim/actuators.py | Built |
-| Sensor model (noise, gyro bias) | simulation/balance_sim/sensors.py | Built |
-| 3D / PyBullet validation model | simulation/ | Planned |
-| Controller interface | simulation/balance_sim/controllers.py | Built |
-| Pitch PID controller | simulation/balance_sim/controllers.py | Built |
-| Cascaded velocity + pitch controller | simulation/balance_sim/controllers.py | Built (P outer loop: kv_i dropped after it always tuned to 0; no position hold yet) |
-| Goal velocity profiles | simulation/balance_sim/controllers.py | Built (constant, step profile) |
-| LQR controller (delay-aware design on the linearized robot) | simulation/balance_sim/lqr.py, planar2d.py (`linearize`) | Built (reference and batched, NumPy + GPU; see LQR.md) |
-| Linear loop stability and delay margins: PID, LQR, linear policy | simulation/balance_sim/stability.py | Built (reproduces PHYSICS.md 7.4; several leaky integrators) |
-| Simulator loop | simulation/balance_sim/simulator.py | Built (RK4, control-rate hold, latency, sensor hookup, goal recording) |
-| Metrics / cost function | simulation/balance_sim/metrics.py | Built (weights now set via config.py) |
-| Batched simulator (NumPy + PyTorch/CUDA graphs) | simulation/batch_sim/ | Built (bit-identical to the reference in float64 on NumPy) |
-| Simulation tests | simulation/tests/ | Built (reference + batched) |
-| Conditions list | simulation/CONDITIONS.md | Living document |
-| Search space (gain bounds, log scaling) | optimization/tuning/search_space.py | Built |
-| Evaluator (multi-scenario scoring) | optimization/tuning/evaluation.py | Built |
-| Tuner: differential evolution | optimization/tuning/optimizers.py | Built |
-| Tuner: random-search baseline | optimization/tuning/optimizers.py | Built |
-| Tuner: Bayesian optimization | optimization/tuning/optimizers.py | Built (needs `pip install scikit-optimize`) |
-| Result logging (JSON, CSV, plots) | optimization/tuning/reporting.py, run_tuning.py, run_batch_tuning.py | Built |
-| Batched tuner: evaluator, vectorized DE, random search, CMA-ES | optimization/batch_tuning/, run_batch_tuning.py | Built |
-| Robust scoring: 50 seeds, randomized robots, chaos penalty | optimization/batch_tuning/robust.py, config.py (`RobustnessSettings`) | Built |
-| Benchmarks | optimization/benchmark.py, benchmark_batch.py | Built |
-| Tuner + config tests | optimization/tests/ | Built (301 tests in total with simulation/tests) |
-| Config snapshot saved with every run | config.py (`snapshot()`), both run scripts | Built |
-| LQR tuning: weights, or gains directly (kept nominally stable) | optimization/tuning/search_space.py, config.py (`LQRConfig`) | Built |
-| PID vs LQR comparison (hand-designed and ML-tuned, latency sweep) | optimization/run_lqr_comparison.py, LQR.md | Built |
-| Learned policies: linear (L), MLP (A), MLP from L (A-warm), residual on the PID (B1) | simulation/balance_sim/policy.py, batch_sim/policy.py, config.py (`LearningConfig`) | Built (reference and batched, NumPy + GPU; not yet trained) |
-| Neuroevolution: CMA-ES over policy weights, checkpoints, dev scoring, resume | optimization/run_neuroevolution.py, batch_tuning (`PolicySearch`) | Built |
-| Controller comparison: tiers, run-level statistics, latency sweep | optimization/compare_controllers.py | Built |
-| Deep reinforcement learning (PPO, residual PPO) | optimization/ | Planned (docs/ml-baselines-plan.md 6) |
-| Literature review | literature/, paper/ | Planned |
-| Physical robot | hardware/ | Stretch |
-| Sim-vs-real comparison | results/, paper/ | Stretch |
-| Robot selection (`--robot`, `ROBOT`; Pololu or LEGO) | config.py (`load_config`, `add_robot_argument`, `results_dir`), legobot_config.py | Built |
-| Voltage-mode driver with back-EMF feedforward | simulation/balance_sim/actuators.py (`VoltageModeActuator`), batch_sim, torch_sim.py | Built (LEGO robot; B1) |
-| Simulated IMU and complementary filter | simulation/balance_sim/sensors.py (`IMUSensor`, `ComplementaryFilter`), batch_sim, torch_sim.py | Built (LEGO robot; B2) |
-| Encoder model (counts, period, transit delay) | simulation/balance_sim/sensors.py (`Encoder`), batch_sim, torch_sim.py | Built (LEGO robot; B3) |
-| Per-scenario pitch offset | simulation/batch_sim/robot.py (`BatchRobot.pitch_bias`), optimization/batch_tuning/robust.py | Built (LEGO robot; B6) |
+## Simulation
 
-## How the pieces work together
+Three engines run the same model: `balance_sim` (reference), `batch_sim` (NumPy, bit-identical to the reference in float64) and `batch_sim/torch_sim.py` (GPU). A model change goes into all three. `test_equivalence.py` and `test_torch.py` check they agree.
 
-(`README.md` has the step-by-step version, including the batched engine.)
+| Module (`simulation/balance_sim/`) | Contents |
+|---|---|
+| `params.py`, `dynamics.py`, `planar2d.py` | `RobotParams`; the `Dynamics` interface; `Planar2D` (wheeled inverted pendulum), `linearize`, `critical_pitch_gain` |
+| `actuators.py` | `IdealActuator`, `DCMotorActuator`, `VoltageModeActuator`, `SlowPwmActuator` (Build HAT slow PWM), `pdm_update` |
+| `sensors.py` | `SensorNoise`, `IMUSensor`, `ComplementaryFilter`, `accelerometer_tilt`, `Encoder` |
+| `controllers.py`, `pid_design.py`, `lqr.py` | `CascadedPIDController`, goal profiles (`step_profile`, `push_profile`); `model_based_pid_gains`; the LQR controller |
+| `policy.py` | learned policies: `PolicySpec`, `PolicyController`, `FastPolicyController`, `compile_forward`, `save_policy` / `load_policy`, `pid_equivalent_weights` |
+| `simulator.py`, `metrics.py`, `trajectory.py` | `simulate` (RK4, control-rate hold, latency); `cost`, `compute_metrics`; `save_trajectory` / `load_trajectory` |
+| `stability.py` | exact stability of the sampled, delayed linear loop with ideal sensing (`LinearController`, `stable_latency_range`) |
+| `stability_pipeline.py` | the same with the LEGO sensor pipeline (see below) |
 
-1. **`config.py`** at the project root holds every adjustable number: the robot's physical parameters, which actuator model to use, sensor noise, latency and timing, the controller's lean-angle cap and hand-tuned baseline gains, the cost function's weights, the tuner's test scenario (goal velocity profile, start tilts, noise seeds), and the search bounds for each gain. It builds the real objects (`RobotParams`, `Planar2D`, `EvalConfig`, `SearchSpace`, ...) that the rest of the code uses, so a single edit here reaches the simulation, the demos, and the tuner together.
-2. The **simulator loop** advances the model in time. At each control tick, the **sensor model** turns the true state into a noisy measurement, the controller turns that into a torque command, and the command reaches the actuator after the configured latency.
-3. The **cascaded controller** compares measured velocity to the **goal velocity**. The outer loop turns that error into a lean angle, and the inner pitch loop turns the lean-angle error into torque.
-4. The **actuator model** converts the command into applied torque (ideal, or limited by back-EMF, supply voltage, and current). The dynamics model returns how the state changes.
-5. **Metrics** turn a finished trajectory into a score: pitch error, control effort, velocity error against the goal, and a penalty for falling.
-6. The **evaluator** takes a set of gains, runs several scenarios (different start tilts and noise seeds), and returns the mean cost.
-7. The **tuner** proposes gains, reads the evaluator's score, and iterates. Differential evolution and Bayesian optimization are both available; random search is the baseline either has to beat.
-8. The winning gains are re-scored on noise seeds the search never saw (**validation**) to check for overfitting. Runs are logged to **results/** and feed the **paper**, alongside the literature review.
-9. If the hardware phase happens, the validated gains are loaded onto the **physical robot**, and the gap between simulated and measured behavior becomes a central result of the paper.
+`batch_sim/` mirrors this for many robots at once (`BatchRobot`, `simulate`, `policy.py`, `torch_sim.py`). `pivot_sim/` is the pivot side project's model.
 
-## Two robots and the LEGO models (2026-11-22)
+### Stability analysis
 
-**Robot selection.** The project has two robots, chosen once at import (config.py, "ROBOT SELECTION"): `--robot NAME` on the command line, else the `ROBOT` environment variable, else `pololu`. `POLOLU_CONFIG` is config.py's defaults, unchanged. `legobot_config.py` is the LEGO SPIKE build: 2 Large Angular Motors (45602), 69 mm wheels, a Raspberry Pi 3B with a Build HAT, a SparkFun Auto pHAT (ICM-20948 IMU) and a 2S LiPo; its numbers come from `hardware/legobot/DATASHEET.md`. `config.py` provides `load_config(name)`, `add_robot_argument(parser)` and `results_dir(...)`. Pololu results stay in `results/`; LEGO results go to `results/legobot/`. `ProjectConfig.name` is saved in every snapshot. The pivot side project always uses the Pololu robot. The tests run under either robot (`ROBOT=legobot pytest`); tests that check Pololu numbers carry a `pololu_only` skip.
+- `stability.py` gives delay margins with ideal sensing: the controller sees the true state.
+- `stability_pipeline.py` linearizes the LEGO loop as it is simulated and trained: complementary filter, delayed and differenced encoder, back-EMF feedforward and the Build HAT's 10 ms PDM. Main names: `Pipeline`, `Model`, `margin`, `margin_table`, `sensing_models`, `cruise_params`, `corner_params`. With every stage off it reproduces `stability.py`.
+- `simulation/stability_pipeline_table.py` prints the margin table for L and the model-based PID under three sensing models (ideal, sim pipeline, hardware-like). Flags include `--phase-step`, `--imu-delay`, `--right-lag`, `--right-enc-age`, `--max-latency`, `--policy` and `--json`.
+- Method and numbers: `simulation/balance_sim/STABILITY_PIPELINE.md`. Tests: `simulation/tests/test_stability_pipeline.py` (runs only with `ROBOT=legobot`; skipped otherwise).
 
-**Models added for the LEGO robot (SOFTWARE_PLAN Phase B).** Each is in all three engines (`balance_sim`, the NumPy `batch_sim`, bit-identical to the reference, and `batch_sim/torch_sim.py`), is selectable in config, and is used by the LEGO robot only. The Pololu robot keeps its earlier models, so its results are unchanged. Derivations: PHYSICS.md 5.4, 5.5, 9.3 and 9.5.
+## Optimization
+
+| Path | Role |
+|---|---|
+| `tuning/` | `SearchSpace`, `Evaluator` / `EvalConfig`, differential evolution, random search, Bayesian optimization; `reporting.py` (tables, figures, `provenance`) |
+| `batch_tuning/` | `BatchEvaluator`, vectorized DE, CMA-ES, `PolicySearch` / `cma_es_policy_search`; `robust.py` (`RobustnessConfig`: randomized robots, latency, chaos penalty) |
+| `run_batch_tuning.py` | batched PID/LQR tuning; validation only with `--final` |
+| `run_lqr_comparison.py` | PID vs LQR (Pololu robot) |
+| `run_neuroevolution.py` | trains learned policies (`--method`, `--profile`, `--run-seed`, `--resume`) |
+| `compare_controllers.py` | tiers, run-level statistics, latency sweep (`--tier`, `--policies`, `--latency-sweep`, `--final`, `--reference`) |
+| `export_policy.py` | writes a policy bundle for the robot (`--name`, `--synthetic`, `--robot`, default `legobot`) |
+| `power.py` | keeps long runs from being throttled by Windows; logs GPU power |
+
+The LEGO robot has no LQR. Its reference PID is frozen in `results/legobot/reference_pid/comparison.json` by `hardware/legobot/e2_freeze_reference.py`.
+
+## The LEGO robot (`hardware/legobot/`)
+
+Hardware: 2 LEGO SPIKE Large Angular Motors, a Raspberry Pi 3B with a Build HAT, a SparkFun Auto pHAT (ICM-20948 IMU) and a 2S LiPo (`hardware/legobot/DATASHEET.md`).
+
+### Robot code (`hardware/legobot/robot/`)
+
+| Module | Role |
+|---|---|
+| `balance.py` | the balancing loop and its command line |
+| `control.py` | hardware-free core, shared with the simulator: `Brain`, `PitchEstimator`, `Feedforward`, `Safety`, `LineClock`, `Pacer`, `CommandDelay`, `EnvelopeMonitor`, `load_policy_bundle`, `self_test_policy`, `build_controller` |
+| `loop_config.py` | loop limits and constants (`TILT_LIMIT`, `VIN_CUTOFF`, `GOLDEN_TOL`, `MAX_ADDED_DELAY_S`, `POLICIES_DIR`, ...) |
+| `hw_config.py`, `buildhat_serial.py`, `imu.py`, `battery.py` | ports and signs; the Build HAT serial driver (`BuildHat`); the IMU (`Imu`); battery voltage |
+| `calibrate.py` | `balance` (pitch zero) and `signs`; writes `~/legobot/calibration.json` |
+| `sim_hw.py` | simulated HAT, IMU and clock: `python -m robot.balance --sim` from `hardware/legobot` runs the real loop against the simulator |
+| `run_safe.sh`, `kill9_test.sh` | run a script with the motors stopped on any exit; test that |
+| `bench_log.py`, `duty_sweep.py`, `imu_axes.py`, `lock_sweep.py`, `probe_hat.py`, `measure/` | bench tools |
+
+Controllers (`--controller`): `hand`, `model`, a gains JSON, a bundle path, or `policy:<name>` (a bundle in `~/legobot/policies`). A policy is checked against the deployed config and replayed against its golden vectors before it runs (`--allow-unchecked`, `--allow-config-mismatch` skip parts of this).
+
+Each tick (200 Hz): read the IMU → complementary filter → newest motor data → safety checks → controller → feedforward duty per wheel → one serial command for both motors. The tick can be locked to the HAT's data lines (`LineClock`, `Pacer`; `--no-line-lock` uses the Pi's clock).
+
+**Added delay (E3 Block D).** `--added-delay-ms N` puts a FIFO (`control.CommandDelay`) between the controller and the HAT write. N must be a whole number of 5 ms ticks, at most `loop_config.MAX_ADDED_DELAY_S` (50 ms); `control.added_delay_ticks` checks it. The FIFO delays the final duty, at the same point as the simulator's latency, so the controller's own state keeps what it issued. Safety trips bypass it. `_raw.csv` logs `duty_left/right` (written) and `issued_left/right` (computed). This is committed but not yet deployed to the Pi.
+
+### Analysis tools (laptop)
+
+| Script | Role |
+|---|---|
+| `replay_policy.py` | P4b: re-runs a logged policy run tick by tick through a fresh `PolicyController` and checks the logged torques |
+| `score_run.py` | P8: scores runs with the simulator's cost; `--run-sheet` writes counterbalanced run sheets |
+| `sim_vs_real.py` | overlays the nominal simulator on a logged policy run: `--mode resync` (re-started from the logged state every `--resync` s) or `--mode free` |
+| `session_metrics.py` | the E3 preregistered metrics and hypothesis checks (`--block A|B|C`); uses `score_run` for cost and falls |
+
+`sim_vs_real.py` and `session_metrics.py` default to folders on Evan's laptop (`C:\balancebot_training\legobot\pi_logs`, `C:\balancebot\reports\sim_vs_real`).
+
+### Laptop-side scripts (`hardware/legobot/`)
+
+- `legobot_scenario.py` derives the LEGO test scenario (`--check` reproduces config's numbers). `legobot_baselines.py`, `legobot_numbers.py`, `legobot_learning_scales.py` give baselines, derived numbers and learning scales.
+- `e1_*.py`: Phase E1 tuning, ablations and provenance (`hardware/legobot/E1_NOTES.md`).
+- `e2_select.py` (E2.2 policy selection), `e2_freeze_reference.py` (E2.3), `e2_gate_b.py` (E2.4): see `hardware/legobot/E2_PLAN.md`.
+- `backlash_check.py`, `pwm_pulse_check.py`: checks of the backlash and PWM models.
+
+## Two robots and the LEGO models
+
+**Robot selection.** `POLOLU_CONFIG` is config.py's defaults. `legobot_config.py` is the LEGO build. `ProjectConfig.name` is saved in every snapshot. The pivot side project always uses the Pololu robot. The tests run under either robot (`ROBOT=legobot`); tests that check Pololu numbers carry a `pololu_only` skip.
+
+**Models added for the LEGO robot (SOFTWARE_PLAN Phase B).** Each is in all three engines, selectable in config, and used by the LEGO robot only. The Pololu robot keeps its earlier models. Derivations: PHYSICS.md.
 
 | Step | Component | Where |
 |---|---|---|
-| B1 | Voltage-mode driver with back-EMF feedforward | `VoltageModeActuator` (actuators.py); `ActuatorConfig.model = "voltage"`, `voltage_feedforward`, `voltage_feedforward_gain` |
-| B2 | IMU and the robot code's complementary filter | `IMUSensor`, `ComplementaryFilter`, `accelerometer_tilt` (sensors.py); `SensorConfig.model = "imu"`, `imu_height`, `filter_time_constant` |
-| B3 | Encoder as the Build HAT reports it | `Encoder` (sensors.py); `SensorConfig.encoder_counts`, `encoder_period_s`, `encoder_delay_s` |
+| B1 | Voltage-mode driver with back-EMF feedforward | `VoltageModeActuator`; `ActuatorConfig.model = "voltage"` |
+| B1b | Build HAT slow PWM, applied by pulse-density modulation | `SlowPwmActuator`, `pdm_update`; `ActuatorConfig.model = "slow_pwm"` |
+| B2 | IMU and the robot code's complementary filter | `IMUSensor`, `ComplementaryFilter`, `accelerometer_tilt`; `SensorConfig.model = "imu"` |
+| B3 | Encoder as the Build HAT reports it | `Encoder`; `SensorConfig.encoder_counts`, `encoder_period_s`, `encoder_delay_s` |
 | B4 | Motor L/R folded into the latency, not modeled | PHYSICS.md 10.3 |
-| B6 | Pitch offset drawn per scenario | `BatchRobot.pitch_bias`, `robot_from_eval_config`, `pitch_bias_at`; `randomize_range` entry `("pitch_bias", -0.015, 0.015)` in legobot_config.py |
+| B5 | Gearbox and coupling backlash | `RobotConfig.gearbox_backlash`, `coupling_backlash` |
+| B6 | Pitch offset drawn per scenario | `BatchRobot.pitch_bias`; `randomize_range` entry `("pitch_bias", ...)` in legobot_config.py |
 
-New tests (run under both robots):
+Tests for these: `test_voltage_mode.py`, `test_slow_pwm.py`, `test_imu.py`, `test_encoder.py`, `test_backlash.py` in `simulation/tests/`.
 
-- `simulation/tests/test_voltage_mode.py`: the voltage-mode driver and its feedforward.
-- `simulation/tests/test_imu.py`: the accelerometer tilt, the complementary filter and the IMU sensor.
-- `simulation/tests/test_encoder.py`: the encoder's counts, period, delay and quantization noise.
+## Entry points
 
-Results and experiments for these models are in `hardware/legobot/A4_BASELINES.md`. The scenario for the LEGO robot is derived by `hardware/legobot/legobot_scenario.py`, with the method of config.py's `ScenarioConfig` (`--check` reproduces config.py's numbers).
+Run from the project root unless noted. For the LEGO robot set `ROBOT=legobot`; scripts that call `add_robot_argument` also take `--robot legobot`.
+
+| Command | What it does |
+|---|---|
+| `python simulation/examples/run_demo.py` | an ideal and a harder simulated run, with metrics and plots |
+| `python optimization/run_batch_tuning.py` | batched PID tuning |
+| `python optimization/run_neuroevolution.py` | train a learned policy |
+| `python optimization/compare_controllers.py` | compare controllers |
+| `python optimization/export_policy.py <run folder> --name <name>` | export a policy bundle |
+| `python simulation/stability_pipeline_table.py` | LEGO delay-margin table |
+| `python simulation/animate.py --csv <file>` | replay a logged or saved run |
+| `bash hardware/legobot/deploy.sh [host]` | copy the robot code and bundles to the Pi |
+| `robot/run_safe.sh robot.balance --controller policy:<name> --seconds 20` | on the Pi, from `~/legobot` |
+| `python -m robot.balance --sim` | from `hardware/legobot`: the loop against the simulator |
+| `python -m robot.replay_policy logs/<stamp>_<label>` | from `hardware/legobot` |
+| `python -m robot.score_run logs/*_run.csv` | from `hardware/legobot` |
+| `python hardware/legobot/robot/sim_vs_real.py <stamp or _run.csv> --mode resync` | sim-vs-real overlay |
+| `python hardware/legobot/robot/session_metrics.py --block A` | E3 session metrics |
+
+## Tests
+
+- `python -m pytest` runs `simulation/tests` and `optimization/tests` (pytest.ini): about 750 tests under the Pololu robot, a few more with `ROBOT=legobot`.
+- The robot code's tests are separate: `python -m pytest hardware/legobot/robot` (about 130 tests: `test_control.py`, `test_added_delay.py`, `test_session_metrics.py`, `test_sim_vs_real.py`, `measure/test_fit.py`).
+- Use the project venv and hide the GPU for CPU-only runs; see `CLAUDE.md`.
+
+## Not built
+
+- 3D / PyBullet model to validate the 2D assumptions.
+- Deep reinforcement learning (PPO, residual PPO): docs/ml-baselines-plan.md section 6.
 
 ## Change log
 
@@ -218,4 +290,4 @@ Results and experiments for these models are in `hardware/legobot/A4_BASELINES.m
 - 2026-11-23 (PR #10 review fixes): an adversarial code review of the learned-controller work (Fable 5.2) found no bug in the simulators, the evaluator or the statistics as implemented, and confirmed L's dev result in the one-robot reference; its findings were about meaning and drift. Fixed: `reference_pid_file` points at the re-tuned PID (`results/pololu/lqr_comparison/20261109-000021`; gate re-measured, +0.63% / -0.68%); the duplicate `validation_seeds` is gone and 2000-2099 are retired; `run_lqr_comparison.py` and `run_batch_tuning.py` score validation only with `--final` (dev otherwise); `compare_controllers.py` adds a cost-based latency-sweep metric with a 10 ms baseline (a controller past its delay margin can oscillate without falling: L does, from about 25 ms), a paired method-against-method interval, a per-weighting fall-ordering check and per-run config warnings, and labels the order-statistic interval conditional on the scenarios; `run_neuroevolution.py` scores each checkpoint at the last generation not past its mark, charges A-warm's L budget in its cap and marks, refuses to resume under a changed config (`ProjectConfig.scoring_differences`), and logs the median step size. A float32 GPU run resumed in a new process matches an uninterrupted one exactly. The recorded L run predates the latency change and stays a development result. Tests: 582 (with the LEGO robot's, merged from main).
 - 2026-11-23 (robots' results separated): every robot has its own results tree. `config.results_dir` now always gives `results/<robot>/<kind>`; the Pololu robot's results moved from `results/<kind>` to `results/pololu/<kind>` (git mv; the pivot side project's too, as it builds on the Pololu robot), and every text reference in the code and docs was rewritten. Training runs write to `<training folder>/<robot>/` (`training_output_root`), and the existing local runs moved to `C:/balancebot_training/pololu/`. Word and PowerPoint files (paper/methods.docx, docs/*.docx and *.pptx) were not edited and may still cite the old paths. Tests: 583.
 - 2026-11-23 (learned controllers on the LEGO robot, before E1): `legobot_config.LEARNING` gives the LEGO robot its own observation and output scales, measured from its closed loop (hand-tuned PID and its PID-equivalent linear policy, the LEGO models, 150 dev runs of 60 s); velocity error and torque use 99th percentiles where the Bryson limits don't fit this robot. `LearningConfig.reference_pid_file` may be None: the reference is then the robot's own hand-tuned PID, flagged by `ProjectConfig.reference_is_provisional` in compare_controllers.py (which compares against the robot's hand-tuned and model-based PIDs) and run snapshots; `config.read_pid_comparison` reads run_batch_tuning.py's comparison.json as well as run_lqr_comparison.py's, for when E2 gives the LEGO robot a tuned reference. On the LEGO robot: L-PID is within 1% of the hand-tuned PID where both stay up (+0.63% training, -0.99% dev; their few falls differ, so the plain gate is unreadable until a reference that never falls), a generation takes 4.2 s (L), 17.1 s (MLP) and 18.2 s (B1), and a quick L run works end to end. Details: docs/ml-baselines-plan.md section 13. Tests: 587.
-
+- 2026-11-26 (documentation): this file rewritten to match the repository after the LEGO robot work: the layout, the data flow from simulation to the Pi and back, the robot code (`hardware/legobot/robot/`), policy bundles (`export_policy.py`, `deploy.sh`), the stability pipeline (`stability_pipeline.py`, `stability_pipeline_table.py`), the added-delay FIFO (`--added-delay-ms`, not yet deployed) and the analysis tools (`replay_policy`, `score_run`, `sim_vs_real`, `session_metrics`). The component-status table was replaced by the module tables above. Earlier entries are kept as they were written; their paths and test counts are those of their date. Tests: 749 (`python -m pytest`; 757 with `ROBOT=legobot`), plus 131 in `hardware/legobot/robot`.

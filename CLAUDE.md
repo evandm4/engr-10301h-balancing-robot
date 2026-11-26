@@ -14,11 +14,12 @@ on the RTX 5070 Ti, pytest). The system Python lacks torch, so the GPU engine's 
 
 - `python -m pytest` runs the default (Pololu) robot. `ROBOT=legobot python -m pytest` runs the LEGO robot;
   run both after any change to the simulator, the tuner or a config.
-- The LEGO robot's own code: `python -m pytest hardware/legobot/robot/test_control.py hardware/legobot/robot/measure/test_fit.py`.
+- The LEGO robot's own code: `python -m pytest hardware/legobot/robot` (not part of the default run).
 - Every model change must land in all three engines (`simulation/balance_sim`, `simulation/batch_sim`,
   `batch_sim/torch_sim.py`); `test_equivalence.py` and `test_torch.py` hold them to each other.
 
 ## Where things are
 
-`README.md` has the layout and the order everything runs in. For the LEGO robot, read
+`README.md` has the layout and the order everything runs in; `ARCHITECTURE.md` has the modules, the data
+flow from simulation to the Pi and back, and the entry points. For the LEGO robot, read
 `hardware/legobot/SOFTWARE_PLAN.md` first.

@@ -4,15 +4,20 @@ One config, one simulator (with a batched version of it), one tuner (with a batc
 
 ```
 config.py                  every adjustable number (robot, motor, sensor, timing, cost, scenario, search bounds, LQR, robustness,
-                           learned policies)
+                           learned policies); robot selection (--robot / ROBOT) and results_dir()
+legobot_config.py          the LEGO robot's config (ROBOT=legobot or --robot legobot)
+pivot_config.py            the pivot side project (see below)
 simulation/
   balance_sim/             reference simulator: one robot at a time, readable, the source of truth;
-                           controllers: cascaded PID and LQR (lqr.py), plus loop stability (stability.py)
+                           controllers: cascaded PID and LQR (lqr.py), plus loop stability (stability.py,
+                           and stability_pipeline.py with the LEGO sensor pipeline; STABILITY_PIPELINE.md)
                            and a PID designed from the linear model alone (pid_design.py);
                            learned policies: linear, MLP, residual on the PID (policy.py)
   batch_sim/               the same simulator stepping many robots at once (NumPy on the CPU, or PyTorch on the GPU)
+  pivot_sim/               the pivot side project's model
   examples/                demo runs with plots; physics_checks.py reproduces every number in PHYSICS.md
   animate.py               watch runs: animated side view + live plots, simulated or replayed from CSV
+  stability_pipeline_table.py   LEGO delay-margin table: L vs the model-based PID under three sensing models
   tests/                   balance_sim tests; batch_sim checked against balance_sim
   CONDITIONS.md            which real-world effects are modeled
 optimization/
@@ -26,7 +31,15 @@ optimization/
   benchmark.py             speed of the reference code
   benchmark_batch.py       speed of the batched code
   benchmark_policies.py    seconds per CMA-ES generation for each learned policy
+  export_policy.py         write a trained (or synthetic) policy as a bundle for the robot: results/<robot>/policies/<name>/
+  power.py                 keeps long training runs from being throttled by Windows; logs GPU power
+  pivot_tuning/, run_pivot_tuning.py   the pivot side project's tuner (see below)
   tests/                   tuner and config tests
+hardware/legobot/          the physical LEGO robot: DATASHEET.md, SOFTWARE_PLAN.md, POLICY_ON_ROBOT_PLAN.md, E2_PLAN.md,
+                           bench checks, experiment notes; laptop-side scripts (legobot_scenario.py, e1_*.py, e2_*.py, ...)
+  robot/                   the code that runs on the Pi (balance.py, control.py, ...) and laptop analysis tools
+                           (replay_policy.py, score_run.py, sim_vs_real.py, session_metrics.py)
+  deploy.sh                copy the robot code and policy bundles to the Pi
 results/                   one tree per robot (config.results_dir), so the robots' results never mix:
   pololu/                  the Pololu robot (and the pivot side project, which builds on it)
     tuning/                run_tuning.py output
@@ -37,13 +50,17 @@ results/                   one tree per robot (config.results_dir), so the robot
     comparison/            compare_controllers.py output
     benchmarks/            the benchmarks
     pivot_tuning/          run_pivot_tuning.py output
-  legobot/                 the LEGO robot (ROBOT=legobot or --robot legobot), same layout
+  legobot/                 the LEGO robot (ROBOT=legobot or --robot legobot): batch_tuning/, comparison/, benchmarks/,
+                           policies/ (exported bundles), reference_pid/ (the frozen reference PID), e1_*/ and
+                           e2_selection/ (experiment results)
 scripts/                   cluster wrappers (SLURM) that only call the normal entry points
-docs/                      plans; ml-baselines-plan.md is the learned-controller plan
+docs/                      plans and reviews; ml-baselines-plan.md is the learned-controller plan
+paper/                     methods draft, figures and results notes
+literature/                reference papers
 archive/                   the superseded original code and its results (unused)
 ```
 
-More detail: `ARCHITECTURE.md` (design, status, change log), `BATCHED.md` (the batched/GPU engine, its verification and speed), `PHYSICS.md` (derivation of every equation in the simulator, its limits, and what to improve), `LQR.md` (the LQR controller, and how it compares with the PID), `simulation/CONDITIONS.md`.
+More detail: `ARCHITECTURE.md` (layout, data flow from simulation to the robot, entry points, change log), `BATCHED.md` (the batched/GPU engine, its verification and speed), `PHYSICS.md` (derivation of every equation in the simulator, its limits, and what to improve), `LQR.md` (the LQR controller, and how it compares with the PID), `simulation/CONDITIONS.md`. For the LEGO robot: `hardware/legobot/SOFTWARE_PLAN.md` and `hardware/legobot/POLICY_ON_ROBOT_PLAN.md`.
 
 ## What runs, in order
 
@@ -125,7 +142,8 @@ flowchart LR
 From the project folder, with `C:\venvs\balancebot` active:
 
 ```
-python -m pytest                                                     # every test (587, with the LEGO robot's; 79 of them the learned policies), ~3 min
+python -m pytest                                                     # simulation + optimization tests (749; 757 with ROBOT=legobot)
+python -m pytest hardware/legobot/robot                              # the LEGO robot code's tests (131), not in the default run
 python simulation/examples/run_velocity_demo.py                      # one run, plotted
 python simulation/animate.py                                         # animate hand-tuned vs the latest tuning result
 python simulation/animate.py --gains 1.03 0.2 0.1 0.33 --speed 0.5   # any gains, slow motion
@@ -140,13 +158,25 @@ ROBOT=legobot python optimization/run_neuroevolution.py --method linear   # the 
 python optimization/run_neuroevolution.py --method mlp --profile full --run-seed 3   # one of the 10 final runs
 python optimization/compare_controllers.py --tier dev --policies "L=C:/balancebot_training/pololu/neuroevolution/linear/*/final.npz"
 python optimization/benchmark_policies.py                            # time one generation of each learned policy
+python simulation/stability_pipeline_table.py                        # LEGO delay margins with its sensor pipeline
+```
+
+LEGO robot, from training to the robot (details in `ARCHITECTURE.md`):
+
+```
+python optimization/export_policy.py <training run folder> --name <name>   # bundle in results/legobot/policies/<name>/
+bash hardware/legobot/deploy.sh [host]                                     # copy code + bundles to ~/legobot on the Pi (default host legopi)
+robot/run_safe.sh robot.balance --controller policy:<name> --seconds 20    # on the Pi, from ~/legobot
+python -m robot.balance --sim                                              # laptop, from hardware/legobot: the loop against the simulator
+python -m robot.score_run logs/*_run.csv                                   # from hardware/legobot: score logged runs with the sim's cost
+python hardware/legobot/robot/sim_vs_real.py <stamp or _run.csv> --mode resync   # sim next to a logged policy run
 ```
 
 Change the robot, the scenario, the cost or the robustness test in `config.py`, not in the scripts. It's the only place those values are written: the classes it builds (`RobotParams`, `MotorParams`, `EvalConfig`, `SimSpec`, the search space) have no defaults for them, and the tests build from `CONFIG` too.
 
 ## Side project: pivot robot
 
-An offshoot that adds a servo-driven pivot on top of the robot with a second body piece on it (a third degree of freedom and a second actuator). It lives next to the main system and changes none of it: it reuses `balance_sim`'s motor, sensor, cascaded PID and cost code, and `tuning`'s search methods, by calling them. Shared values (wheels, motors, noise, timing, scenario) come from `config.py`; only the new ones are in `pivot_config.py`. The base cost is the exception: the pivot keeps the original cost weights (`PIVOT_BASE_COST`), not `config.py`'s current ones.
+An offshoot that adds a servo-driven pivot on top of the robot with a second body piece on it (a third degree of freedom and a second actuator). It lives next to the main system and changes none of it: it reuses `balance_sim`'s motor, sensor, cascaded PID and cost code, and `tuning`'s search methods, by calling them. Shared values (wheels, motors, noise, timing, scenario, the base cost) come from `config.py`; only the new ones are in `pivot_config.py` (including `PivotCostConfig`, the pivot's added cost terms).
 
 ```
 pivot_config.py                         body split, servo, pivot sensor, pivot gains, LQR weights, extra search bounds
