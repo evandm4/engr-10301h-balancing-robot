@@ -35,6 +35,16 @@ POLICY_LEAD_EXTRA_S = 0.00016  # P3b: added to a policy's lead (control.compute_
                            # forward pass kept them fast (leads 0.20-0.27 ms early); after P3c every policy is
                            # light, the regime this was fitted in. Re-measure in P7 step 2 (cmd_at column, ideally
                            # with the performance governor; see P7_STEP1_NOTES.md).
+# The two above are the ondemand-governor figures (P7 step 1). With the performance governor (P7 steps 2-4,
+# 2026-11-25, e2_post_deploy.sh sets it; it does NOT survive a reboot) everything runs at 1.2 GHz and the
+# in-loop command point is shorter and the same for the PID and the light policies: cmd_at p50, PID (model)
+# 1.019 ms bench / 0.944 floor, l_pid 1.019 / 0.961, l_e2_s1 1.013-1.051 bench / 0.958-0.964 floor (6 floor
+# runs); policy - PID = +0.00 bench / +0.014-0.020 floor against a self-test delta of +0.0095 ms, so no extra.
+# With the old figures the writes landed 0.18 ms (PID) and 0.33-0.41 ms (policies) early. control.lead_constants
+# picks this pair when the loop core's governor reads "performance", else the pair above (the safe side: the
+# slower clock's lead). The MLP policies have not been timed in-loop at full clock yet.
+COMPUTE_LEAD_PERF_S = 0.0010     # between the bench (1.02) and floor (0.94-0.96) medians
+POLICY_LEAD_EXTRA_PERF_S = 0.0
 LINE_UPDATE_TICKS = 20     # re-estimate the line grid every 20 ticks (100 ms)
 LINE_SLOPE = "lsq"         # control.LineClock's period fit: "lsq" (least squares over every arrival) or "envelope"
                            # (lower-envelope fit; balance.py --line-slope). P7 step 1: replaying the reconstructed

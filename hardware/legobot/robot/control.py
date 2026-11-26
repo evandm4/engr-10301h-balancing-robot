@@ -382,12 +382,12 @@ def _time_updates(controller, states, dt, goals=None, base=None):
     return torques, times
 
 
-def self_test_policy(controller, golden, cfg=None, tol=lc.GOLDEN_TOL):
+def self_test_policy(controller, golden, cfg=None, tol=lc.GOLDEN_TOL, governor=None):
     """P2d, P3b: replay the bundle's golden vectors (states and goals into update(), the torques the laptop's
     reference run returned) through the controller; ValueError if any torque differs by more than tol N m (a
     NaN counts as a failure). The controller is reset and its goal (and a residual base PID's) restored
     afterwards, pass or fail. Also times the forward pass, and with cfg a fresh cascaded PID over the same
-    states, for the compute lead (compute_lead: from the two medians).
+    states, for the compute lead (compute_lead: from the two medians and the CPU governor).
     The returned timings are those of the forward path the controller uses (fast or reference, P3c)."""
     import numpy as np
     states = np.asarray(golden["states"], dtype=float)
@@ -428,20 +428,42 @@ def self_test_policy(controller, golden, cfg=None, tol=lc.GOLDEN_TOL):
         _, pid_times = _time_updates(cfg.build_controller(goal=0.0), states, dt)
         pid_ts = sorted(pid_times)
         pid_p50, pid_p99 = _quantile(pid_ts, 0.5), _quantile(pid_ts, 0.99)
-    lead = compute_lead(p50, pid_p50)
+    lead = compute_lead(p50, pid_p50, governor)
     return {"n_ticks": n, "max_torque_err": float(max_err), "mean_s": sum(ts) / n, "p50_s": p50,
             "p99_s": p99, "max_s": ts[-1], "pid_p50_s": pid_p50, "pid_p99_s": pid_p99, "compute_lead_s": lead}
 
 
-def compute_lead(policy_p50, pid_p50=None):
+def compute_lead(policy_p50, pid_p50=None, governor=None):
     """P3b: tick start -> command write for a policy controller, from its self-test forward-pass median:
-    lc.COMPUTE_LEAD_S (the hand PID's) + max(0, policy p50 - PID p50) + lc.POLICY_LEAD_EXTRA_S; without a
+    the hand PID's lead + max(0, policy p50 - PID p50) + the policy extra (lead_constants(governor): the
+    ondemand pair COMPUTE_LEAD_S / POLICY_LEAD_EXTRA_S unless the governor is "performance"); without a
     PID timing the whole policy p50 is added. Medians, not p99s: COMPUTE_LEAD_S is a typical figure, and the
     tail is absorbed by the margin from LINE_WRITE_PHASE_S to the left motor's tick cliff (0.7 ms or more;
     P7 step 1's worst in-loop p99 was 0.5 ms past its lead). The extra is the in-loop cost the self-test
     doesn't see (see loop_config)."""
+    base, extra = lead_constants(governor)
     delta = policy_p50 - pid_p50 if pid_p50 is not None else policy_p50
-    return lc.COMPUTE_LEAD_S + max(0.0, delta) + lc.POLICY_LEAD_EXTRA_S
+    return base + max(0.0, delta) + extra
+
+
+def lead_constants(governor=None):
+    """(hand-PID compute lead, policy extra) for this CPU governor: the performance-governor pair (P7 steps
+    2-4) only when the governor is exactly "performance"; anything else, including unknown (None: laptop,
+    --sim, unreadable sysfs), gets the ondemand pair, whose longer lead is the safe side of the tick cliff."""
+    if governor == "performance":
+        return lc.COMPUTE_LEAD_PERF_S, lc.POLICY_LEAD_EXTRA_PERF_S
+    return lc.COMPUTE_LEAD_S, lc.POLICY_LEAD_EXTRA_S
+
+
+def cpu_governor(cpu=None):
+    """The cpufreq governor of the loop's core (lc.CPU, else cpu0) as a string, or None if it can't be read
+    (not a Linux Pi, e.g. the laptop)."""
+    core = cpu if cpu is not None else (lc.CPU if lc.CPU is not None else 0)
+    try:
+        with open(f"/sys/devices/system/cpu/cpu{core}/cpufreq/scaling_governor") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
 
 
 class EnvelopeMonitor:

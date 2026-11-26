@@ -301,7 +301,9 @@ Every item below was fixed before any E2 L run started. None of it was chosen on
 - In-run dev60 is computed with torch on two GPU architectures (RTX 5070 Ti Laptop, RTX 3080), so **don't compare
   summary.json dev60 across hosts**. At selection, re-score every run's final.npz (and the saved checkpoint
   candidates) on ONE machine, CPU NumPy float64, on the dev tier. Report the even-vs-odd (desktop-vs-laptop) parity.
-- **Pre-registered K-realization re-score (approved 2026-11-25 16:44, before any E2.6 re-score ran).** The reason is
+- **Pre-registered K-realization re-score (approved 2026-11-25 16:44, before any E2.6 re-score ran).** This is a
+  **mid-E2.6 amendment**, not part of the original E2.4 schedule. It was adopted *after* seed 1 had finished and its
+  CPU re-score had been seen, though before any selection re-score of any run. The reason is
   in "Root cause of the CPU-vs-torch train gap" below: one realization carries fall-flip luck of about ±3.7 per fall.
   - K = 5 NumPy f64 realizations of the dev tier (5000–5049 × 3, 60 s). Realization k adds k × 1e-15 rad to every
     scenario's initial tilt, k = 0…4; k = 0 is the plain dev tier. Same machine, `CUDA_VISIBLE_DEVICES=-1`.
@@ -349,6 +351,21 @@ selection: it decides the even/odd = desktop/laptop parity check, since the even
   - Nothing auto-restarts. Resume only on Evan's explicit request, following `C:\balancebot_training\PAUSE_RESUME.md`
     (same queue commands; seed 3 continues from `state.pkl` via `--resume`).
   - The pause interval is a wall-clock disclosure item. `elapsed_s` in the run excludes it.
+- **Laptop resumed 18:20:45 (2026-11-25)** on Evan's request, following `PAUSE_RESUME.md` §4.
+  - The pre-checks passed: no queue processes, worktree at `4582fe7`, on AC power, GPU idle.
+  - Both queues were relaunched with the same commands and set to BelowNormal priority. Seed 3's job log shows
+    "resuming … (state.pkl found)". It reached gen 390 by 18:52, with Turbo (GPU limit ~124 W).
+  - **The pause was 17:12:31 → 18:20:45 (68 min).** The laptop ETA moves back by that much.
+- **Desktop seed 0 finished 2026-11-25 17:32, in a bad basin.** Train was 193.6 and dev60 ~550 (in-run torch). From
+  about gen 9 the search sat in a saturated, bang-bang basin and never left it.
+  - It is kept and will be re-scored with the rest at E2.6. It is **not** dropped, because dropping it would be
+    selection by outcome.
+  - The run is copied to `C:\balancebot_training\legobot\neuroevolution\linear\e2-seed0`. The `e26-desktop` queue
+    logs went to `C:\balancebot_training\legobot\desktop_queue_logs\e26-desktop`, and its Scheduled Task was deleted.
+- **Desktop B1 pilot (after seed 0): GO.** This is a development run under D5, not an E2 L run.
+  - `--max-batch 299700`: 123.6 s/gen, peak VRAM 1607 MiB. Projected ~19.0 h for 500 gens plus 15 checkpoints.
+  - The alternative, 199800, ran at 126.3 s/gen with 1461 MiB, so it was not used.
+  - B1 seed 0 started 17:51:50 (best 14.26 at gen 10).
 
 ## E2.7 (provisional): `l_e2_s1`, the first finished L run
 
@@ -358,7 +375,8 @@ selection: it decides the even/odd = desktop/laptop parity check, since the even
 
 Seed 1 (laptop EVANS-G16, worktree `4582fe7`) finished 2026-11-25 15:13:52 after 3.15 h. It ran 539 generations,
 1.242e9 robot-s (83 % of the 1.5e9 budget). The stop reason was CMA-ES's own `tolupsigma`; the stagnation stop is off.
-That stop is still active under `stagnation_checkpoints=0`: sigma had grown to ~2.6e3 by gen 383 while the steps shrank.
+That stop is still active under `stagnation_checkpoints=0`: sigma grew from ~2.5e3 at gen 380 to 2.0e6 at the stop (gen
+539) while the actual steps shrank (details below).
 The other seeds may stop the same way; that is a disclosure item for E2.6, not a defect. Within-run selection (dev60,
 in-run torch) picked `checkpoints/mean_8.986e08.npz` (gen 390). It had dev60 19.715 with 0 falls, against
 19.75–19.83 for every checkpoint from 3e8 on. All checkpoints from 2e8 on have 0 dev falls, so the plateau is flat and
@@ -389,6 +407,15 @@ seeds were touched.
 
 Bundle `results/legobot/policies/l_e2_s1`: linear, 10 params, 10 MAC/tick, sha256 `58cb3c615a43…`, golden 400 ticks,
 envelope 15 runs with 0 falls. Source label: "PROVISIONAL E2.5 L run seed 1 (first finished; not the E2.6 selection)".
+
+**On the robot (2026-11-25, deploy `6fe3e0b`; details in [P7_STEP2_4_NOTES.md](P7_STEP2_4_NOTES.md)).**
+- Standing still for 10 s on the floor: cost 2.70, against l_pid 3.40 and model PID 3.84 (one run each). Max tilt was
+  5.9°, and the wobble was 7.9–11.4° p-p at 2.4 Hz, not growing (sim ≈ 9°).
+- Taps of 12–19° settle in 0.3–0.7 s. It survived 36 s of pushes up to ~27° plus obstacle contact, ended by a
+  deliberate grab.
+- Every replay matched (diff 0).
+- The scenario/driving run is still pending. These runs are robot validation of a provisional bundle, so they are
+  **not** E2.6 selection evidence.
 
 ### Root cause of the CPU-vs-torch train gap (seed 1) and the `tolupsigma` stop
 

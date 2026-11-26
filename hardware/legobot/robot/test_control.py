@@ -968,6 +968,50 @@ def test_compute_lead_reproduces_the_p7_step1_calibration():
     assert control.compute_lead(0.1e-3) == pytest.approx(lc.COMPUTE_LEAD_S + 0.1e-3 + lc.POLICY_LEAD_EXTRA_S)
 
 
+def test_compute_lead_performance_governor_matches_p7_steps_2_to_4():
+    """P7 steps 2-4 (2026-11-25, performance governor): in-loop command point p50s on the bench and floor.
+    The performance pair lands each within 0.06 ms either way; the ondemand pair had them 0.18-0.41 ms early.
+    Self-test medians on the Pi: l_pid 25.8, l_e2_s1 25.9, PID 16.3 us."""
+    pid = 16.3e-6
+    # name: (self-test p50, in-loop cmd_at p50s, bench then floor)
+    observed = {"model": (None, [1.019e-3, 0.944e-3]),
+                "l_pid": (25.8e-6, [1.019e-3, 0.961e-3]),
+                "l_e2_s1": (25.9e-6, [1.051e-3, 1.013e-3, 1.016e-3, 0.964e-3, 0.958e-3, 0.958e-3, 0.961e-3])}
+    for name, (p50, in_loops) in observed.items():
+        lead = (control.lead_constants("performance")[0] if p50 is None
+                else control.compute_lead(p50, pid, "performance"))
+        old = lc.COMPUTE_LEAD_S if p50 is None else control.compute_lead(p50, pid)
+        for in_loop in in_loops:
+            assert abs(lead - in_loop) <= 0.06e-3, (name, lead, in_loop)
+            assert old - in_loop >= 0.14e-3, (name, old, in_loop)      # the old pair: early by more
+    # only the exact string "performance" switches; unknown or other governors keep the slower clock's lead
+    for gov in (None, "ondemand", "schedutil", "powersave", "Performance"):
+        assert control.lead_constants(gov) == (lc.COMPUTE_LEAD_S, lc.POLICY_LEAD_EXTRA_S)
+        assert control.compute_lead(25.9e-6, pid, gov) == control.compute_lead(25.9e-6, pid)
+    assert control.lead_constants("performance") == (lc.COMPUTE_LEAD_PERF_S, lc.POLICY_LEAD_EXTRA_PERF_S)
+    assert lc.COMPUTE_LEAD_PERF_S < lc.COMPUTE_LEAD_S      # full clock is faster, never the other way
+    # the write still lands before the left motor's tick cliff (7.2 ms) at the worst in-loop p99 seen (1.34 ms)
+    assert lc.LINE_WRITE_PHASE_S - lc.COMPUTE_LEAD_PERF_S + 1.34e-3 < 7.2e-3
+
+
+def test_cpu_governor_reads_sysfs_or_none(monkeypatch, tmp_path):
+    import builtins
+    real_open = builtins.open
+    gov = tmp_path / "scaling_governor"
+    gov.write_text("performance\n")
+
+    def fake_open(path, *args, **kwargs):
+        if str(path).startswith("/sys/devices/system/cpu/cpu"):
+            assert str(path) == f"/sys/devices/system/cpu/cpu{lc.CPU if lc.CPU is not None else 0}/cpufreq/scaling_governor"
+            return real_open(gov, *args, **kwargs)
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", fake_open)
+    assert control.cpu_governor() == "performance"
+    gov.unlink()
+    assert control.cpu_governor() is None          # unreadable -> None -> the ondemand (safe) pair
+
+
 _COMMITTED_POLICIES = Path(__file__).resolve().parents[3] / "results" / "legobot" / "policies"
 # The committed bundle set changes between branches (E2.4 retires quick_l), so the bit-identity test runs on
 # every bundle that is there; the three synthetic kinds (linear, warm MLP, residual MLP) must always be there.

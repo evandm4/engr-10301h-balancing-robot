@@ -512,7 +512,8 @@ def main(argv=None):
                          f"{lc.ENVELOPE_TRIP_S} s (default off: excursions are only logged)")
     ap.add_argument("--compute-lead", type=float, default=None,
                     help="tick start to command write, s (default: on the robot, a policy's self-test lead, "
-                         f"else loop_config.COMPUTE_LEAD_S = {lc.COMPUTE_LEAD_S}; --sim always the latter)")
+                         f"else loop_config.COMPUTE_LEAD_PERF_S = {lc.COMPUTE_LEAD_PERF_S} under the performance "
+                         f"governor or COMPUTE_LEAD_S = {lc.COMPUTE_LEAD_S}; --sim always the latter)")
     ap.add_argument("--no-drive", action="store_true", help="compute everything but send no motor commands")
     ap.add_argument("--calibration", default=lc.CALIBRATION_FILE)
     ap.add_argument("--no-calibration", action="store_true", help="pitch zero 0 (no calibration.json)")
@@ -657,8 +658,12 @@ def main(argv=None):
         # P2d, P3b: the golden vectors before gyro calibration (so a refusal costs no holding still), at the
         # loop's priority, so the timing is the loop's
         self_test = None
+        # P7 steps 2-4: the compute lead depends on the CPU clock; the performance governor's pair is used only
+        # when the loop core reads "performance" (control.lead_constants). --sim: unknown -> the fixed lead
+        governor = None if a.sim else control.cpu_governor()
+        notes["cpu governor"] = governor or "unknown"
         if bundle is not None and bundle.get("golden") is not None:
-            self_test = control.self_test_policy(controller, bundle["golden"], cfg)
+            self_test = control.self_test_policy(controller, bundle["golden"], cfg, governor=governor)
             notes["self-test"] = (f"{self_test['n_ticks']} golden ticks, max torque error "
                                   f"{self_test['max_torque_err']:.3g} N m (tol {lc.GOLDEN_TOL:g}); forward pass mean "
                                   f"{self_test['mean_s'] * 1e6:.1f} p50 {self_test['p50_s'] * 1e6:.1f} p99 "
@@ -687,7 +692,9 @@ def main(argv=None):
     elif self_test is not None and not a.sim:
         compute_lead, lead_source = self_test["compute_lead_s"], "policy self-test"
     else:
-        compute_lead, lead_source = lc.COMPUTE_LEAD_S, "loop_config.COMPUTE_LEAD_S"
+        compute_lead = control.lead_constants(governor)[0]
+        lead_source = ("loop_config.COMPUTE_LEAD_PERF_S (performance governor)" if governor == "performance"
+                       else "loop_config.COMPUTE_LEAD_S")
     notes["compute lead"] = f"{compute_lead * 1e3:.3f} ms ({lead_source})"
 
     # D2: lock the ticks to the HAT's data-line grid (lines have been arriving through the gyro calibration)
