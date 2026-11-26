@@ -414,8 +414,11 @@ envelope 15 runs with 0 falls. Source label: "PROVISIONAL E2.5 L run seed 1 (fir
 - Taps of 12–19° settle in 0.3–0.7 s. It survived 36 s of pushes up to ~27° plus obstacle contact, ended by a
   deliberate grab.
 - Every replay matched (diff 0).
-- The scenario/driving run is still pending. These runs are robot validation of a provisional bundle, so they are
-  **not** E2.6 selection evidence.
+- The scenario run (goal `scenario`, 20 s, after redeploying `24b9b46`) finished. It tracked +0.40 / −0.15 m/s within
+  0.03 m/s, max tilt 12.1°, with no 3.8 Hz mode, and curved right as predicted.
+- A slow creep while standing still (1–2 cm/s) follows the mean measured lean. It is a zero/balance-point offset;
+  see P7_STEP2_4_NOTES.md.
+- These runs are robot validation of a provisional bundle, so they are **not** E2.6 selection evidence.
 
 ### Root cause of the CPU-vs-torch train gap (seed 1) and the `tolupsigma` stop
 
