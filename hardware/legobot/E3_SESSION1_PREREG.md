@@ -23,8 +23,9 @@ Sources are cited as [P7] = `P7_STEP2_4_NOTES.md`, [REV] = `C:\balancebot\REVIEW
 - The full plan is ~30 runs; one 600 mAh charge gives ~12–15 [P7]. Charge 1 runs, in this order:
   1. **Block A** complete: A1, trim, A2, A3+, A3−, A4, A5 (6 runs).
   2. **Block B group 1**: M P L L P M (6 runs).
-  3. **Block C, first two L runs** (positions 1 and 3 of L M L L M L are both L; run them as L, L) — only if the
-     start vin is still ≥ 7.6 V. Otherwise they move to charge 2.
+  3. **Block C, positions 1–3 of L M L L M L (L, M, L)**: run only while the start vin is ≥ 7.6 V; whatever
+     doesn't fit moves to charge 2. Evan agreed to the M condition on 2026-11-25 at 22:26, before any run, so
+     H-C5 is active.
 - Charge 2+: Block B groups 2–3, the rest of Block C. H-B1/B2 are tested only after all 18 Block B runs; after
   charge 1 the Block B numbers are reported as interim descriptives, with no test.
 - **Trim method:** as in Block A (calibration.json via `merge_save`), using `C:\balancebot_training\shared\pi\e3_set_pitch_zero.sh <rad> <note>`,
@@ -201,3 +202,24 @@ Also report each controller's run-to-run sd: it sets N for the next pre-registra
    - the run-to-run sd per controller (it feeds the next pre-registration).
 
    Failed predictions are reported as prominently as passed ones.
+
+## 5. Clarifications fixed before any E3 data (2026-11-25, ~22:30)
+
+`session_metrics.py` was written against this document and turned up these ambiguities. They are settled here,
+**before the first session-1 run**, so they aren't deviations:
+
+1. **H-A3 source:** the "5 L runs" behind the −0.849 slope are 000104 and 010508 (still), 000439 (taps), and
+   000828 and 000949 (pushes, 000949 cut at 35 s). The session-1 fit itself uses only the still runs A1, A2, A3±, A5.
+2. **H-C1 plateaus:** the opening goal-0 hold (0–2 s) counts as a plateau. That is what the written definition
+   says, and it gets the same ±0.05 m/s rule (run 9: −0.007).
+3. **H-C3 spectrum:** fs is the nominal 200 Hz, so 4 s windows have 0.25 Hz bins. "Total > 0.25 Hz" starts at
+   the 0.5 Hz bin. "Peak in 3.3–4.3 Hz" means the 3.5–4.25 Hz bins.
+4. **H-A2:** |v̄| < 0.005 m/s with |θ̄| ≥ 0.004 rad is **inconclusive**.
+5. **H-A4:** the verdict uses |Δθ̄|, as the pass rule states. The sign is reported separately: forward (+) matches
+   the prediction's direction.
+6. **H-A5:** supported if 0.0008 rad/°C × (max − min of all Block A SoC readings) < ½ |Δθ̄(H-A4)|. If H-A4 is
+   "not supported", H-A5 is **not applicable**: there is no shift to explain.
+7. **H-B4:** pool every 2 s window across a controller's runs and take the median.
+8. **`t_max` crops** the θ̄, v̄, window, plateau and wheel-ratio metrics, but not `score_run`'s `cost`, which is
+   always the whole run.
+9. **Armed span** = rows with `phase == 1`, as in `balance.write_logs`.
