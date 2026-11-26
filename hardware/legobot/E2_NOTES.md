@@ -376,6 +376,19 @@ selection: it decides the even/odd = desktop/laptop parity check, since the even
   - Job 2: `--method residual --profile full --float64 --train-seeds 150 --max-batch 299700 --allow-screen-off
     --run-seed 1 --out C:/balancebot_training/legobot/neuroevolution/residual/e2-seed1`. These are the seed 0 settings
     with only the run seed changed. Expected ~19 h, so it ends around Fri 08:00.
+- **Laptop seed 7 finished 2026-11-26 02:43, BAD (same relay basin as seed 0).** It ran 172 min, stopping at gen 549 on
+  `tolupsigma` (degenerate: sigma blew up while the covariance collapsed), 1.265e9 robot-s. Selected policy = the
+  gen-13 best sample: train 235.02, dev20 231.05 (2 falls), dev60 619.73 (2 falls). CPU train-150 re-score 235.06
+  (7 falls), |w| 182, 96.9 % of ticks saturated. Seed 9 started 02:43.
+  - Kept for E2.6, like seed 0 (dropping it would be selection by outcome). **Bad so far: 2 of 5 finished seeds (0, 7)**;
+    Clopper-Pearson 95 % CI ≈ [0.05, 0.85].
+  - Diagnosis (overnight read-only investigation, scratch `BASIN_REPORT.md`, not yet reviewed by Evan): all five seeds
+    start from a random x0 (N(0,1), sigma0 2) and reach the same saturated high-gain relay plateau by gen 8–13. Seeds 1,
+    3, 5 escaped by shrinking |w| ~1000×; seeds 0 and 7 froze because CMA-ES's relative step collapsed. It is a search
+    stagnation, not a deep minimum: the straight line from seed 0's policy to the good optimum is downhill.
+  - E2.6 is not affected: bad seeds score dev60 ~550–620 against ~19.8, so best-of-10 picks a good seed if any is good.
+    Any training-reliability statement must give k/10 with a CI and the per-seed list, not a cross-seed mean ± SD.
+  - Proposals for later experiments (warm start from L-PID, pre-registered restarts) are Evan's call; nothing changes for E2.
 
 ## E2.7 (provisional): `l_e2_s1`, the first finished L run
 
