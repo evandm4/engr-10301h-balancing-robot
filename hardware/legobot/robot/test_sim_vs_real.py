@@ -140,3 +140,10 @@ def test_wobble_stats_finds_frequency():
     w = svr.wobble_stats(y, dt)
     assert abs(w["peak_hz"] - 2.5) < 0.3
     assert abs(w["rms"] - 0.01 / np.sqrt(2)) < 0.002
+
+
+def test_caption_wraps_without_losing_words():
+    for width in (125, 190):
+        lines = svr.caption_lines(width)
+        assert len(lines) > 1 and max(map(len, lines)) <= width
+        assert ' '.join(lines).split() == svr.CAVEAT.split()

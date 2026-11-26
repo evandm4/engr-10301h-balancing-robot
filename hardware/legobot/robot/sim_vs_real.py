@@ -624,6 +624,17 @@ CAVEAT = ("real state = the robot's own estimate (encoders + complementary filte
           "because PDM pulses and backlash impacts are chaotic: compare amplitude/frequency, not waveform.")
 
 
+def caption_lines(width: int) -> list:
+    """CAVEAT wrapped to at most width characters per line (no matplotlib auto-wrap: it clips at the edges)."""
+    import textwrap
+    return textwrap.wrap(CAVEAT, width)
+
+
+def _caption(fig, width: int, fontsize: float) -> None:
+    fig.text(0.5, 0.008, "\n".join(caption_lines(width)), ha="center", va="bottom", fontsize=fontsize,
+             color="0.35", linespacing=1.25)
+
+
 def summary_figure(log: RunLog, ghost: Ghost, free: Ghost, s: dict, path: Path) -> Path:
     import matplotlib
     matplotlib.use("Agg")
@@ -690,8 +701,8 @@ def summary_figure(log: RunLog, ghost: Ghost, free: Ghost, s: dict, path: Path) 
                  f"{ghost.settings['latency_steps'] * ghost.settings['dt'] * 1e3:g} ms applied, backlash init "
                  f"{ghost.settings['backlash_init']}{', sensor ' + ghost.settings['sensor'] + (' + noise' if ghost.settings['noise'] else ' (no noise)')})",
                  fontsize=12)
-    fig.text(0.5, 0.005, CAVEAT, ha="center", fontsize=8, wrap=True, color="0.3")
-    fig.tight_layout(rect=(0, 0.035, 1, 0.96))
+    _caption(fig, width=190, fontsize=8)
+    fig.tight_layout(rect=(0, 0.045, 1, 0.96))
     fig.savefig(path, dpi=110)
     plt.close(fig)
     return path
@@ -714,7 +725,8 @@ def animate(log: RunLog, ghost: Ghost, cfg, path: Path, fps: int = 15, dpi: int 
     dt, n = log.control_dt, log.n
     t_end = (n - 1) * dt
     fig = plt.figure(figsize=(8, 8.4))
-    gs = fig.add_gridspec(4, 1, height_ratios=[2.0, 1, 1, 1], hspace=0.35)
+    gs = fig.add_gridspec(4, 1, height_ratios=[2.0, 1, 1, 1], hspace=0.35, left=0.1, right=0.97, top=0.95,
+                          bottom=0.115)
     top = fig.add_subplot(gs[0])
     top.set_aspect("equal")
     top.set_xlim(-half, half)
@@ -784,7 +796,7 @@ def animate(log: RunLog, ghost: Ghost, cfg, path: Path, fps: int = 15, dpi: int 
         lo, hi = np.percentile(y, [0.2, 99.8])
         pad = 0.25 * (hi - lo) + 1e-6
         ax.set_ylim(lo - pad, hi + pad)
-    fig.text(0.5, 0.004, CAVEAT, ha="center", fontsize=6.3, wrap=True, color="0.35")
+    _caption(fig, width=125, fontsize=7)
 
     n_frames = int(math.floor(t_end / speed * fps)) + 1
     starts_t = np.array(ghost.starts) * dt
