@@ -101,7 +101,8 @@ All of this runs on the Pi. The first two are also the robot code's drivers (pha
 loop, real-time setup, watchdog, logs), `calibrate.py` (D4), `loop_config.py` (limits), `sim_hw.py` (HAT, IMU
 and clock stand-ins backed by the simulator), `test_control.py`. `deploy.sh` copies `robot/`, `config.py`,
 `legobot_config.py` and `simulation/balance_sim/` to the Pi's `~/legobot`, with a `DEPLOYED` stamp that every
-log records.
+log records. (Since then: `deploy.sh` also copies `results/legobot/policies/`, and `robot/` has more modules and
+tests; `ARCHITECTURE.md` lists the current set.)
 
 - **Shared with the simulator, not copied:** the robot imports `config.load_config("legobot")`. The estimator is
   `ComplementaryFilter` with the config's τ, run at the 200 Hz control period. Wheel speed is the count
@@ -109,7 +110,8 @@ log records.
   cascaded PID built by `ProjectConfig.build_controller`, so the torque cap, lean cap and integral limits match
   the sim. The duty is the config actuator's own `drive(τ, ω_wheel)` per wheel, using the HAT's measured vin
   (slow PWM since B1b; see below).
-- **Controller:** cascaded PID only. `--controller hand | model | <gains JSON>` (a tuning result's `gains`; an
+- **Controller:** cascaded PID only (as built on 2026-11-23; learned policies were added later as
+  `--controller <bundle> | policy:<name>`, see `POLICY_ON_ROBOT_PLAN.md`). `--controller hand | model | <gains JSON>` (a tuning result's `gains`; an
   optional `feedforward_gain` in the JSON is applied too). `--goal still | scenario`. The LQR was dropped from
   LEGO testing on 2026-11-23 and removed from the robot code (`--controller lqr` and `--export-gains` are gone; an
   LQR gains file is refused).

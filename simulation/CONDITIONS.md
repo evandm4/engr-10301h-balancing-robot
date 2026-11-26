@@ -2,7 +2,7 @@
 
 Running list of the real-world effects and test scenarios the simulation includes, and candidates not yet added. Updated each time one is added.
 
-Last updated: 2026-11-08
+Last updated: 2026-11-26
 
 ## Included
 
@@ -19,6 +19,11 @@ Last updated: 2026-11-08
 | 9 | Goal velocity profile | `CascadedPIDController(..., goal=step_profile([(t, v), ...], transition=s))` | 0 m/s | Test scenario rather than a physical effect. Constant or time-varying forward velocity the robot must track. `transition` > 0 blends each change smoothly (continuous acceleration and jerk) so the goal can be tracked exactly; 0 gives instant jumps. The project uses `ScenarioConfig.goal_transition_s`. The cost function scores tracking error (`velocity_weight`). |
 | 10 | Parameter uncertainty (randomized robots) | `config.py` `RobustnessSettings.randomize`; used by `run_batch_tuning.py` | on in batched tuning; off in `run_tuning.py` | Every scenario gets its own robot: mass, COM height, inertias, torque constant, winding resistance, battery voltage and gearbox efficiency scaled within ±10–25%, rotor inertia within ±50%; friction and latency drawn from ranges. A fixed, varying battery voltage, but not sag during a run. Batched code only (`batch_sim` accepts per-robot parameter arrays). |
 | 11 | Reflected motor rotor inertia | `RobotParams.rotor_inertia` (`config.py`: `ActuatorConfig.rotor_inertia` per motor, reflected as n N² J_r) | on, 4.2e-4 kg m² | The rotors spin relative to the body, so they enter the mass matrix in three places (PHYSICS.md 10.3), not as extra wheel inertia. Estimated, not published (DATASHEET.md 5.3). |
+| 12 | External pushes on the body | `simulate(disturbance=push_profile([...]))`; `ScenarioConfig` | none (the project's scenario has two) | A horizontal force at the body's center of mass (`Planar2D.derivatives(..., force)`). Part of the test scenario since 2026-11-08. |
+| 13 | Voltage-mode driver and the Build HAT's slow PWM | `ActuatorConfig.model = "voltage"` or `"slow_pwm"` (`pwm_tick_s`, `pwm_tick_phase`) | `"dc_motor"`; LEGO: `"slow_pwm"` | PWM duty with back-EMF feedforward (`VoltageModeActuator`), and for `"slow_pwm"` the HAT's pulse-density modulation on a 10 ms tick (`SlowPwmActuator`, `pdm_update`). LEGO robot only (SOFTWARE_PLAN B1, B1b). |
+| 14 | IMU with the robot code's complementary filter | `SensorConfig.model = "imu"` (`imu_height`, `filter_time_constant`) | `"noise"`; LEGO: `"imu"` | Gyro and accelerometer (tilt from the accelerations), fused as on the robot (`IMUSensor`, `ComplementaryFilter`). LEGO robot only (B2). |
+| 15 | Encoder counts, sample period and transit delay | `SensorConfig.encoder_counts`, `encoder_period_s`, `encoder_delay_s` | 0 (off); LEGO: 360 counts, 10 ms, 5 ms | Velocity and position from quantized counts, as the Build HAT reports them (`Encoder`). LEGO robot only (B3). |
+| 16 | Gearbox and coupling backlash | `RobotConfig.gearbox_backlash`, `coupling_backlash` | 0 (rigid); set on the LEGO robot | Free play between motor and wheel, with the encoder between the two (PHYSICS.md 10.3). Randomized per scenario on the LEGO robot (B5). |
 
 ### What we've seen so far
 
@@ -45,11 +50,8 @@ The velocity loop is touchy: with the inner loop unchanged, outer gains much abo
 
 ## Candidates not yet added
 
-- External pushes on the body (impulse or random disturbance)
-- Winding inductance (motor current lag)
-- Gearbox backlash
-- Sensor latency separate from actuator latency
-- Sensor quantization and sample rate (IMU, encoder resolution)
+- Winding inductance (motor current lag; folded into the latency for the LEGO robot, PHYSICS.md 10.3)
+- Sensor latency separate from actuator latency (the encoder's transit delay is modeled, #15; an IMU-only delay is only in the linear analysis, `balance_sim/STABILITY_PIPELINE.md`)
 - Battery voltage sag during a run (#10 varies the voltage between runs only)
 - Wheel slip and rolling resistance
 - Slopes and uneven ground
@@ -64,3 +66,4 @@ The velocity loop is touchy: with the inner loop unchanged, outer gains much abo
 - 2026-09-28: Added 10 (parameter uncertainty), as part of the batched tuner's robust scoring.
 - 2026-11-08: Added 11 (reflected rotor inertia), gearbox efficiency (#8) and a pitch-estimate offset (#6). Every physical constant now comes from DATASHEET.md's reference build. Runs before this change used the earlier robot and are not comparable; the batch, LQR and pivot tuners were re-run on it the same day. The latency findings under "What we've seen so far" were made on the earlier robot: on this one the hand-tuned pitch-only PID's linear delay margin is 22 ms, not 9.5 ms (PHYSICS.md 7.4).
 - 2026-10-24: The cost now scores pitch from upright again (`pitch_reference` default), with weights derived from acceptable-value limits by Bryson's rule (velocity 2.25, effort 9; fall penalty 500). The goal profile is smooth (`goal_transition_s`). Runs before this change used the old weights and are not comparable.
+- 2026-11-26: Listed 12-16, added between 2026-11-08 and 2026-11-24 (pushes; the LEGO robot's driver, IMU, encoder and backlash models; ARCHITECTURE.md, "Two robots and the LEGO models"). Removed them from the candidates.

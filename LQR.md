@@ -9,7 +9,7 @@ simulation/balance_sim/stability.py    exact stability of the sampled, delayed l
 simulation/batch_sim/controller.py     lqr_update: the same controller for a batch (NumPy and GPU)
 optimization/tuning/search_space.py    what the tuner searches: LQR weights, or LQR gains directly
 optimization/run_lqr_comparison.py     the comparison; output in results/pololu/lqr_comparison/
-simulation/tests/test_lqr.py           65 tests
+simulation/tests/test_lqr.py           68 tests
 config.py (LQRConfig)                  search bounds; the cost-matched weights come from CostConfig
 ```
 

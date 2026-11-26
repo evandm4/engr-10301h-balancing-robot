@@ -274,6 +274,7 @@ comparison.
   implementation, as `CascadedPIDController` is today. `LinearPolicyController` is the same class
   with no hidden layers. `ResidualPolicyController` wraps a `CascadedPIDController` and a
   `NeuralPolicyController`.
+  (note 2026-11-26: built as `PolicySpec` / `PolicyController` in `simulation/balance_sim/policy.py`.)
 - `simulation/batch_sim/policy.py`: pure functions through the `xp` shim, like
   `batch_sim/controller.py`.
 - **Forward pass in a fixed order:** an explicit loop of elementwise multiply-adds over the inputs,
