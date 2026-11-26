@@ -393,6 +393,11 @@ selection: it decides the even/odd = desktop/laptop parity check, since the even
   robot-s. Best train 7.7706, dev60 19.711 (0 falls), in line with seeds 1, 3, 5. Queue `e26-laptop` is done (5/5 OK);
   the `e26-laptop-b` waiter (seeds 2, 4, 6, 8) takes over. **Bad so far: 2 of 6 finished seeds (0, 7)**;
   Clopper-Pearson 95 % CI ≈ [0.04, 0.78].
+- **Desktop B1 seed 0 finished 2026-11-26 06:15** (D5 development run, not E2 L; read from the laptop's backup mirror of
+  the desktop, no ssh). It ran 12.0 h wall (43,244 s), stopping at gen 357 on `tolfacupx`, 4.28e9 robot-s (~3.7× an L
+  seed). Best train 11.483; selected policy dev20 22.56 (1 fall), dev60 40.80 (1 fall). L good seeds reach train ~7.8
+  and dev60 ~19.7 with 0 falls on the same objective and 150 train seeds, so B1 seed 0 is clearly worse than L. Desktop
+  `b1s1-desktop` job 1 (waiter) completed 06:16 and job 2 (B1 seed 1) is running; at seed 0's pace it ends ~18:15.
 
 ## E2.7 (provisional): `l_e2_s1`, the first finished L run
 
