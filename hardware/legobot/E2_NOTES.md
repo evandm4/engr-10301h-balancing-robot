@@ -398,6 +398,14 @@ selection: it decides the even/odd = desktop/laptop parity check, since the even
   seed). Best train 11.483; selected policy dev20 22.56 (1 fall), dev60 40.80 (1 fall). L good seeds reach train ~7.8
   and dev60 ~19.7 with 0 falls on the same objective and 150 train seeds, so B1 seed 0 is clearly worse than L. Desktop
   `b1s1-desktop` job 1 (waiter) completed 06:16 and job 2 (B1 seed 1) is running; at seed 0's pace it ends ~18:15.
+- **Laptop seeds 2 and 4 finished GOOD (2026-11-26).** Queue `e26-laptop-b`:
+  - seed 2: 05:20–08:04 (164.3 min), gen 530, `tolupsigma`, 1.221e9 robot-s; best train 7.7778, dev60 19.727 (0 falls).
+  - seed 4: 08:04–10:53 (169.1 min), gen 545, `tolupsigma`, 1.256e9 robot-s; best train 7.7565, dev60 19.619 (0 falls).
+  - **Bad so far: 2 of 8 finished seeds (0, 7)**; Clopper-Pearson 95 % CI ≈ [0.03, 0.65]. Seed 6 started 10:53, seed 8
+    follows.
+- **Ops note (2026-11-26 11:38–13:16):** the laptop↔desktop backup watcher hung for ~1.6 h inside one desktop→laptop
+  pull batch (no error, no timeout). Training was unaffected. It was restarted at 13:16 and caught up. `backup_desktop.py`
+  and `backup_pull.py` now kill any push/pull batch still running after 15 min, and the next pass retries it (new test).
 
 ## E2.7 (provisional): `l_e2_s1`, the first finished L run
 
