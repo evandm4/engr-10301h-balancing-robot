@@ -15,6 +15,10 @@ stable exactly when every eigenvalue of M is inside the unit circle.
 
 Exact for the linear model; it leaves out saturation (torque, back-EMF, the
 lean cap), the integral caps and sensor noise.
+
+Sensing is ideal (the controller sees the true state), which is the Pololu
+robot's training model. For the LEGO robot (complementary filter, delayed
+encoder, PDM) use stability_pipeline.py; see STABILITY_PIPELINE.md.
 """
 
 import math
