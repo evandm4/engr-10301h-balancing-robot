@@ -406,6 +406,28 @@ selection: it decides the even/odd = desktop/laptop parity check, since the even
 - **Ops note (2026-11-26 11:38–13:16):** the laptop↔desktop backup watcher hung for ~1.6 h inside one desktop→laptop
   pull batch (no error, no timeout). Training was unaffected. It was restarted at 13:16 and caught up. `backup_desktop.py`
   and `backup_pull.py` now kill any push/pull batch still running after 15 min, and the next pass retries it (new test).
+- **All 10 L seeds finished (2026-11-26 16:26).** Seed 6: 10:53–13:44 (171.2 min), gen 552; seed 8: 13:44–16:26 (161.6
+  min), gen 520. Both stopped on `tolupsigma` and are GOOD. Values from each run's `summary.json`:
+
+  | seed | basin | best train | dev60 | dev60 falls | robot-s | stop |
+  |---|---|---|---|---|---|---|
+  | 0 | BAD | 193.62 | 550.41 | 1 | 1.500e9 | budget |
+  | 1 | good | 7.7730 | 19.715 | 0 | 1.242e9 | tolupsigma |
+  | 2 | good | 7.7778 | 19.727 | 0 | 1.221e9 | tolupsigma |
+  | 3 | good | 7.7867 | 19.729 | 0 | 1.313e9 | tolupsigma |
+  | 4 | good | 7.7565 | 19.619 | 0 | 1.256e9 | tolupsigma |
+  | 5 | good | 7.7727 | 19.763 | 0 | 1.369e9 | tolupsigma |
+  | 6 | good | 7.7495 | 19.746 | 0 | 1.272e9 | tolupsigma |
+  | 7 | BAD | 206.25 | 619.73 | 2 | 1.265e9 | tolupsigma |
+  | 8 | good | 7.7794 | 19.659 | 0 | 1.198e9 | tolupsigma |
+  | 9 | good | 7.7706 | 19.711 | 0 | 1.168e9 | tolupsigma |
+
+  - **Training reliability: 2 of 10 seeds bad (0, 7); Clopper-Pearson 95 % CI ≈ [0.03, 0.56].** All 10 are kept.
+  - The good seeds agree closely: train 7.750–7.787 and dev60 19.62–19.76 with 0 falls.
+  - Seeds 0 and 7 show `best_train_objective` from the summary. The seed 7 entry above quotes 235.02, which is the
+    selected gen-13 policy re-scored, so it is a different quantity.
+  - The in-run dev60 is not the E2.6 selection score. **E2.6 (K=5 CPU re-score, `e2_rescore_k5.py`) has not been run**;
+    it waits for Evan's OK.
 
 ## E2.7 (provisional): `l_e2_s1`, the first finished L run
 
