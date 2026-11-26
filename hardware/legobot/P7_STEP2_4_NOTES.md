@@ -119,6 +119,13 @@ Evan saw the robot creep backward; backward is the side that faces up on the ben
   - If the drift stays the same way in the room frame, the floor is sloped.
   - If it stays the same way in the robot frame, the robot's zero is offset. A `pitch_zero` trim of about +0.01 rad
     is then the candidate fix, to be tested with a still run.
+- **Battery play (Evan, after the session).** The 600 mAh 2S pack (~40 g) has < 1.5 mm of play toward the back.
+  - Its COM effect is Δθ ≈ m·d / (M_body·h) = 0.040 × 0.0015 / (0.362 × 0.060) ≈ 0.003 rad, i.e. ~0.25 cm/s of creep.
+  - The sign matches: a pack sliding back makes the robot lean forward, which creeps backward. But that is only
+    ~15 % of the observed 0.022 rad change in mean lean, so it is a minor contributor at most.
+  - The larger candidates are an IMU/Pi mount shift (1:1 on θ: 1.2° explains it all) and floor slope (≈ 0.57 rad of
+    lean per rad of slope).
+  - Before the A/B: secure the battery, and check the Pi/IMU mount for rocking.
 
 ## Timing under the `performance` governor
 
