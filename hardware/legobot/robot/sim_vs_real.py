@@ -173,9 +173,13 @@ def load_run(target, log_dir=DEFAULT_LOG_DIR, control_dt: Optional[float] = None
     if control_dt is None:
         control_dt = control.load_robot_config().timing.control_dt_s
     meta = dict(meta, run_csv=str(run_csv), raw_csv=str(raw_csv), vin_mean=float(col(raw, "vin").mean()))
+    # --added-delay-ms runs: the ISSUED duty (issued_left/right) goes through the sim's latency queue with the added
+    # delay on top (resync), which is the same as the written duty (duty_left/right) through the base latency
+    issued = "issued_left" in raw[0] and float(meta.get("added_delay_ms") or 0.0) > 0
+    dl, dr = ("issued_left", "issued_right") if issued else ("duty_left", "duty_right")
     return RunLog(
         label=run_csv.name[:-len("_run.csv")], state=state, command=command,
-        drive=0.5 * (col(raw, "duty_left") + col(raw, "duty_right")), goal=col(raw, "obs_goal"),
+        drive=0.5 * (col(raw, dl) + col(raw, dr)), goal=col(raw, "obs_goal"),
         int_v=col(raw, "obs_int_v"), int_theta=col(raw, "obs_int_theta"),
         history=np.column_stack([col(raw, f"obs_cmd_{i}") for i in range(1, N_HISTORY + 1)]),
         frozen=np.array([_flag(r["integrators_frozen"]) for r in raw]), control_dt=float(control_dt),
@@ -434,6 +438,8 @@ def resync(log: RunLog, cfg, bundle: dict, T: Optional[float] = 1.0, dt: Optiona
     _, _, sim = _bs()
     dt = cfg.timing.dt_s if dt is None else dt
     latency = cfg.timing.latency_s if latency is None else latency
+    added = 1e-3 * float(log.meta.get("added_delay_ms") or 0.0)   # balance.py --added-delay-ms (load_run: issued duty)
+    latency = latency + added
     dynamics = cfg.build_dynamics() if dynamics is None else dynamics
     cdt, n = log.control_dt, log.n
     spc = sim.steps_per_control(cdt, dt)
@@ -466,7 +472,8 @@ def resync(log: RunLog, cfg, bundle: dict, T: Optional[float] = 1.0, dt: Optiona
             first_err = max(first_err, abs(float(cmds[0]) - float(log.command[k0])))
     return Ghost(T=W * cdt, starts=starts, windows=windows, state=g_state, command=g_cmd,
                  first_command_err=first_err,
-                 settings={"dt": dt, "latency": latency, "latency_steps": latency_steps(latency, dt),
+                 settings={"dt": dt, "latency": latency, "added_delay_s": added,
+                           "latency_steps": latency_steps(latency, dt),
                            "pwm_phase": getattr(dynamics.actuator, "pwm_tick_phase", None) if pwm_phase is None
                            else pwm_phase, "backlash_init": backlash_init, "noise": noise, "sensor": sensor,
                            "noise_seed_base": NOISE_SEED_BASE if noise else None, "free": T is None})

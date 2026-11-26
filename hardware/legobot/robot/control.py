@@ -658,7 +658,7 @@ class Feedforward:
 class Brain:
     """One control tick: sense() turns raw readings into the controller's state, act() into duties."""
 
-    def __init__(self, cfg, controller, estimator, feedforward, duty_cap, hat_period):
+    def __init__(self, cfg, controller, estimator, feedforward, duty_cap, hat_period, added_delay_ticks=0):
         self.cfg = cfg
         self.dt = cfg.timing.control_dt_s
         self.r = cfg.robot.wheel_radius
@@ -667,6 +667,7 @@ class Brain:
         self.feedforward = feedforward
         self.duty_cap = duty_cap
         self.hat_period = hat_period
+        self.delay = CommandDelay(added_delay_ticks)   # --added-delay-ms: applied by the loop after act()
 
     def sense(self, pitch_rate, acc_fwd, acc_up, pair_left, pair_right):
         """Returns (state [x, v, theta, theta_dot], extras dict) in the simulator's conventions."""
@@ -685,6 +686,61 @@ class Brain:
         cap = self.duty_cap
         clamp = lambda d: max(-cap, min(cap, d)) if math.isfinite(d) else d
         return torque, clamp(dl), clamp(dr)
+
+
+# ------------------------------------------------------------------- added latency (E3 Block D) ---
+def added_delay_ticks(delay_ms, dt):
+    """--added-delay-ms -> a whole number of control ticks. ValueError unless delay_ms is finite, in
+    [0, lc.MAX_ADDED_DELAY_S], and a whole multiple of the control period dt (to 1e-6 ms)."""
+    try:
+        delay_ms = float(delay_ms)
+    except (TypeError, ValueError):
+        raise ValueError(f"--added-delay-ms must be a number, got {delay_ms!r}") from None
+    period_ms = dt * 1e3
+    if not math.isfinite(delay_ms) or delay_ms < 0:
+        raise ValueError(f"--added-delay-ms must be a non-negative multiple of the {period_ms:g} ms loop period, "
+                         f"got {delay_ms!r}")
+    k = int(round(delay_ms / period_ms))
+    if abs(delay_ms - k * period_ms) > 1e-6:
+        raise ValueError(f"--added-delay-ms must be a whole multiple of the {period_ms:g} ms loop period (the delay is "
+                         f"a FIFO of whole ticks), got {delay_ms:g} ms; nearest: {k * period_ms:g} ms "
+                         f"({k} ticks)")
+    if delay_ms > lc.MAX_ADDED_DELAY_S * 1e3 + 1e-6:
+        raise ValueError(f"--added-delay-ms {delay_ms:g} ms is past the {lc.MAX_ADDED_DELAY_S * 1e3:g} ms limit "
+                         "(loop_config.MAX_ADDED_DELAY_S)")
+    return k
+
+
+class CommandDelay:
+    """A k-tick FIFO on the FINAL per-wheel duty (after feedforward and the duty cap): the duty the controller
+    issues on armed tick n is written to the HAT on armed tick n + k, at that tick's command point. The same
+    loop location as balance_sim.simulate's `latency` (simulator.py:126-129: the controller's command and its
+    drive() signal, computed at issue time from that tick's measurement, are queued and applied `latency`
+    later), so the controller's own state (a policy's cmd_1..4 history, its saturation flag and the PID's
+    integrators) keeps what it ISSUED, exactly as in the simulator: the FIFO is downstream of everything that
+    feeds back into the controller.
+
+    The first k armed ticks write (0, 0): simulate() applies a zero torque/drive until the first command is due
+    (its pending queue starts empty, torque = drive = 0.0, simulator.py:96-98). k = 0 returns the issued tuple
+    itself (bit-identical to no FIFO). Safety does not go through it: a trip coasts the HAT at once, and the run
+    ends with whatever is still queued discarded."""
+
+    def __init__(self, ticks=0):
+        if isinstance(ticks, bool) or int(ticks) != ticks or ticks < 0:
+            raise ValueError(f"CommandDelay needs a whole number of ticks >= 0, got {ticks!r}")
+        self.ticks = int(ticks)
+        self.reset()
+
+    def reset(self):
+        """Empty the pipe (zeros), e.g. at arming."""
+        self._q = deque([(0.0, 0.0)] * self.ticks)
+
+    def push(self, duties):
+        """Queue this tick's issued (left, right) duty; return the one to write now."""
+        if not self.ticks:
+            return duties
+        self._q.append(duties)
+        return self._q.popleft()
 
 
 # ------------------------------------------------------------------------- HAT line clock (D2) ---

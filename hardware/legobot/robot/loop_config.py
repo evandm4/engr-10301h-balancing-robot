@@ -25,6 +25,11 @@ LINE_WRITE_PHASE_S = 0.0065  # s after the grid's line (lower envelope of the le
                            # left motor's tick cliff is at 8.3 ms (90% 7.2-8.3), the right's at 10.3 ms (10.2-11.3).
                            # 6.5 ms is before the earlier one with margin: waits of about 1.8 ms (left) and 3.8 ms
                            # (right) for the tick, against 0-10 ms each at a random phase. Used mod half a period
+TICK_CLIFF_S = (0.0083, 0.0103)  # (left, right) pulse-tick cliffs, s after the left grid's line (the lock_sweep
+                           # numbers above): the summary's ESTIMATED write-to-tick wait is (cliff - cmd_phase) mod the
+                           # line period. An estimate only: the ticks wander against the lines (B1) and the loop can't
+                           # see them.
+MAX_ADDED_DELAY_S = 0.050  # --added-delay-ms ceiling (E3 Block D steps go to +25 ms)
 COMPUTE_LEAD_S = 0.0012    # tick start to command write: IMU read + control (1.07-1.30 ms mean, bench 2026-11-23)
 POLICY_LEAD_EXTRA_S = 0.00016  # P3b: added to a policy's lead (control.compute_lead = COMPUTE_LEAD_S + max(0,
                            # policy self-test p50 - PID p50) + this). The in-loop cost the self-test misses. Fitted

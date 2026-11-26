@@ -42,7 +42,10 @@ LEFT, RIGHT = hc.LEFT_PORT, hc.RIGHT_PORT
 RAW_COLUMNS = ("tick", "t", "late", "compute", "phase", "imu_t", "imu_read", "pitch_rate_raw", "acc_fwd", "acc_up",
                "tilt", "theta", "gyro", "x", "v", "w_left", "w_right", "pos_left", "pos_right", "age_left",
                "age_right", "torque", "duty_left", "duty_right", "pitch_ref", "goal", "vin", "locked", "cmd_phase",
-               "cmd_at")
+               "cmd_at", "issued_left", "issued_right")
+# duty_left/right: the duty WRITTEN to the HAT that tick; issued_left/right: the duty the controller computed that
+# tick (Brain.act). They differ only with --added-delay-ms k > 0: duty[n] = issued[n - k], 0 for the first k armed
+# ticks. torque (and _run.csv's torque) is always the ISSUED torque, so replay_policy compares like with like.
 POLICY_EXTRA_COLUMNS = ("pre_clip", "saturated", "integrators_frozen", "residual_torque")
 
 
@@ -188,11 +191,15 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
 
     A non-finite state on an armed tick trips before the controller runs; a non-finite torque or duty trips
     and coasts before the command is sent (a NaN would pass the tilt check and clamp to +cap).
+    brain.delay (control.CommandDelay, --added-delay-ms) sits between brain.act and the HAT write: duty_left/right
+    in the log (and what Safety's stall checks see next tick) are what was written, issued_left/right what the
+    controller computed; trips coast at once, past it.
     For a policy, each row also carries policy_columns(controller) (None where it didn't act), and
     envelope_monitor (control.EnvelopeMonitor) sees each acted tick's raw observation right after the command
     write (so it adds nothing to the compute lead); its trip coasts at once."""
     dt = brain.dt
     c = brain.controller
+    delay = getattr(brain, "delay", None)   # control.CommandDelay (--added-delay-ms), between act() and the HAT
     rows = [] if rows is None else rows
     stats = {} if stats is None else stats
     stats["acted_ticks"] = 0
@@ -309,6 +316,8 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
                     phase, t_arm = 1, t
                     stats["t_arm"] = t - t0
                     c.reset()
+                    if delay is not None:
+                        delay.reset()         # the FIFO starts empty (zeros) at arming, as simulate()'s queue
                     if on_arm is not None:
                         on_arm()
                     if watchdog is not None:
@@ -324,6 +333,7 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
         t_cmd = None
         acted = False
         goal_used = 0.0
+        issued = (0.0, 0.0)
         rel = 0.0 if t_arm is None else t - t_arm
         if phase == 1 and not reason and not all(math.isfinite(x) for x in state):
             reason = f"non-finite state {list(state)}"   # a NaN would pass the tilt check and clamp to +cap
@@ -339,10 +349,13 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
                 duties = (0.0, 0.0)       # tripped on what the controller just computed: send nothing
                 hat.coast()
             else:
-                duties = (dl, dr)
+                # --added-delay-ms: the issued duty enters the FIFO, the one issued k ticks ago is written now
+                # (k = 0: the same tuple). The controller already kept what it issued (control.CommandDelay).
+                issued = (dl, dr)
+                duties = delay.push(issued) if delay is not None else issued
                 t_cmd = clock.now()       # the command point (cmd_at), in --no-drive too
                 if drive:
-                    hat.set_pwm(dl, dr)
+                    hat.set_pwm(duties[0], duties[1])
                 if watchdog is not None:
                     watchdog.kick()
                 if envelope_monitor is not None:   # after the write, so it adds nothing to the compute lead
@@ -358,7 +371,8 @@ def run(hat, imu, clock, brain, safety, seconds, watchdog=None, on_arm=None, dri
                goal_used, None if vr is None else vr[1], int(locked),
                None if not drive or t_cmd is None or line_clock is None or line_clock.t_ref is None
                else line_clock.phase(t_cmd),
-               None if t_cmd is None else t_cmd - t)
+               None if t_cmd is None else t_cmd - t,
+               issued[0] if acted else 0.0, issued[1] if acted else 0.0)
         if n_policy:
             row += ((*c.last_raw, float(c.last_pre_clip), int(c.last_saturated),
                      int(c.last_integrators_frozen), float(c.last_residual)) if acted else no_policy)
@@ -433,11 +447,20 @@ def write_logs(base, rows, reason, t_arm, meta, notes, seconds=None, columns=RAW
             f"ticks locked to the HAT's lines: {sum(r[i['locked']] for r in run_rows)} of {len(run_rows)}",
             f"command write phase after the line grid, mod 5 ms: "
             f"{stats_ms([None if r[i['cmd_phase']] is None else r[i['cmd_phase']] % 0.005 for r in run_rows])}",
+            *(f"write-to-tick wait, {side} (ESTIMATED: (loop_config.TICK_CLIFF_S - cmd_phase) mod "
+              f"{hc.SELRATE_MS:g} ms; the pulse ticks wander against the lines, B1): "
+              f"{stats_ms([None if r[i['cmd_phase']] is None else (cliff - r[i['cmd_phase']]) % (hc.SELRATE_MS / 1e3) for r in run_rows])}"
+              for side, cliff in zip(("left", "right"), lc.TICK_CLIFF_S)),
             f"motor data age at the tick, left: {stats_ms([r[i['age_left']] for r in run_rows])}",
             f"motor data age at the tick, right: {stats_ms([r[i['age_right']] for r in run_rows])}",
             f"pitch: mean {st.fmean(states[:, 2]):+.4f} sd {st.pstdev(states[:, 2]):.4f} rad; "
             f"|duty| max {max(max(abs(r[i['duty_left']]), abs(r[i['duty_right']])) for r in run_rows):.2f}",
         ]
+        k_delay = int(meta.get("added_delay_ticks") or 0)
+        if k_delay and periods:
+            mean_p = st.fmean(periods)
+            lines.append(f"added delay realised: {k_delay} ticks x mean tick period {mean_p * 1e3:.4f} ms = "
+                         f"{k_delay * mean_p * 1e3:.3f} ms (issued_left/right delayed into duty_left/right in _raw.csv)")
         if "pre_clip" in columns:
             k = columns.index("pre_clip")
             acted = [r for r in run_rows if len(r) > k and r[k] is not None]
@@ -480,6 +503,22 @@ def coast_check(hat, wait=1.0, window=0.1):
 
 
 # ------------------------------------------------------------------------------------ main ---
+# ICM-20948 DLPFCFG -> 3 dB bandwidth, Hz (ICM-20948 datasheet, gyro and accel DLPF tables, FCHOICE = 1)
+GYRO_DLPF_HZ = (196.6, 151.8, 119.5, 51.2, 23.9, 11.6, 5.7, 361.4)
+ACCEL_DLPF_HZ = (246.0, 246.0, 111.4, 50.4, 23.9, 11.5, 5.7, 473.0)
+
+
+def imu_dlpf_text(readback=None):
+    """The IMU's low-pass config for the summary (a covariate: the DLPF's ~3 ms group delay is on the IMU
+    path only). readback: Imu.config_readback (register values read back after configuring), if any."""
+    text = (f"gyro DLPFCFG {hc.GYRO_DLPFCFG} ({GYRO_DLPF_HZ[hc.GYRO_DLPFCFG]:g} Hz 3 dB), accel DLPFCFG "
+            f"{hc.ACCEL_DLPFCFG} ({ACCEL_DLPF_HZ[hc.ACCEL_DLPFCFG]:g} Hz 3 dB), ODR 1125/(1+div) Hz with div "
+            f"{hc.GYRO_SMPLRT_DIV}/{hc.ACCEL_SMPLRT_DIV} (hw_config)")
+    if readback:
+        text += "; readback " + " ".join(f"{k}={v:#04x}" for k, v in readback.items())
+    return text
+
+
 def deployed_version():
     try:
         with open("DEPLOYED") as f:
@@ -531,6 +570,10 @@ def main(argv=None):
                          "loop may hold the GIL while the HAT reader waits to stamp a line (P7 step 1)")
     ap.add_argument("--inject", choices=("loop", "hang", "stale", "vin", "fault", "imu", "unlock", "ood"))
     ap.add_argument("--inject-at", type=float, default=1.0, help="s after arming")
+    ap.add_argument("--added-delay-ms", type=float, default=0.0, metavar="N",
+                    help="E3 Block D: add N ms of latency on the final duty command (after feedforward; the "
+                         "simulator's `latency` location) as a FIFO of N / 5 whole loop ticks; N must be a "
+                         "non-negative multiple of the 5 ms loop period (default 0). Safety trips bypass it.")
     ap.add_argument("--sim", action="store_true", help="closed loop with the simulator instead of hardware")
     ap.add_argument("--sim-pitch", type=float, default=0.03, help="--sim: pitch the robot is held at (rad)")
     ap.add_argument("--sim-noise", action="store_true", help="--sim: legobot_config's sensor noise and offsets")
@@ -556,6 +599,15 @@ def main(argv=None):
     dt = cfg.timing.control_dt_s
     hat_period = hc.SELRATE_MS / 1000.0
     notes = {"deployed": deployed_version()}
+    try:                                       # refused before any hardware opens
+        delay_ticks = control.added_delay_ticks(a.added_delay_ms, dt)
+    except ValueError as e:
+        raise SystemExit(f"refused: {e}")
+    delay_ms = delay_ticks * dt * 1e3
+    notes["added delay"] = (f"{delay_ms:.1f} ms ({delay_ticks} ticks)" + (
+        f": FIFO on the final duty after feedforward; the first {delay_ticks} armed ticks write duty 0; the "
+        "controller keeps its issued commands" if delay_ticks else ""))
+    notes["IMU DLPF"] = imu_dlpf_text() + ("; --sim: SimImu has no filter" if a.sim else "")
 
     # policies (P2e, P4c, P5a): provenance, the envelope monitor, and the checks on the flags that need one
     bundle = getattr(controller, "bundle", None)
@@ -614,6 +666,7 @@ def main(argv=None):
         install_safety(hat)
         hat.configure(plimit=hc.RUN_PLIMIT)
         imu = Imu()
+        notes["IMU DLPF"] = imu_dlpf_text(getattr(imu, "config_readback", None))
         clock, on_arm = RealClock, None
         watchdog = Watchdog(hat)
         watchdog.start()
@@ -640,7 +693,8 @@ def main(argv=None):
     try:
         plimit = 1.0 if a.sim else hc.RUN_PLIMIT
         brain = control.Brain(cfg, controller, control.PitchEstimator(cfg, 0.0, pitch_zero),
-                              control.Feedforward(cfg, ff_gain, plimit), duty_cap, hat_period)
+                              control.Feedforward(cfg, ff_gain, plimit), duty_cap, hat_period,
+                              added_delay_ticks=delay_ticks)
         if not a.sim and (vin := notes.get("vin at start")):
             brain.feedforward.set_supply(vin)
         # stall threshold under the duty cap, so the stall trip can fire on the bench too; seed Safety.vin from
@@ -741,6 +795,12 @@ def main(argv=None):
             hat.emergency_coast()   # first, before the watchdog stops, and without the write lock
         if watchdog is not None:
             watchdog.stop()
+        try:                        # the right-line gap again at the end (a covariate; it can drift in a run)
+            lag = control.port_lag(hat.line_times(LEFT), hat.line_times(RIGHT), hat_period)
+            if lag is not None:
+                notes["right lines lag left at end"] = f"{lag * 1e3:.2f} ms"
+        except Exception:
+            pass
         if not a.sim:
             try:
                 notes["wheels 1 s after stop (deg/s)"] = coast_check(hat)
@@ -765,6 +825,10 @@ def main(argv=None):
             "duty_cap": duty_cap, "feedforward_gain": brain.feedforward.gain, "calibration": cal,
             "deployed": notes["deployed"], "inject": a.inject, "acted_ticks": stats.get("acted_ticks", 0),
             "compute_lead_s": compute_lead,
+            "added_delay_ms": delay_ms, "added_delay_ticks": delay_ticks,
+            "imu_dlpf": {"gyro_dlpfcfg": hc.GYRO_DLPFCFG, "accel_dlpfcfg": hc.ACCEL_DLPFCFG,
+                         "gyro_smplrt_div": hc.GYRO_SMPLRT_DIV, "accel_smplrt_div": hc.ACCEL_SMPLRT_DIV,
+                         "readback": None if a.sim else getattr(imu, "config_readback", None)},
             "note": "state = the robot's own estimates (encoders + complementary filter), not truth"}
     if bundle is not None:
         meta["self_test"] = self_test

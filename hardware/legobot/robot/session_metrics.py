@@ -251,6 +251,7 @@ def run_metrics(path, cfg=None, sheet_row=None, with_cost=True):
            "controller": row.get("controller") or controller_code(meta, label),
            "run": row.get("run") or run_id(label), "t_max": t_max, "excluded": row.get("excluded") or None,
            "pitch_zero_file": (meta.get("calibration") or {}).get("pitch_zero"),
+           "added_delay_ms": float(meta.get("added_delay_ms") or 0.0),   # balance.py --added-delay-ms (Block D)
            "duration": float(t[-1] - t[0]), "net_dx": float(x[-1] - x[0]),
            "theta_mean": mean_theta(th), "v_mean": mean_velocity(t, x)}
     out["block"] = row.get("block") or (out["run"][:1] if out["run"] else "")
