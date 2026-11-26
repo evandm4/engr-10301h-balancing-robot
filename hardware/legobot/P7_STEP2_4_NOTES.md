@@ -126,6 +126,24 @@ Evan saw the robot creep backward; backward is the side that faces up on the ben
   - The larger candidates are an IMU/Pi mount shift (1:1 on θ: 1.2° explains it all) and floor slope (≈ 0.57 rad of
     lean per rad of slope).
   - Before the A/B: secure the battery, and check the Pi/IMU mount for rocking.
+- **Update (Evan): floor slope and IMU-mount play are both ruled out.** He tested at several locations, and the IMU
+  mount is rigid.
+  - What remains is a **step change between `000439` (18:04) and `000828` (18:08)**. Mean θ went from about −0.010
+    (−0.011, +0.002, −0.009, −0.009) to about +0.012 (+0.011, +0.011, +0.014), and stayed there across the redeploy
+    and the wheel removal.
+  - `000828` was the first run with hard pushes (±27°), and `000949` added repeated obstacle hits.
+  - 0.022 rad is equivalent to the body COM moving ~1.3 mm fore-aft relative to the IMU (0.022 × 60 mm), or the
+    IMU-to-axle angle changing 1.3°. For the battery alone that would need ~12 mm of travel, so the leading candidate
+    is a small LEGO-structure or stack shift under impact.
+  - Less likely candidates:
+    - **ICM-20948 accelerometer warm-up drift.** 22 mg at ~0.8 mg/°C means ~27 °C, and it would ramp, not step.
+    - **A constant calibration error.** `pitch_zero` is provisional ±0.010 rad, and the DATASHEET's eyeballed
+      balance point is ~1° forward. This fits the later runs but not the earlier sign.
+  - Gyro bias doesn't track mean θ (0.0461–0.0489 rad/s, no consistent relation).
+  - **Next session:**
+    1. A long still run (30 s) to re-measure the balance point from mean θ.
+    2. Set `pitch_zero` from it, then run still → hard pushes → still, to see whether impacts move the zero.
+    3. Log `vcgencmd measure_temp` at the start and end of each run, to rule out warm-up drift.
 
 ## Timing under the `performance` governor
 
