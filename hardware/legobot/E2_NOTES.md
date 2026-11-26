@@ -389,6 +389,10 @@ selection: it decides the even/odd = desktop/laptop parity check, since the even
   - E2.6 is not affected: bad seeds score dev60 ~550–620 against ~19.8, so best-of-10 picks a good seed if any is good.
     Any training-reliability statement must give k/10 with a CI and the per-seed list, not a cross-seed mean ± SD.
   - Proposals for later experiments (warm start from L-PID, pre-registered restarts) are Evan's call; nothing changes for E2.
+- **Laptop seed 9 finished 2026-11-26 05:19, GOOD.** It ran 156.5 min, stopping at gen 507 on `tolupsigma`, 1.168e9
+  robot-s. Best train 7.7706, dev60 19.711 (0 falls), in line with seeds 1, 3, 5. Queue `e26-laptop` is done (5/5 OK);
+  the `e26-laptop-b` waiter (seeds 2, 4, 6, 8) takes over. **Bad so far: 2 of 6 finished seeds (0, 7)**;
+  Clopper-Pearson 95 % CI ≈ [0.04, 0.78].
 
 ## E2.7 (provisional): `l_e2_s1`, the first finished L run
 
