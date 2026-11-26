@@ -1,3 +1,9 @@
-# Shell scripts run on the Pi and the cluster: always LF, even where core.autocrlf=true (fresh worktrees
-# otherwise check them out CRLF and bash fails on the Pi).
+# Line endings for files the Raspberry Pi (or a Linux cluster) runs or checks byte for byte. With core.autocrlf=true,
+# a Windows checkout would otherwise write these with CRLF, and hardware/legobot/deploy.sh ships the working tree.
+#
+# Shell scripts: bash can't parse CRLF (robot/run_safe.sh failed on the Pi with $'\r': command not found).
 *.sh text eol=lf
+# Policy bundles: manifest.json's files_sha256 (checked by the robot before it runs a policy) covers the exact
+# bytes export_policy.py wrote, so git must neither convert them on checkout nor normalize them on commit.
+results/legobot/policies/** -text
+*.npz binary
