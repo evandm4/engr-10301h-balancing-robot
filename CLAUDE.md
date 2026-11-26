@@ -32,15 +32,26 @@ with an allowlisted prefix; anything else stops for approval.
   (use a scheduled wakeup to wait). Run from the repo root.
 - **Git:** one git command per call, especially writes and fetches (`git add` and `git commit` are separate calls).
   Omit `git -C <path>` when the cwd is already the checkout. Never `git push`, `git clean` or `git reset --hard`.
-- **Desktop:** copy a `.ps1` to `desktop:C:/balancebot/` with `scp`, then run
-  `ssh desktop "powershell -NoProfile -ExecutionPolicy Bypass -File C:\balancebot\<script>.ps1"`. No inline
-  PowerShell strings over SSH.
-- **Pi:** only through `C:\balancebot_training\tools_pi\`: `pi_run.ps1 <script.sh> [args]` (refuses lines that
-  could drive the motors unless `-AllowDrive`), `pi_fetch.ps1 <glob> [subdir]` (logs into
-  `C:\balancebot_training\legobot\pi_logs\`), `pi_deploy.ps1` (deploys the checkout you are in). Each is invoked as
-  `powershell -NoProfile -ExecutionPolicy Bypass -File C:\balancebot_training\tools_pi\<name>.ps1 ...`. Never pipe
-  scripts through `Git\bin\bash.exe`. Keep reusable Pi scripts in `C:\balancebot_training\shared\pi\`.
-- **Queues and dashboard:** `C:\balancebot_training\tools\run_queue.ps1`, `submit_queue.ps1`, `dashboard.ps1`.
+- **Pi:** use `C:\venvs\balancebot\Scripts\python.exe C:\balancebot_training\tools_pi\pi_ops.py <action> [args]`.
+  It covers every approved Pi operation (`check`, `preflight`, `deploy`, `post-deploy`, `tilt`, `tilt-stream`,
+  `set-pitch-zero`, `floor`, `bench`, `bench-lead`, `list-logs`, `fetch-latest`, `fetch-stamp`, `shutdown`), runs
+  only hash-pinned scripts from `C:\balancebot_training\shared\pi\`, and accepts `--dry-run` (no network). Motor
+  actions (`floor`, `bench`, `bench-lead`) need `--allow-drive`, and only after Evan says go for that run. The full
+  table is in `C:\balancebot_training\tools_pi\README.md`; logs land in `C:\balancebot_training\legobot\pi_logs\`.
+  `pi_run.ps1 <script.sh> [args] [-AllowDrive]` and `pi_logs.py` still work for what `pi_ops.py` doesn't cover.
+  `pi_run.ps1`'s drive guard is a seatbelt, not a proof (it doesn't inspect heredocs or every way of starting
+  `balance.py`), so the per-run go still applies. `pi_fetch.ps1` is superseded by `pi_ops.py fetch-stamp`. Never
+  pipe scripts through `Git\bin\bash.exe`.
+- **Deploy:** only `pi_ops.py deploy` (it calls `tools_ops\ops.py pi-deploy`); run it with `--dry-run` first. It
+  deploys the fixed Antigravity clone `C:\balancebot\engr-10301h-balancing-robot`, not the checkout you are in, and
+  replaces `~/legobot/policies` on the Pi. Follow it with `pi_ops.py post-deploy`. `pi_deploy.ps1` is retired
+  (`tools_pi\retired\`).
+- **Desktop and training status:** `C:\venvs\balancebot\Scripts\python.exe C:\balancebot_training\tools_ops\train_status.py`
+  (`laptop`, `desktop`, `runs`, `tail <queue>`, ...) and `...\tools_ops\ops.py` (`pull-run`, `pull-queue-logs`,
+  `queue-file`, `list-tasks`, `hash-compare`, ...). Both take `--dry-run`. No ad-hoc `scp`/`ssh desktop` and no
+  inline PowerShell over SSH. Details: `C:\balancebot_training\tools_ops\README.md`.
+- **Queues and dashboard:** `C:\balancebot_training\tools\run_queue.ps1`, `submit_queue.ps1`, `dashboard.ps1`, and
+  `C:\balancebot_training\queue_tools\`. Resuming or stopping a queue needs Evan's explicit request.
 - **Handoffs between agents:** write shared files to `C:\balancebot_training\shared\`, never into or out of another
   conversation's scratch folder.
 

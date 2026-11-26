@@ -1,5 +1,9 @@
 # PR #15 audit, prompt 1 of 2: for the window that ran E1
 
+> **Historical, do not re-run.** This prompt was used for the PR #15 audit, and its work is done (PR #15 merged
+> with its fixes on main). Re-running it now would redo finished steps, for example regenerating
+> `results/legobot/comparison/e1_staged_gains/` and overwriting saved E1 results. Kept for the record only.
+
 Paste everything below the line into the Antigravity window that ran Phase E1. Run this one first; prompt 2
 (`pr15-handoff-2-fresh-window.md`) goes to a fresh window after this one's commit lands.
 

@@ -1,5 +1,9 @@
 # PR #15 audit, prompt 2 of 2: for a fresh window
 
+> **Historical, do not re-run.** This prompt was used for the PR #15 audit, and its work is done (PR #15 merged
+> with its fixes on main). Re-running it now would redo finished steps, for example re-measuring the LEGO
+> `LEARNING` scales, which would change the policy inputs in the middle of E2. Kept for the record only.
+
 Paste everything below the line into a fresh agent window started at the repository root, on branch
 `claude/legobot-tick-timing-574623`, **after** the E1 window has committed its recovery work
 (`pr15-handoff-1-e1-window.md`).
