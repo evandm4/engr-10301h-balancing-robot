@@ -366,6 +366,16 @@ selection: it decides the even/odd = desktop/laptop parity check, since the even
   - `--max-batch 299700`: 123.6 s/gen, peak VRAM 1607 MiB. Projected ~19.0 h for 500 gens plus 15 checkpoints.
   - The alternative, 199800, ran at 126.3 s/gen with 1461 MiB, so it was not used.
   - B1 seed 0 started 17:51:50 (best 14.26 at gen 10).
+  - Status 2026-11-26 ~00:50: best train cost 14.26 at gen 190 (2.28e9 robot-s), against L's 7.77–7.86 on the same
+    objective and the same 150 train seeds. B1 is far behind L per unit of compute so far. Projected end ~12:40–13:00.
+- **Desktop B1 seed 1 queued (Evan, 2026-11-26 00:58).** Also a D5 development run, not an E2 L run.
+  - Scheduled Task `balancebot-b1s1-desktop` (`-AtStartup -StopOnError`), registered 01:00:45 from the desktop
+    clone at `4582fe7`, clean (checked by the launch script before submitting).
+  - Job 1 waits until B1 seed 0 has `summary.json` + `final.npz`, `b1-desktop` has written `QUEUE_DONE`, and no
+    `run_neuroevolution` process is left. It fails (and so stops the queue) if seed 0 did not finish.
+  - Job 2: `--method residual --profile full --float64 --train-seeds 150 --max-batch 299700 --allow-screen-off
+    --run-seed 1 --out C:/balancebot_training/legobot/neuroevolution/residual/e2-seed1`. These are the seed 0 settings
+    with only the run seed changed. Expected ~19 h, so it ends around Fri 08:00.
 
 ## E2.7 (provisional): `l_e2_s1`, the first finished L run
 
