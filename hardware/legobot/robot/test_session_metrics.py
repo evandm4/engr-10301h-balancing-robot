@@ -261,3 +261,114 @@ def test_reproduces_prereg_costs():
             for s in ("000104", "010508", "235826", "235553")}
     assert [cost[s] for s in ("000104", "010508", "235826", "235553")] == pytest.approx(
         [2.70, 2.88, 3.40, 3.84], abs=0.006)
+
+
+@needs_logs
+def test_reproduces_cost_gap_report_cost10():
+    """Verify 10 s-equivalent cost against COST_GAP_REPORT.md for P7 L (10 s), session-2 L (20 s), and a fall."""
+    cfg = sm.score_run.control.load_robot_config()
+    runs = {s: sm.run_metrics(sm.find_runs([s], E2_LOGS)[0], cfg=cfg)
+            for s in ("000104", "010508", "052757", "053026", "053251", "000949")}
+    assert runs["000104"]["cost10"] == pytest.approx(2.70, abs=0.01)
+    assert runs["010508"]["cost10"] == pytest.approx(2.88, abs=0.01)
+    assert runs["052757"]["cost10"] == pytest.approx(2.88, abs=0.01)      # s2 V3 (20 s)
+    assert runs["053026"]["cost10"] == pytest.approx(3.27, abs=0.01)      # s2 D1 (20 s)
+    assert runs["053251"]["cost10"] == pytest.approx(3.08, abs=0.01)      # s2 D2 (20 s)
+    assert runs["052757"]["cost_per_s"] == pytest.approx(runs["052757"]["cost10"] / 10.0)
+    assert runs["000949"]["fell"] is True
+    assert runs["000949"]["cost10"] is None and runs["000949"]["cost_per_s"] is None
+
+
+def _write_scored_run(folder, stamp, label, seconds, *, fell=False, fall_time=None, duration_meta=None):
+    folder.mkdir(parents=True, exist_ok=True)
+    n = max(2, int(round(seconds * FS)) + 1)
+    t = np.arange(n, dtype=float) / FS
+    dur = float(seconds) if duration_meta is None else duration_meta
+    meta = {"label": f"{label} {stamp}", "controller": {"kind": "policy", "bundle_name": "l_e2_s1"},
+            "calibration": {"pitch_zero": -0.0027}, "fell": bool(fell), "fall_time": fall_time,
+            "duration": dur, "reason": "tilt" if fell else "done"}
+    base = folder / f"{stamp}_{label}"
+    with open(f"{base}_run.csv", "w", newline="", encoding="utf-8") as f:
+        f.write("# " + json.dumps(meta) + "\n")
+        f.write("t,x,x_dot,theta,theta_dot,torque,pitch_reference,velocity_goal\n")
+        for ti in t:
+            f.write(f"{ti:.6f},{0.05 * ti:.6f},0.05,0.04,0.0,0.10,0.0,0.0\n")
+    return Path(f"{base}_run.csv")
+
+
+def test_cost10_in_run_metrics_table_and_json(tmp_path):
+    """session_metrics exposes cost10/cost_per_s across 10/20/30 s, None on fall/zero/NaN, table column, and JSON."""
+    cfg = sm.score_run.control.load_robot_config()
+    p10 = _write_scored_run(tmp_path, "20261127_100001", "e3_B1_L", 10.0)
+    p20 = _write_scored_run(tmp_path, "20261127_100002", "e3_B2_L", 20.0)
+    p30 = _write_scored_run(tmp_path, "20261127_100003", "e3_B3_L", 30.0)
+    pfall = _write_scored_run(tmp_path, "20261127_100004", "e3_B4_L", 4.0, fell=True, fall_time=4.0, duration_meta=10.0)
+    pzero = _write_scored_run(tmp_path, "20261127_100005", "e3_B5_L", 10.0, duration_meta=0.0)
+    pnan = _write_scored_run(tmp_path, "20261127_100006", "e3_B6_L", 10.0, duration_meta=float("nan"))
+
+    rows = [sm.run_metrics(p, cfg=cfg) for p in (p10, p20, p30, pfall, pzero, pnan)]
+    r10, r20, r30, rfall, rzero, rnan = rows
+
+    assert r20["cost"] == pytest.approx(2.0 * r10["cost"], rel=1e-9)
+    assert r30["cost"] == pytest.approx(3.0 * r10["cost"], rel=1e-9)
+    assert r10["cost10"] == pytest.approx(r10["cost"], rel=1e-9)
+    assert r20["cost10"] == pytest.approx(r10["cost10"], rel=1e-9)
+    assert r30["cost10"] == pytest.approx(r10["cost10"], rel=1e-9)
+    assert r20["cost_per_s"] == pytest.approx(r20["cost10"] / 10.0, rel=1e-9)
+    assert rfall["fell"] is True and rfall["cost10"] is None and rfall["cost_per_s"] is None
+    assert rzero["cost10"] is None and rzero["cost_per_s"] is None
+    assert rnan["cost10"] is None and rnan["cost_per_s"] is None
+
+    table = sm.format_table(rows)
+    header = table.splitlines()[0].split()
+    assert "cost10" in header and header.index("cost10") == header.index("cost") + 1
+    lines = table.splitlines()[1:]
+    assert f"{r20['cost10']:.3f}" in lines[1]
+    assert "fell" in lines[3].split()
+    assert lines[4].split()[header.index("cost10")] == "-"
+    assert lines[5].split()[header.index("cost10")] == "-"
+
+    # JSON round-trip preserves cost10 floats and None
+    roundtripped = json.loads(json.dumps(sm._jsonable({"runs": rows})))["runs"]
+    assert roundtripped[1]["cost10"] == pytest.approx(r20["cost10"])
+    assert roundtripped[1]["cost_per_s"] == pytest.approx(r20["cost_per_s"])
+    assert roundtripped[3]["cost10"] is None
+    assert roundtripped[4]["cost10"] is None
+    assert roundtripped[5]["cost10"] is None
+
+
+def test_block_b_and_c_parallel_cost10_summaries():
+    """analyze_block_b and analyze_block_c add parallel cost10 summaries without altering raw cost results."""
+    runs_b = [
+        {"controller": "L", "cost": 6.0, "cost10": 3.0, "fell": False, "theta_pp_deg": [8.0]},
+        {"controller": "L", "cost": 9.6, "cost10": 3.2, "fell": False, "theta_pp_deg": [8.5]},
+        {"controller": "P", "cost": 3.4, "cost10": 3.4, "fell": False, "theta_pp_deg": [10.0]},
+        {"controller": "P", "cost": 1500.0, "cost10": None, "fell": True, "theta_pp_deg": [12.0]},
+        {"controller": "M", "cost": 7.6, "duration": 20.0, "fell": False, "theta_pp_deg": [11.0]},
+    ]
+    h = {x["H"]: x for x in sm.analyze_block_b(runs_b)}
+    # Raw costs untouched
+    assert h["costs"]["value"]["L"]["median"] == pytest.approx(7.8)
+    assert h["costs"]["value"]["P"]["costs"] == [3.4, 1500.0]
+    # Parallel cost10 summary: L median = 3.1, P excludes fall from median but records falls=1 and None in list, M falls back to duration
+    c10 = h["cost10"]["value"]
+    assert c10["L"]["median"] == pytest.approx(3.1) and c10["L"]["n_valid"] == 2 and c10["L"]["falls"] == 0
+    assert c10["P"]["n"] == 2 and c10["P"]["n_valid"] == 1 and c10["P"]["falls"] == 1
+    assert c10["P"]["median"] == pytest.approx(3.4) and c10["P"]["cost10s"] == [3.4, None]
+    assert c10["M"]["median"] == pytest.approx(3.8)
+
+    band = [{"t0": float(k), "t1": float(k + 4), "fraction": 0.05, "peak_hz": 1.75} for k in range(0, 20, 4)]
+    l_run = {"stamp": "s1", "controller": "L", "plateaus": [{"error": -0.02}],
+             "wheel_ratio": 0.8, "band": band, "cost": 6.4, "cost10": 3.2, "fell": False}
+    m_ok = dict(l_run, stamp="s2", controller="M", cost=8.0, cost10=4.0, fell=False)
+    hc_ok = {x["H"]: x for x in sm.analyze_block_c([l_run, m_ok], svr_dir="does-not-exist")}
+    assert hc_ok["H-C5"]["value"]["median_cost_L"] == pytest.approx(6.4)
+    assert hc_ok["H-C5"]["value"]["median_cost_M"] == pytest.approx(8.0)
+    assert hc_ok["H-C5"]["value"]["median_cost10_L"] == pytest.approx(3.2)
+    assert hc_ok["H-C5"]["value"]["median_cost10_M"] == pytest.approx(4.0)
+
+    m_fell = dict(l_run, stamp="s3", controller="M", cost=1500.0, cost10=None, fell=True)
+    hc_fell = {x["H"]: x for x in sm.analyze_block_c([l_run, m_fell], svr_dir="does-not-exist")}
+    assert hc_fell["H-C5"]["verdict"] == "fail"
+    assert hc_fell["H-C5"]["value"]["median_cost10_M"] is None
+    assert hc_fell["H-C5"]["value"]["median_cost10_L"] == pytest.approx(3.2)

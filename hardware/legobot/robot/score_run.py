@@ -1,4 +1,4 @@
-"""E4 comparison hooks: score real/sim_hw runs with the simulator's cost and generate counterbalanced run sheets (POLICY_ON_ROBOT_PLAN P8).
+"""E4 comparison hooks: score real/sim_hw runs with the simulator's cost (raw and 10 s-equivalent) and generate counterbalanced run sheets (POLICY_ON_ROBOT_PLAN P8).
 
 Usage:
     python -m robot.score_run logs/*_run.csv [--duration 20] [--json scores.json]
@@ -59,8 +59,44 @@ def _controller_name(meta: dict) -> str:
     return "unknown"
 
 
+COST10_REFERENCE_S = 10.0
+
+
+def normalize_cost(
+    run_cost: float,
+    duration: float,
+    *,
+    fell: bool = False,
+    reference_s: float = COST10_REFERENCE_S,
+) -> tuple[Optional[float], Optional[float]]:
+    """Return ``(cost_per_s, cost10)`` for a scored run, or ``(None, None)`` if fallen or duration is invalid.
+
+    Raw ``cost`` is a time integral over the armed run, so scaling by ``reference_s / duration`` puts runs of
+    different lengths on a common 10 s-equivalent basis. Fallen runs include a non-integral fall penalty and
+    therefore return ``(None, None)`` (they still rank worst via raw ``cost`` and ``fell=True``).
+    """
+    if fell:
+        return None, None
+    try:
+        cost_f = float(run_cost)
+        dur_f = float(duration)
+        ref_f = float(reference_s)
+    except (TypeError, ValueError):
+        return None, None
+    if not (math.isfinite(cost_f) and math.isfinite(dur_f) and math.isfinite(ref_f)) or dur_f <= 0.0 or ref_f <= 0.0:
+        return None, None
+    cost_per_s = cost_f / dur_f
+    cost10 = cost_f * (ref_f / dur_f)
+    return cost_per_s, cost10
+
+
 def score_trajectory(path, cfg=None, *, duration: Optional[float] = None) -> dict:
-    """Score a logged ``_run.csv`` trajectory using ``cfg.score(result)`` and ``balance_sim.compute_metrics``."""
+    """Score a logged ``_run.csv`` trajectory using ``cfg.score(result)`` and ``balance_sim.compute_metrics``.
+
+    Exposes raw ``cost`` (the time integral over the armed run, plus fall penalty if fallen) alongside
+    ``cost10`` (``cost * 10 / duration``) and ``cost_per_s`` (``cost / duration``). Both normalized fields
+    are ``None`` for fallen runs (the fall penalty is not an integral) or when ``duration <= 0`` or non-finite.
+    """
     run_path = _resolve_run_csv(path)
     if cfg is None:
         cfg = control.load_robot_config()
@@ -83,6 +119,8 @@ def score_trajectory(path, cfg=None, *, duration: Optional[float] = None) -> dic
 
     metrics = compute_metrics(result)
     run_cost = float(cfg.score(result))
+    run_duration = float(result.duration)
+    cost_per_s, cost10 = normalize_cost(run_cost, run_duration, fell=bool(metrics.fell))
     reason = meta.get("reason")
     complete = bool(result.fell or reason == "done")
 
@@ -94,8 +132,10 @@ def score_trajectory(path, cfg=None, *, duration: Optional[float] = None) -> dic
         "fell": bool(metrics.fell),
         "complete": complete,
         "fall_time": None if metrics.fall_time is None else float(metrics.fall_time),
-        "duration": float(result.duration),
+        "duration": run_duration,
         "cost": run_cost,
+        "cost10": cost10,
+        "cost_per_s": cost_per_s,
         "rms_pitch": float(metrics.rms_pitch),
         "max_abs_pitch": float(metrics.max_abs_pitch),
         "velocity_rms_error": float(metrics.velocity_rms_error),
@@ -186,6 +226,7 @@ def format_scores_table(scores: Sequence[dict]) -> str:
         "status",
         "dur(s)",
         "cost",
+        "cost10",
         "rms_th",
         "max_th",
         "v_rms",
@@ -200,6 +241,13 @@ def format_scores_table(scores: Sequence[dict]) -> str:
             status = "INCOMPLETE"
         else:
             status = "ok"
+        c10 = s.get("cost10")
+        if s["fell"]:
+            c10_str = "fell"
+        elif c10 is None or not math.isfinite(c10):
+            c10_str = "-"
+        else:
+            c10_str = f"{c10:.4f}"
         rows.append(
             (
                 str(s["label"]),
@@ -208,6 +256,7 @@ def format_scores_table(scores: Sequence[dict]) -> str:
                 status,
                 f"{s['duration']:.2f}",
                 f"{s['cost']:.4f}",
+                c10_str,
                 f"{s['rms_pitch']:.4f}",
                 f"{s['max_abs_pitch']:.4f}",
                 f"{s['velocity_rms_error']:.4f}",
@@ -233,6 +282,15 @@ def format_scores_table(scores: Sequence[dict]) -> str:
             if complete_items:
                 costs = [x["cost"] for x in complete_items]
                 cost_str = f"mean_cost={st.fmean(costs):.4f}, median_cost={st.median(costs):.4f}"
+                c10s = [
+                    x["cost10"] for x in complete_items
+                    if not x["fell"] and x.get("cost10") is not None and math.isfinite(x["cost10"])
+                ]
+                if c10s:
+                    tag = f" (non-fall n={len(c10s)})" if len(c10s) < len(complete_items) else ""
+                    cost_str += f", mean_cost10={st.fmean(c10s):.4f}, median_cost10={st.median(c10s):.4f}{tag}"
+                else:
+                    cost_str += ", cost10=n/a"
             else:
                 cost_str = "mean_cost=n/a (all incomplete)"
             extra = f", incomplete={incompletes}" if incompletes else ""

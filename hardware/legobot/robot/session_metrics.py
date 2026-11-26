@@ -6,7 +6,9 @@ This script only computes them; it does not change a definition. If a definition
 Per run (section 2 notation; all from the robot's own estimates, not truth):
   - theta_mean  (theta-bar): mean of `theta` over the armed run (`_run.csv`).
   - v_mean      (v-bar):     net change of `x` divided by the run's duration (t_last - t_first).
-  - cost, fell:              `score_run.py`'s `cost` and `fell` (imported, not reimplemented).
+  - cost, cost10, cost_per_s, fell:
+                             `score_run.py`'s raw `cost`, 10 s-equivalent cost (`cost * 10 / duration`; `None` on
+                             falls or invalid duration), `cost / duration`, and `fell` (imported, not reimplemented).
   - theta p-p:               peak-to-peak theta in consecutive 2 s windows (H-B4), in degrees.
   - plateaus:                each maximal run of constant `velocity_goal` longer than 0.5 s; error = mean `x_dot`
                              minus the goal over the whole plateau (H-C1).
@@ -272,7 +274,8 @@ def run_metrics(path, cfg=None, sheet_row=None, with_cost=True):
             out["wheel_ratio_cruise"] = wheel_ratio(raw["pos_left"][a0:b0], raw["pos_right"][a0:b0])
     if with_cost:
         s = score_run.score_trajectory(path, cfg=cfg)
-        out.update(cost=s["cost"], fell=s["fell"], reason=s["reason"])
+        out.update(cost=s["cost"], cost10=s["cost10"], cost_per_s=s["cost_per_s"],
+                   fell=s["fell"], reason=s["reason"])
     return out
 
 
@@ -339,6 +342,17 @@ def _costs(runs, code):
     return [r["cost"] for r in runs if r["controller"] == code and not r.get("excluded")]
 
 
+def _cost10_of(r):
+    if r.get("fell"):
+        return None
+    if "cost10" in r:
+        v = r["cost10"]
+        return float(v) if v is not None and math.isfinite(v) else None
+    if "cost" in r and "duration" in r:
+        return score_run.normalize_cost(r["cost"], r["duration"], fell=False)[1]
+    return None
+
+
 def analyze_block_b(runs, full_n=B_FULL_N):
     from scipy.stats import mannwhitneyu
     groups = {c: _costs(runs, c) for c in ("L", "P", "M")}
@@ -370,6 +384,21 @@ def analyze_block_b(runs, full_n=B_FULL_N):
     out.append(_h("H-B4", med, f"descriptive (L below both PIDs: {lower})",
                   "median theta p-p (deg) over all 2 s windows pooled per controller",
                   range_deg={c: [min(v), max(v)] if v else None for c, v in pp.items()}))
+    c10_desc = {}
+    for c in ("L", "P", "M"):
+        included = [r for r in runs if r["controller"] == c and not r.get("excluded")]
+        vals = [_cost10_of(r) for r in included]
+        valid = [v for v in vals if v is not None]
+        c10_desc[c] = {
+            "n": len(included),
+            "n_valid": len(valid),
+            "falls": sum(1 for r in included if r.get("fell")),
+            "median": float(np.median(valid)) if valid else None,
+            "sd": float(np.std(valid, ddof=1)) if len(valid) > 1 else None,
+            "cost10s": vals,
+        }
+    out.append(_h("cost10", c10_desc, "descriptive",
+                  "10 s-equivalent cost (cost * 10 / duration) per controller; falls are None and excluded from median/sd"))
     return out
 
 
@@ -417,8 +446,12 @@ def analyze_block_c(runs, svr_dir=DEFAULT_SVR_DIR):
         out.append(_h("H-C4", None, "not run (run sim_vs_real.py <stamp> --no-anim first)", "median in [1.3, 1.7]"))
     if M:
         fell = [r["stamp"] for r in M if r.get("fell")]
+        c10_M = [v for r in M if (v := _cost10_of(r)) is not None]
+        c10_L = [v for r in L if (v := _cost10_of(r)) is not None]
         out.append(_h("H-C5", {"fell": fell, "median_cost_M": float(np.median([r["cost"] for r in M])),
-                               "median_cost_L": float(np.median([r["cost"] for r in L]))},
+                               "median_cost_L": float(np.median([r["cost"] for r in L])),
+                               "median_cost10_M": float(np.median(c10_M)) if c10_M else None,
+                               "median_cost10_L": float(np.median(c10_L)) if c10_L else None},
                       "fail" if fell else "pass", "M completes with no fall; cost comparison descriptive (n = 2)"))
     else:
         out.append(_h("H-C5", None, "not run (no M runs)", "M completes with no fall"))
@@ -431,8 +464,17 @@ def _fmt(x):
         f"{x:+.4f}" if isinstance(x, float) else str(x))
 
 
+def _fmt_cost10(r):
+    if r.get("fell"):
+        return "fell"
+    v = r.get("cost10")
+    if v is None or (isinstance(v, float) and not math.isfinite(v)):
+        return "-"
+    return f"{v:.3f}"
+
+
 def format_table(rows):
-    lines = [f"{'stamp':16s} {'label':28s} {'ctl':4s} {'dur':>6s} {'theta_bar':>9s} {'v_bar':>8s} {'cost':>7s} "
+    lines = [f"{'stamp':16s} {'label':28s} {'ctl':4s} {'dur':>6s} {'theta_bar':>9s} {'v_bar':>8s} {'cost':>7s} {'cost10':>7s} "
              f"{'pp_med':>6s} {'wheelR':>7s}  plateau errors / band fractions"]
     for r in rows:
         extra = " ".join(f"{p['goal']:+.2f}:{p['error']:+.3f}" for p in r["plateaus"])
@@ -440,7 +482,7 @@ def format_table(rows):
             extra += "  band " + " ".join(f"{w['fraction']:.3f}@{w['peak_hz']:.2f}" for w in r["band"])
         flag = f"  EXCLUDED: {r['excluded']}" if r.get("excluded") else ""
         lines.append(f"{r['stamp']:16s} {r['label'][:28]:28s} {str(r['controller'])[:4]:4s} {r['duration']:6.2f} "
-                     f"{r['theta_mean']:+9.4f} {r['v_mean']:+8.4f} {r.get('cost', float('nan')):7.3f} "
+                     f"{r['theta_mean']:+9.4f} {r['v_mean']:+8.4f} {r.get('cost', float('nan')):7.3f} {_fmt_cost10(r):>7s} "
                      f"{r['theta_pp_median_deg']:6.1f} {_fmt(r.get('wheel_ratio')):>7s}  {extra}{flag}")
     return "\n".join(lines)
 

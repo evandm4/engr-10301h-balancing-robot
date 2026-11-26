@@ -1489,6 +1489,8 @@ def test_score_run_and_counterbalanced_run_sheet(tmp_path, cfg, synthetic_bundle
     assert not s_ok["fell"] and s_ok["complete"] is True
     assert s_ok["cost"] == pytest.approx(cfg.score(res_ok))
     assert s_ok["duration"] == pytest.approx(5.0)
+    assert s_ok["cost10"] == pytest.approx(s_ok["cost"] * 10.0 / 5.0)
+    assert s_ok["cost_per_s"] == pytest.approx(s_ok["cost"] / 5.0)
 
     # 2) Fallen run: duration must equal --seconds (10.0) for fall penalty scaling, and override works
     out_fall = tmp_path / "score_fall"
@@ -1500,10 +1502,12 @@ def test_score_run_and_counterbalanced_run_sheet(tmp_path, cfg, synthetic_bundle
     assert res_fall.fell and res_fall.duration == pytest.approx(10.0)
     s_fall = score_run.score_trajectory(run_fall, cfg=cfg)
     assert s_fall["fell"] and s_fall["complete"] is True and s_fall["cost"] == pytest.approx(cfg.score(res_fall))
+    assert s_fall["cost10"] is None and s_fall["cost_per_s"] is None
     s_fall_20 = score_run.score_trajectory(run_fall, cfg=cfg, duration=20.0)
     assert s_fall_20["duration"] == pytest.approx(20.0)
     assert s_fall_20["cost"] == pytest.approx(cfg.score(replace(res_fall, duration=20.0)))
     assert s_fall_20["cost"] > s_fall["cost"]       # same fall time out of a longer planned run -> larger penalty
+    assert s_fall_20["cost10"] is None and s_fall_20["cost_per_s"] is None
 
     # 3) Early non-fall abort (e.g. stale trip) is marked complete=False (M6)
     out_abort = tmp_path / "score_abort"
@@ -1525,3 +1529,121 @@ def test_score_run_and_counterbalanced_run_sheet(tmp_path, cfg, synthetic_bundle
     mean_indices = {c: np.mean([e["run_index"] for e in sheet if e["controller"] == c]) for c in ctrls}
     assert len({round(v, 9) for v in mean_indices.values()}) == 1
     assert all("robot.balance" in e["command"] and "--label" in e["command"] for e in sheet)
+
+
+def _write_synthetic_run_csv(
+    path,
+    seconds: float,
+    *,
+    dt: float = 0.01,
+    pitch: float = 0.04,
+    vel: float = 0.05,
+    torque: float = 0.10,
+    fell: bool = False,
+    fall_time=None,
+    duration_meta=None,
+    label: str = "synth",
+    controller: str = "l_e2_s1",
+    reason: str = "done",
+):
+    n = max(2, int(round(seconds / dt)) + 1)
+    t = np.arange(n, dtype=float) * dt
+    dur = float(seconds) if duration_meta is None else duration_meta
+    meta = {
+        "fell": bool(fell),
+        "fall_time": fall_time,
+        "duration": dur,
+        "label": label,
+        "controller": {"kind": "policy", "bundle_name": controller},
+        "reason": reason,
+    }
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        f.write("# " + json.dumps(meta) + "\n")
+        f.write("t,x,x_dot,theta,theta_dot,torque,pitch_reference,velocity_goal\n")
+        for ti in t:
+            f.write(f"{ti:.6f},{vel * ti:.6f},{vel:.6f},{pitch:.6f},0.0,{torque:.6f},0.0,0.0\n")
+    return path
+
+
+def test_score_run_cost10_scales_across_10_20_30s(tmp_path, cfg):
+    """Raw cost is a time integral (scales 1:2:3 across 10/20/30 s), while cost10 and cost_per_s are invariant."""
+    from robot import score_run
+
+    scores = {}
+    for sec in (10.0, 20.0, 30.0):
+        p = _write_synthetic_run_csv(tmp_path / f"run_{int(sec)}s_run.csv", sec, label=f"run_{int(sec)}s")
+        scores[sec] = score_run.score_trajectory(p, cfg=cfg)
+
+    c10, c20, c30 = scores[10.0]["cost"], scores[20.0]["cost"], scores[30.0]["cost"]
+    assert c10 > 0.0
+    assert c20 == pytest.approx(2.0 * c10, rel=1e-9)
+    assert c30 == pytest.approx(3.0 * c10, rel=1e-9)
+
+    for sec in (10.0, 20.0, 30.0):
+        s = scores[sec]
+        assert s["cost10"] == pytest.approx(c10, rel=1e-9)
+        assert s["cost_per_s"] == pytest.approx(c10 / 10.0, rel=1e-9)
+
+
+def test_score_run_cost10_fall_and_invalid_duration(tmp_path, cfg):
+    """Fallen runs and runs with duration <= 0 or non-finite produce cost10=None and cost_per_s=None."""
+    from robot import score_run
+
+    # Unit checks on normalize_cost
+    assert score_run.normalize_cost(6.0, 20.0) == (pytest.approx(0.3), pytest.approx(3.0))
+    assert score_run.normalize_cost(6.0, 20.0, fell=True) == (None, None)
+    for bad_dur in (0.0, -10.0, float("nan"), float("inf"), float("-inf")):
+        assert score_run.normalize_cost(6.0, bad_dur) == (None, None)
+    assert score_run.normalize_cost(float("nan"), 10.0) == (None, None)
+
+    # Fallen trajectory -> None, raw cost retains fall penalty
+    p_fall = _write_synthetic_run_csv(
+        tmp_path / "fell_run.csv", 4.0, fell=True, fall_time=4.0, duration_meta=10.0, reason="tilt", label="fell"
+    )
+    s_fall = score_run.score_trajectory(p_fall, cfg=cfg)
+    assert s_fall["fell"] is True and s_fall["cost"] > 1000.0
+    assert s_fall["cost10"] is None and s_fall["cost_per_s"] is None
+
+    # Non-fallen trajectories with zero, negative, NaN, and Inf duration metadata -> None
+    for name, bad_dur in [("zero", 0.0), ("neg", -5.0), ("nan", float("nan")), ("inf", float("inf"))]:
+        p_bad = _write_synthetic_run_csv(
+            tmp_path / f"{name}_run.csv", 10.0, duration_meta=bad_dur, label=f"bad_{name}"
+        )
+        s_bad = score_run.score_trajectory(p_bad, cfg=cfg)
+        assert s_bad["fell"] is False and math.isfinite(s_bad["cost"]) and s_bad["cost"] > 0.0
+        assert s_bad["cost10"] is None and s_bad["cost_per_s"] is None
+
+
+def test_score_run_json_round_trip_and_table_column(tmp_path, capsys):
+    """CLI JSON output round-trips cost10/cost_per_s (including None) and table shows cost10 next to cost."""
+    from robot import score_run
+
+    r10 = _write_synthetic_run_csv(tmp_path / "r10_run.csv", 10.0, label="r10")
+    r20 = _write_synthetic_run_csv(tmp_path / "r20_run.csv", 20.0, label="r20")
+    rfall = _write_synthetic_run_csv(
+        tmp_path / "rfall_run.csv", 4.0, fell=True, fall_time=4.0, duration_meta=10.0, reason="tilt", label="rfall"
+    )
+    rzero = _write_synthetic_run_csv(tmp_path / "rzero_run.csv", 10.0, duration_meta=0.0, label="rzero")
+    out_json = tmp_path / "scores.json"
+
+    returned = score_run.main([str(r10), str(r20), str(rfall), str(rzero), "--json", str(out_json)])
+    stdout = capsys.readouterr().out
+    loaded = json.loads(out_json.read_text(encoding="utf-8"))
+
+    assert len(loaded) == 4
+    assert loaded[0]["cost10"] == pytest.approx(returned[0]["cost10"])
+    assert loaded[1]["cost10"] == pytest.approx(loaded[0]["cost10"])
+    assert loaded[0]["cost_per_s"] == pytest.approx(loaded[0]["cost10"] / 10.0)
+    assert loaded[2]["fell"] is True and loaded[2]["cost10"] is None and loaded[2]["cost_per_s"] is None
+    assert loaded[3]["cost10"] is None and loaded[3]["cost_per_s"] is None
+
+    # Table header has cost10 immediately after cost, rows show numeric / 'fell' / '-', summary has cost10
+    header_tokens = stdout.splitlines()[0].split()
+    assert "cost" in header_tokens and "cost10" in header_tokens
+    assert header_tokens.index("cost10") == header_tokens.index("cost") + 1
+    fall_line = next(line for line in stdout.splitlines() if line.startswith("rfall "))
+    zero_line = next(line for line in stdout.splitlines() if line.startswith("rzero "))
+    assert "fell" in fall_line.split()
+    assert "-" in zero_line.split()
+    assert "mean_cost=" in stdout and "median_cost=" in stdout
+    assert "mean_cost10=" in stdout and "median_cost10=" in stdout
