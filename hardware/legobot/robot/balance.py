@@ -539,6 +539,9 @@ def main(argv=None):
     ap.add_argument("--duty-cap", type=float)
     ap.add_argument("--ff-gain", type=float, help="feedforward gain (default: the gains file's, else the config's; "
                                                   "refused for a policy, which runs its training config's)")
+    ap.add_argument("--ff-speed", choices=control.FF_SPEED_MODES, default="per_wheel",
+                    help="back-EMF feedforward speed: each wheel's own (per_wheel, default, as run through E3) or the "
+                         "mean of the two (same total torque; damps the heading mode; post-E3 A/B)")
     ap.add_argument("--allow-unchecked", action="store_true",
                     help="allow a bare policy .npz (no manifest, sha256, config check, self-test or envelope)")
     ap.add_argument("--allow-config-mismatch", action="store_true",
@@ -608,6 +611,7 @@ def main(argv=None):
         f": FIFO on the final duty after feedforward; the first {delay_ticks} armed ticks write duty 0; the "
         "controller keeps its issued commands" if delay_ticks else ""))
     notes["IMU DLPF"] = imu_dlpf_text() + ("; --sim: SimImu has no filter" if a.sim else "")
+    notes["feedforward speed"] = a.ff_speed
 
     # policies (P2e, P4c, P5a): provenance, the envelope monitor, and the checks on the flags that need one
     bundle = getattr(controller, "bundle", None)
@@ -693,7 +697,7 @@ def main(argv=None):
     try:
         plimit = 1.0 if a.sim else hc.RUN_PLIMIT
         brain = control.Brain(cfg, controller, control.PitchEstimator(cfg, 0.0, pitch_zero),
-                              control.Feedforward(cfg, ff_gain, plimit), duty_cap, hat_period,
+                              control.Feedforward(cfg, ff_gain, plimit, speed=a.ff_speed), duty_cap, hat_period,
                               added_delay_ticks=delay_ticks)
         if not a.sim and (vin := notes.get("vin at start")):
             brain.feedforward.set_supply(vin)
@@ -825,6 +829,7 @@ def main(argv=None):
             "duty_cap": duty_cap, "feedforward_gain": brain.feedforward.gain, "calibration": cal,
             "deployed": notes["deployed"], "inject": a.inject, "acted_ticks": stats.get("acted_ticks", 0),
             "compute_lead_s": compute_lead,
+            "ff_speed": a.ff_speed,
             "added_delay_ms": delay_ms, "added_delay_ticks": delay_ticks,
             "imu_dlpf": {"gyro_dlpfcfg": hc.GYRO_DLPFCFG, "accel_dlpfcfg": hc.ACCEL_DLPFCFG,
                          "gyro_smplrt_div": hc.GYRO_SMPLRT_DIV, "accel_smplrt_div": hc.ACCEL_SMPLRT_DIV,
