@@ -223,3 +223,64 @@ Also report each controller's run-to-run sd: it sets N for the next pre-registra
 8. **`t_max` crops** the θ̄, v̄, window, plateau and wheel-ratio metrics, but not `score_run`'s `cost`, which is
    always the whole run.
 9. **Armed span** = rows with `phase == 1`, as in `balance.write_logs`.
+
+## 6. Session 2 addendum (2026-11-25, ~23:10), fixed before any session-2 run
+
+**Why there is a session 2:** session 1 (see `E3_SESSION1_NOTES.md`) found that the Pi/IMU mount moved. The balance
+point jumped ~+0.030 rad between A2 and A3+, and the lying tilt moved 1.594 → 1.659 rad. After that, Evan stopped
+because of Pi wobble. At ~23:00, Evan added **three small, very low-mass rubber pieces that hold the Pi in place**. He
+describes the result as "more rigid, not perfect". Nothing else changed: same robot code (`24b9b46` deployed), battery
+mount, floor spot and lying orientation (front face down).
+
+- **This is a new build condition.** Session-2 numbers are reported separately from session 1 and are never pooled
+  with session-1 numbers for any H#. Session-1 verdicts stand as written.
+- **Battery:** charge 1 continues (5 runs used; last start vin 7.94 V). The §1 vin rules apply unchanged.
+- **Labels:** `e3s2_<run>_<ctrl>`. Run sheet: `C:\balancebot_training\legobot\e3_s2_runsheet.csv`.
+- **Tape check (new, descriptive):** after every still run, Evan reports the tape-measured net displacement and
+  rotation if he can. The ratio of robot Δx to tape Δx is reported as descriptive only (session 1: robot +13 cm vs
+  ≤ 5 cm by eye).
+
+### Block V: mount verification (L only). Runs first, and gates everything after it.
+
+| Step | What |
+|---|---|
+| V0 | Lying tilt ×3 with `e2_tilt.sh` (no motors). Lift and re-lay the robot between readings. |
+| V0p | *Optional:* `e3_tilt_stream.sh 20` (no motors) while Evan gently presses the Pi fore/aft and releases. This script has never run; if it errors, the step is skipped, which is not a deviation. |
+| V1 | still, 30 s, calibration.json `pitch_zero` = +0.0213 (the re-trim from the end of session 1) |
+| trim | pitch_zero_new = 0.0213 + θ̄(V1), written with `e3_set_pitch_zero.sh` (same method as §0) |
+| V2, V3 | still, 20 s each, trimmed |
+| V4 | Lying tilt ×3, as in V0 |
+
+| H | Prediction | Metric | Pass / fail |
+|---|---|---|---|
+| H-V1 | Lying tilt is repeatable after re-laying the robot | Range of the 3 V0 readings | Pass if the range is ≤ 0.004 rad (session 1's post-run triple had a range of 0.002) |
+| H-V2 | The trim holds: the robot balances where it was trimmed | θ̄ and v̄ of V2 and V3 | Pass if \|θ̄\| < 0.004 rad and \|v̄\| < 0.005 m/s in **both** (the H-A2 rule) |
+| H-V3 | The balance point repeats run to run | \|θ̄(V3) − θ̄(V2)\| | Pass if ≤ 0.004 rad |
+| H-V4 | Driving does not move the IMU relative to the chassis | mean(V4) − mean(V0) | Pass if \|Δ\| ≤ 0.005 rad (session 1 moved by 0.065 rad) |
+
+V0p is descriptive: it reports the peak deflection under a press and how far the reading is from its pre-press
+baseline 2 s after release.
+
+**Gate:** comparative blocks run only if H-V2, H-V3 and H-V4 all pass. If H-V1 fails, the lying tilt can't serve as a
+check, so H-V4 is not applicable and the gate uses H-V2 and H-V3 alone (logged). If the gate fails, the session ends
+with no Block A/B/C runs. The result is reported as "mount still not stable enough for comparisons", and at most two
+more still runs (20 s) are allowed, for diagnosis only.
+
+### After the gate (order fixed; stop wherever the §1 vin rule says)
+
+1. **A4:** 20 s, about 10 hard pushes (≤ 27°), as in §2.
+2. **A5:** still, 20 s. H-A4 is tested as θ̄(A5) − θ̄(V3), with the §2 thresholds.
+3. **Lying tilt ×3** (V5). If H-A4 is "supported" (\|Δ\| > 0.01), or \|mean(V5) − mean(V0)\| > 0.005 rad: re-trim from
+   A5 (pitch_zero += θ̄(A5)), then do one 20 s still confirmation run, which must pass the H-V2 rule. If it fails, stop
+   before Block B: impacts move the structure. All of this is pre-specified, not a deviation.
+4. **Block B group 1:** M P L L P M, 10 s still, as in §2.
+   - **Tripwire:** if any still run has \|θ̄\| > 0.010 rad, do a lying tilt ×3 before the next run. If it moved
+     > 0.005 rad from V0, Block B stops, and the run that tripped it is reported but flagged.
+5. **A3+ / A3−:** 10 s each, at the current trim ± 0.015 rad (`--pitch-zero`, value in the label). This repeats the
+   session-1 H-A3 sign test, which drift confounded. The H-A3 rule applies, with the OLS over the session-2 L still
+   runs V1, V2, V3, A3±, A5. A3 sits after Block B so that Block B gets the battery first.
+6. **Block C positions 1–3 (L, M, L):** as in §2, only while the start vin is ≥ 7.6 V.
+
+H-A1 is not re-tested: its prediction was for the old mount. V1 plays A1's role (the trim) without a prediction.
+The §3 safety rules and §4 analysis apply unchanged. `session_metrics.py --block A` is used for the V and A runs; the
+H-V metrics are computed from its θ̄/v̄ output and the tilt readings.
