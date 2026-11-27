@@ -45,6 +45,27 @@ def test_feedforward_is_the_simulators_drive(cfg):
     assert dr > dl
 
 
+def test_feedforward_mean_speed_mode(cfg):
+    """--ff-speed mean: both wheels get the drive for the mean speed, which in the averaged slow-PWM model delivers
+    the same total torque as per-wheel (only the split between the wheels differs); default is per-wheel."""
+    assert control.Feedforward(cfg).speed == "per_wheel"
+    with pytest.raises(ValueError, match="feedforward speed"):
+        control.Feedforward(cfg, speed="left")
+    ff_w, ff_m = control.Feedforward(cfg), control.Feedforward(cfg, speed="mean")
+    act = cfg.build_actuator()
+    if cfg.actuator.model != "slow_pwm":
+        pytest.skip("total-torque identity is for the slow-PWM model")
+    for tau, wl, wr in [(0.1, 2.0, 4.0), (-0.2, -5.0, -3.0), (0.3, 6.0, 9.0), (0.05, -1.0, 1.0)]:
+        dl, dr = ff_m.duties(tau, wl, wr)
+        assert dl == dr == pytest.approx(act.drive(tau, 0.5 * (wl + wr)))
+        # per wheel, half of the actuator's (n-motor) torque at that wheel's speed; the true motor = the nominal one
+        total = lambda d1, d2: 0.5 * (act.torque(d1, wl) + act.torque(d2, wr))
+        assert total(dl, dr) == pytest.approx(tau, rel=1e-9, abs=1e-12)
+        assert total(*ff_w.duties(tau, wl, wr)) == pytest.approx(tau, rel=1e-9, abs=1e-12)
+        # equal speeds: the two modes are the same
+        assert ff_m.duties(tau, wl, wl) == ff_w.duties(tau, wl, wl)
+
+
 def test_feedforward_uses_measured_battery(cfg):
     ff = control.Feedforward(cfg)
     ff.set_supply(8.2)
@@ -291,6 +312,18 @@ def test_closed_loop_balances_with_simulator(tmp_path, controller):
     assert meta["source"] == "sim_hw" and not result.fell
     assert abs(result.states[:, 2]).max() < 0.15
     assert abs(result.states[result.t > 5.0, 1].mean()) < 0.15     # no runaway (a P-only velocity loop creeps)
+
+
+def test_closed_loop_balances_with_mean_speed_feedforward(tmp_path):
+    """--ff-speed mean runs end to end in the simulated loop and is logged."""
+    from balance_sim import load_trajectory
+    reason = balance.main(["--sim", "--sim-noise", "--sim-pitch", "0.02", "--controller", "model", "--ff-speed", "mean",
+                           "--seconds", "10", "--outdir", str(tmp_path), "--label", "ffmean"])
+    assert reason == "done"
+    (run_csv,) = tmp_path.glob("*_run.csv")
+    result, meta = load_trajectory(run_csv)
+    assert meta["ff_speed"] == "mean" and not result.fell
+    assert "feedforward speed: mean" in next(tmp_path.glob("*_summary.txt")).read_text()
 
 
 @pytest.mark.parametrize("controller", ["hand", "model"])

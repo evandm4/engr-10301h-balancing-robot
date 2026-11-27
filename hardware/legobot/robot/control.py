@@ -31,6 +31,7 @@ from . import loop_config as lc
 
 
 DRIVER_MODELS = ("slow_pwm", "voltage")   # actuator models whose drive() the robot can send to the HAT
+FF_SPEED_MODES = ("per_wheel", "mean")     # Feedforward speed: each wheel's own, or both wheels' mean
 
 
 def import_config():
@@ -615,9 +616,22 @@ class Feedforward:
       "voltage"  (B1):  V_drive = R^ tau_c / (n eta^ k^) + gain k^ w, clipped to +-V;  d = V_drive / V
 
     Each wheel gets half the torque (the n) and its own back-EMF. V is the battery voltage the HAT reports
-    (set_supply) times port_plimit, so the duty uses the real voltage as the sim's true supply does."""
+    (set_supply) times port_plimit, so the duty uses the real voltage as the sim's true supply does.
 
-    def __init__(self, cfg, gain=None, plimit=1.0):
+    speed: which measured speed the back-EMF term uses (FF_SPEED_MODES).
+      "per_wheel" (default, as run through E3): each wheel's own. With exact constants each wheel then gets
+                  tau / n whatever its speed, so nothing but friction resists one wheel outrunning the other
+                  (the heading mode, which the 2D simulator doesn't have), and the two encoders' independent
+                  quantization goes into the duty difference.
+      "mean":     both wheels the duty for the mean of the two speeds. In the averaged slow-PWM model the
+                  total torque is the same, a d (2V - k (w_l + w_r)) = tau for n = 2, so the mode the
+                  controller and the simulator see is unchanged; the heading mode keeps its back-EMF damping
+                  (|d| a k per motor). For the post-E3 A/B (robot code review, 2026-11-26, finding 1)."""
+
+    def __init__(self, cfg, gain=None, plimit=1.0, speed="per_wheel"):
+        if speed not in FF_SPEED_MODES:
+            raise ValueError(f"feedforward speed must be one of {FF_SPEED_MODES}, got {speed!r}")
+        self.speed = speed
         sim = import_config()  # noqa: F841
         import balance_sim
         self.model = cfg.actuator.model
@@ -648,6 +662,8 @@ class Feedforward:
         return True
 
     def duties(self, torque, w_left, w_right):
+        if self.speed == "mean":
+            w_left = w_right = 0.5 * (w_left + w_right)
         d = self.actuator.drive
         if self._per_volt:
             return d(torque, w_left) / self.supply, d(torque, w_right) / self.supply
