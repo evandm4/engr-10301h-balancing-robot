@@ -1,0 +1,53 @@
+{
+  "name": "l_e2",
+  "robot": "legobot",
+  "kind": "linear",
+  "synthetic": null,
+  "n_params": 10,
+  "multiply_adds_per_tick": 10,
+  "sha256": "321cda5ceb9e13ee03521a0f82e985827107e9d2b58a4219b3f461e7fb934a3a",
+  "source_run": "E2.6 selection: L run seed 8 (EVANS-G16, 4582fe7), checkpoints/mean_7.488e08.npz; K=5 dev mean-of-means 19.724, 0/750 falls (results/legobot/e2_selection/20261126-170931-e26-k5)",
+  "git_commit": "457a9497114edef03d9a0807fa69db096c918483",
+  "dev_score": null,
+  "source_path": null,
+  "source_checkpoint": "checkpoints/mean_7.488e08.npz",
+  "max_torque": 0.9,
+  "input_names": [
+    "v_meas",
+    "theta_meas",
+    "theta_dot_meas",
+    "goal",
+    "int_v",
+    "int_theta",
+    "cmd_1",
+    "cmd_2",
+    "cmd_3",
+    "cmd_4"
+  ],
+  "observation_names": [
+    "v_meas",
+    "theta_meas",
+    "theta_dot_meas",
+    "goal",
+    "goal_minus_v",
+    "int_v",
+    "int_theta",
+    "cmd_1",
+    "cmd_2",
+    "cmd_3",
+    "cmd_4"
+  ],
+  "source_git_commit": "4582fe7386c5a25dfa5f2e7ad1dd0a83e78c2c6d",
+  "config_differences": [],
+  "golden_ticks": 400,
+  "envelope_runs": 15,
+  "envelope_falls": 0,
+  "golden_saturated_ticks": 0,
+  "files_sha256": {
+    "final.npz": "321cda5ceb9e13ee03521a0f82e985827107e9d2b58a4219b3f461e7fb934a3a",
+    "snapshot.json": "33e4396d030fab2786d4c76157e27e942679624a7c86dde22ef19a28869d2850",
+    "summary.json": "0d9001d52d3a3a1dd2c62eae57898e74b955de03d6fb9f34e04e023354693d52",
+    "golden.npz": "d7ec9e38988687d1ec92895e41d647b2e03ad3601a557dc72f26fbb83693b565",
+    "envelope.json": "06ed95c045f4bb0f09567b63835173390851bda25c47915aa1930d1428a92ff7"
+  }
+}
