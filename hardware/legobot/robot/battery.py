@@ -12,9 +12,12 @@ import argparse
 import subprocess
 import time
 
+from . import loop_config as lc
 from .buildhat_serial import BuildHat
 
-FULL_V, LOW_V, CUTOFF_V = 8.4, 7.0, 6.6
+# The cutoff is the balancing loop's own (it refuses to start below it and trips under it), so this script's
+# "BELOW CUTOFF" matches what balance.py will do. It was a separate 6.6 V that missed the G7 change to 6.8 V.
+FULL_V, LOW_V, CUTOFF_V = 8.4, 7.0, lc.VIN_CUTOFF
 
 
 def read_vin(hat, tries=3):
