@@ -324,6 +324,40 @@ def test_checkpoint_metadata_key_is_accepted(tmp_path):
     export_bundle(run, out_root=tmp_path / "out", cfg=LEGO, envelope_seeds=1)
 
 
+def test_export_a_checkpoint_instead_of_final(tmp_path):
+    """E2.6 can select a checkpoint that is not final.npz; the bundle must hold that checkpoint, byte for byte."""
+    run = _fake_run(tmp_path / "run")
+    m0 = _manifest(export_bundle(run, name="final", out_root=tmp_path / "out", cfg=LEGO, envelope_seeds=1))
+    assert m0["source_checkpoint"] == "final.npz" and m0["dev_score"] is not None
+    spec, params = synthetic_policy("l_pid", LEGO)
+    other = np.asarray(params, dtype=float) * 1.01
+    (run / "checkpoints").mkdir()
+    save_policy(run / "checkpoints" / "mean_1e08.npz", spec, other, LEGO.robot.max_torque, robot_seconds=1e8)
+    b = main([str(run), "--name", "ck", "--out-root", str(tmp_path / "out"), "--envelope-seeds", "1",
+              "--checkpoint", "checkpoints/mean_1e08.npz"])
+    m = _manifest(b)
+    assert (b / "final.npz").read_bytes() == (run / "checkpoints" / "mean_1e08.npz").read_bytes()
+    assert m["sha256"] == _sha(run / "checkpoints" / "mean_1e08.npz") != m0["sha256"]
+    assert m["source_checkpoint"] == "checkpoints/mean_1e08.npz"
+    assert m["dev_score"] is None                       # summary.json's score is final.npz's, not this one's
+    s2, p2, _ = load_policy(b / "final.npz")
+    assert np.array_equal(p2, other)
+    golden = _load_golden(b)
+    assert np.array_equal(replay_golden(LEGO, s2, p2, golden), golden["torques"])
+    # A checkpoint byte-identical to final.npz keeps the run's dev score.
+    shutil.copyfile(run / "final.npz", run / "checkpoints" / "same.npz")
+    m3 = _manifest(export_bundle(run, name="same", out_root=tmp_path / "out", cfg=LEGO, envelope_seeds=1,
+                                 checkpoint="checkpoints/same.npz"))
+    assert m3["dev_score"] == m0["dev_score"]
+    for bad in ("../outside.npz", "checkpoints/missing.npz", "summary.json"):
+        with pytest.raises((ValueError, FileNotFoundError)):
+            export_bundle(run, name="bad", out_root=tmp_path / "out", cfg=LEGO, envelope_seeds=1, checkpoint=bad)
+    with pytest.raises(ValueError):
+        export_bundle(synthetic="l_pid", out_root=tmp_path / "out", cfg=LEGO, envelope_seeds=1, checkpoint="x.npz")
+    with pytest.raises(SystemExit):
+        parse_args(["--synthetic", "l_pid", "--checkpoint", "x.npz"])
+
+
 @pytest.mark.parametrize("problem", ["unknown_key", "robot", "method", "max_torque", "missing_summary", "nan_param"])
 def test_run_folder_refusals(tmp_path, problem):
     folder = tmp_path / "run"

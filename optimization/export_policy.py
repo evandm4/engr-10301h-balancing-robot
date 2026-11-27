@@ -303,14 +303,23 @@ def _json(path: Path, data) -> None:
 
 def export_bundle(run_folder=None, *, synthetic: Optional[str] = None, name: Optional[str] = None, out_root=None,
                   cfg=None, envelope_seeds: int = DEFAULT_ENVELOPE_SEEDS, seed: int = 0,
-                  source_label: Optional[str] = None) -> Path:
+                  source_label: Optional[str] = None, checkpoint: Optional[str] = None) -> Path:
     """Write the bundle of a training run's final.npz (run_folder) or of a synthetic policy;
-    returns the bundle folder. Everything is computed and checked before anything is written."""
+    returns the bundle folder. Everything is computed and checked before anything is written.
+
+    checkpoint: a policy file inside run_folder (e.g. "checkpoints/mean_7.488e08.npz", the E2.6 selection) to export
+    instead of final.npz. It is still copied byte for byte and still named final.npz in the bundle (the robot loads
+    that name); the manifest records it as source_checkpoint. The run's summary.json dev score describes final.npz,
+    so dev_score is left null for a checkpoint that is not byte-identical to final.npz.
+    """
     if (run_folder is None) == (synthetic is None):
         raise ValueError("give either a run folder or synthetic=..., not both or neither")
+    if checkpoint is not None and run_folder is None:
+        raise ValueError("checkpoint= needs a run folder")
     cfg = load_config(DEFAULT_ROBOT) if cfg is None else cfg
     max_torque = float(cfg.robot.max_torque)
     source = None
+    policy_file = None
     if synthetic is not None:
         spec, params = synthetic_policy(synthetic, cfg, seed)
         kind = classify_policy_kind(spec)
@@ -320,8 +329,17 @@ def export_bundle(run_folder=None, *, synthetic: Optional[str] = None, name: Opt
         for file in ("final.npz", "snapshot.json", "summary.json"):
             if not (source / file).is_file():
                 raise FileNotFoundError(f"{source / file} not found: not a finished training run")
-        _check_npz_keys(source / "final.npz")
-        spec, params, saved_torque = load_policy(source / "final.npz")
+        policy_file = source / "final.npz"
+        if checkpoint is not None:
+            policy_file = source / checkpoint
+            try:
+                policy_file.resolve().relative_to(source.resolve())
+            except ValueError:
+                raise ValueError(f"checkpoint {checkpoint!r} is outside the run folder") from None
+            if not policy_file.is_file() or policy_file.suffix != ".npz":
+                raise FileNotFoundError(f"{policy_file} is not a policy .npz file")
+        _check_npz_keys(policy_file)
+        spec, params, saved_torque = load_policy(policy_file)
         kind = classify_policy_kind(spec)
         snapshot = json.loads((source / "snapshot.json").read_text())
         summary = json.loads((source / "summary.json").read_text())
@@ -352,12 +370,14 @@ def export_bundle(run_folder=None, *, synthetic: Optional[str] = None, name: Opt
     for file in BUNDLE_FILES:
         (bundle / file).unlink(missing_ok=True)
     if source is not None:
-        shutil.copyfile(source / "final.npz", bundle / "final.npz")
+        shutil.copyfile(policy_file, bundle / "final.npz")
         shutil.copyfile(source / "snapshot.json", bundle / "snapshot.json")
         shutil.copyfile(source / "summary.json", bundle / "summary.json")
-        if sha256_file(bundle / "final.npz") != sha256_file(source / "final.npz"):
-            raise RuntimeError("final.npz changed while being copied")
+        if sha256_file(bundle / "final.npz") != sha256_file(policy_file):
+            raise RuntimeError(f"{policy_file.name} changed while being copied")
         dev_score = _dev_score(summary, snapshot)
+        if checkpoint is not None and sha256_file(policy_file) != sha256_file(source / "final.npz"):
+            dev_score = None   # summary.json's dev score is final.npz's, not this checkpoint's
         config_differences = cfg.scoring_differences(snapshot["config"]) if "config" in snapshot else None
         source_commit = (snapshot.get("hardware") or {}).get("git_commit")
     else:
@@ -383,6 +403,8 @@ def export_bundle(run_folder=None, *, synthetic: Optional[str] = None, name: Opt
         "dev_score": dev_score,
         # Extras for people reading the bundle; the robot's loader needs only the fields above.
         "source_path": None if (source is None or source_label is not None) else str(source.resolve()),
+        "source_checkpoint": None if source is None else policy_file.resolve().relative_to(
+            source.resolve()).as_posix(),
         "max_torque": max_torque, "input_names": list(spec.input_names),
         "observation_names": observation_names(spec), "source_git_commit": source_commit,
         "config_differences": config_differences, "golden_ticks": int(golden["torques"].size),
@@ -410,11 +432,16 @@ def parse_args(argv=None):
     parser.add_argument("--source-run", "--source-label", dest="source_label", default=None,
                         help="manifest source_run for a run folder (default: repo-relative path, "
                              "else neuroevolution/<method>/<folder>)")
+    parser.add_argument("--checkpoint", default=None,
+                        help="export this policy file inside the run folder (e.g. checkpoints/mean_7.488e08.npz, "
+                             "an E2.6 selection) instead of final.npz")
     args = parser.parse_args(argv)
     if (args.run_folder is None) == (args.synthetic is None):
         parser.error("give a run folder or --synthetic, not both")
     if args.source_label is not None and args.synthetic is not None:
         parser.error("--source-label is for run folders only")
+    if args.checkpoint is not None and args.synthetic is not None:
+        parser.error("--checkpoint is for run folders only")
     return args
 
 
@@ -422,7 +449,7 @@ def main(argv=None) -> Path:
     args = parse_args(argv)
     bundle = export_bundle(args.run_folder, synthetic=args.synthetic, name=args.name, out_root=args.out_root,
                            cfg=load_config(args.robot), envelope_seeds=args.envelope_seeds, seed=args.seed,
-                           source_label=args.source_label)
+                           source_label=args.source_label, checkpoint=args.checkpoint)
     m = json.loads((bundle / "manifest.json").read_text())
     print(f"{bundle}: {m['kind']}, {m['n_params']} parameters, {m['multiply_adds_per_tick']} multiply-adds/tick, "
           f"sha256 {m['sha256'][:12]}..., golden {m['golden_ticks']} ticks, envelope {m['envelope_runs']} runs "
