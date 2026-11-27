@@ -457,6 +457,12 @@ selection: it decides the even/odd = desktop/laptop parity check, since the even
   - Weights are within ~0.01 of `l_e2_s1` on every input. Both are the same good optimum, as expected from E2.6's
     19.72–19.79 spread.
   - `l_e2_s1` stays deployed alongside `l_e2` so the provisional robot results stay reproducible.
+  - Deployed 2026-11-26 19:00 to legopi (`DEPLOYED: 8609b46 2026-11-26 19:00`). Bundles on the Pi: a_warm_zero,
+    b1_zero, l_e2, l_e2_s1, l_pid. Governor set to performance (1.2 GHz).
+  - Strict post-deploy check (P2b config check + golden self-test, no `--allow-unchecked`, no motors): ALL BUNDLES PASS.
+    `l_e2`: sha `321cda5ceb9e`, cfgdiff `[]`, golden 400, err 0, forward p50 25.9 µs / p99 35.6 µs, lead 1.010 ms
+    (`l_e2_s1`: p50 26.1 / p99 45.0 µs). Pi disk 83 % used (1.1 G free).
+  - No robot runs with `l_e2` yet.
 
 ## E2.7 (provisional): `l_e2_s1`, the first finished L run
 
