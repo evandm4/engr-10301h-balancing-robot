@@ -284,3 +284,60 @@ more still runs (20 s) are allowed, for diagnosis only.
 H-A1 is not re-tested: its prediction was for the old mount. V1 plays A1's role (the trim) without a prediction.
 The §3 safety rules and §4 analysis apply unchanged. `session_metrics.py --block A` is used for the V and A runs; the
 H-V metrics are computed from its θ̄/v̄ output and the tilt readings.
+
+## 7. Session 3 addendum (2026-11-26, ~19:10), fixed before any session-3 motor run
+
+**Why there is a session 3:** session 2's gate failed (`E3_SESSION2_NOTES.md`). The trim came from the run in which the
+mount settled, and two falls after data collection (FUN60, PUSH60) loosened pins. Before session 3, Evan reseated the
+connections and rubber pieces. `TODO(Evan): what was reseated, and anything else changed`.
+
+- **New build condition.** Session-3 numbers are reported separately and never pooled with sessions 1–2. Earlier
+  verdicts stand as written.
+- **Robot code: deploy `8609b46`** (Pi `DEPLOYED` stamp "8609b46 2026-11-26 19:00"), strict post-deploy self-test
+  ALL BUNDLES PASS. Since `24b9b46` the Pi loop gained Block D's `--added-delay-ms` FIFO (`1b525e6`). It is not used
+  here: at the default 0 the issued duty is written unchanged (`test_added_delay.py`). Block D stays a placeholder and
+  does not run.
+- **Controllers:** M and P unchanged. **L is now `policy:l_e2`** (sha256 `321cda5ceb9e…`), the E2.6 selection
+  (E2_NOTES E2.7). `l_e2_s1` is not run this session. The two have weights within ~0.01, but no session-3 number is
+  compared against a session-1/2 `l_e2_s1` number as if they were the same controller.
+- **Battery:** one freshly charged pack for the whole session. §1's rules apply, and the in-run rule is **enforced
+  live**: after every run, the orchestrator reads the raw `vin` minimum before the next launch. A run whose minimum is
+  < 7.3 V is flagged, and the block stops for a recharge.
+- **Labels:** `e3s3_<run>_<ctrl>`. Run sheet: `C:\balancebot_training\legobot\e3_s3_runsheet.csv`.
+- **Pushes:** within §3's ~27°. No push-to-failure runs.
+
+### Calibration readings taken before this addendum (disclosed, descriptive)
+
+Lying tilt (front face down, no motors), taken 19:06–19:09 after the reseat, **before** this text was written:
+1.5953, 1.5938, 1.5903, 1.5915 rad (each a 3 s mean, sd 0.0015–0.0016). Mean **1.5927**, range 0.0050. The first three
+fell monotonically; Evan OK'd the fourth after seeing them. Session 2's V4 was 1.5979 (not pooled).
+No test is applied to these four. They serve as session 3's **V0** reference for H-S3-3 below.
+
+### Block S: seating, trim and gate (L only). Runs first, and gates everything after it.
+
+| Step | What |
+|---|---|
+| S0 | Seating, no motors: a firm press-and-release on the Pi fore and aft, 3 times each. Then lying tilt ×1 (descriptive). |
+| S1, S2 | Still, 20 s, calibration.json `pitch_zero` = −0.0203 (current). Seating/trim runs; no hypothesis. |
+| S3 | Only if \|θ̄(S2) − θ̄(S1)\| > 0.004: one more 20 s still run, and the trim uses S2 and S3 instead. At most one S3. |
+| trim | pitch_zero_new = −0.0203 + mean of the two θ̄ used, written with `e3_set_pitch_zero.sh` (note gives the stamps). |
+| G1, G2 | Still, 20 s each, trimmed. The gate runs. |
+| VL | Lying tilt ×3, lift and re-lay between readings. |
+
+| H | Prediction | Metric | Pass / fail |
+|---|---|---|---|
+| H-S3-1 | The trim holds | θ̄ and v̄ of G1 and G2 | Pass if \|θ̄\| < 0.004 rad and \|v̄\| < 0.005 m/s in **both** (the H-A2 rule, unchanged) |
+| H-S3-2 | The balance point repeats run to run | \|θ̄(G2) − θ̄(G1)\| | Pass if ≤ 0.004 rad (unchanged from H-V3) |
+| H-S3-3 | Driving does not move the IMU relative to the chassis | mean(VL) − 1.5927 | Pass if \|Δ\| ≤ 0.005 rad (unchanged from H-V4) |
+
+**Gate:** comparative blocks run only if H-S3-1, H-S3-2 and H-S3-3 all pass. If the gate fails, the session ends with no
+comparative runs, reported as "mount still not stable enough for comparisons", and at most two more 20 s still runs are
+allowed, for diagnosis only. The 0.004 / 0.005 limits are deliberately unchanged from session 2.
+
+### After the gate
+
+§6's "After the gate" list applies unchanged with L = `l_e2` and labels `e3s3_*`, except:
+
+- **Block B does not start until §10/§11 (cost-duration rule, H-B1 power and n) are committed** (session-2 TODO 9).
+  If they are not committed by then, skip Block B and go to A3± (§6 item 5).
+- §6's references to V0 and V3 mean session 3's V0 (above) and G2.
