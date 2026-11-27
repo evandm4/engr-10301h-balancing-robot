@@ -445,6 +445,18 @@ selection: it decides the even/odd = desktop/laptop parity check, since the even
   - MB PID baseline: mean-of-means 98.957, median 28.093, both-up 28.872, 27/750 falls (6, 4, 5, 6, 6 per realization).
   - Bad runs: s0 543.0 (1/750 falls), s7 620.0 (10/750).
   - Next (E2_PLAN E2.7): export `l_e2` from seed 8's `checkpoints/mean_7.488e08.npz` and redeploy. This waits for Evan.
+- **E2.7: `l_e2` exported (2026-11-26 ~18:57, Evan's OK).**
+  - `export_policy.py` could only export a run's `final.npz`, but the E2.6 winner is a checkpoint (seed 8's `final.npz`
+    is a different policy). A new `--checkpoint` option copies the chosen file byte for byte, still named `final.npz` in
+    the bundle so the robot loader is unchanged, and records it as `source_checkpoint`.
+  - `dev_score` is left null, because the run's `summary.json` score describes `final.npz`. The E2.6 score is in the
+    source label.
+  - Bundle `results/legobot/policies/l_e2`: linear, 10 params, 10 MAC/tick, sha256 `321cda5ceb9e…` (equal to the
+    checkpoint's hash), golden 400 ticks (0 saturated), envelope 15 runs with 0 falls, config differences none,
+    source commit `4582fe7`.
+  - Weights are within ~0.01 of `l_e2_s1` on every input. Both are the same good optimum, as expected from E2.6's
+    19.72–19.79 spread.
+  - `l_e2_s1` stays deployed alongside `l_e2` so the provisional robot results stay reproducible.
 
 ## E2.7 (provisional): `l_e2_s1`, the first finished L run
 
